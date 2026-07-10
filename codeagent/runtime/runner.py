@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from codeagent.config import RuntimeConfig
+from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.context.builder import ContextBuilder
-from codeagent.model_gateway.base import BaseModelClient, LLMToolCall
+from codeagent.model_gateway.base import BaseModelClient, LLMToolCall, ModelRequest
 from codeagent.runtime.approval import ApprovalGate
 from codeagent.runtime.policy import DefaultPolicy, PolicyDecision
 from codeagent.session.store import SessionStore
@@ -28,6 +28,7 @@ class AgentRunner:
         approval_gate: ApprovalGate,
         policy: DefaultPolicy | None = None,
         config: RuntimeConfig | None = None,
+        model_config: ModelConfig | None = None,
     ) -> None:
         self.session_store = session_store
         self.model = model
@@ -35,24 +36,29 @@ class AgentRunner:
         self.approval_gate = approval_gate
         self.policy = policy or DefaultPolicy()
         self.config = config or RuntimeConfig()
+        self.model_config = model_config or ModelConfig()
 
     def run_turn(self, message: str) -> RunnerOutput:
         self.session_store.append_event("user_message", {"message": message})
-        observations: list[dict] = []
         steps: list[dict] = []
 
         for _ in range(self.config.max_steps_per_turn):
-            context = ContextBuilder(self.session_store).build(observations)
-            response = self.model.complete(context)
+            request = ModelRequest(
+                messages=ContextBuilder(self.session_store).build(),
+                tools=self.tools.as_openai_tools(),
+                model=self.model_config.resolved_model,
+                temperature=self.model_config.temperature,
+                max_tokens=self.model_config.max_tokens,
+            )
+            response = self.model.complete(request)
             if not response.tool_calls:
                 final = response.text or ""
                 self.session_store.append_event("assistant_message", {"message": final})
                 return RunnerOutput(final_text=final, steps=steps)
 
+            self.session_store.append_event("assistant_tool_calls", {"tool_calls": [call.model_dump() for call in response.tool_calls]})
             for call in response.tool_calls:
-                step = self._handle_tool_call(call)
-                steps.append(step)
-                observations.append({"call_id": call.call_id, "name": call.name, "result": step["result"]})
+                steps.append(self._handle_tool_call(call))
 
         final = "本轮达到最大工具调用步数，建议缩小任务范围或继续下一轮。"
         self.session_store.append_event("assistant_message", {"message": final})
@@ -66,13 +72,13 @@ class AgentRunner:
             result = ToolResult(ok=False, error=str(exc))
             payload = {"call_id": call.call_id, "name": call.name, "result": result.model_dump()}
             self.session_store.append_event("tool_denied", payload)
-            return {"tool": call.name, "decision": "deny", "result": result.model_dump()}
+            return self._step(call, "deny", result)
 
         policy_result = self.policy.evaluate(tool)
         if policy_result.decision == PolicyDecision.DENY:
             result = ToolResult(ok=False, error=policy_result.reason)
             self.session_store.append_event("tool_denied", {"call_id": call.call_id, "name": call.name, "reason": policy_result.reason})
-            return {"tool": call.name, "decision": "deny", "result": result.model_dump()}
+            return self._step(call, "deny", result)
 
         if policy_result.decision == PolicyDecision.ASK:
             self.session_store.append_event("approval_requested", {"call_id": call.call_id, "name": call.name, "reason": policy_result.reason})
@@ -81,7 +87,7 @@ class AgentRunner:
             if not allowed:
                 result = ToolResult(ok=False, error="user denied approval")
                 self.session_store.append_event("tool_denied", {"call_id": call.call_id, "name": call.name, "reason": "user denied approval"})
-                return {"tool": call.name, "decision": "deny", "result": result.model_dump()}
+                return self._step(call, "deny", result)
 
         result = tool.handler(call.arguments)
         result_payload = result.model_dump()
@@ -89,4 +95,12 @@ class AgentRunner:
             "tool_result",
             {"call_id": call.call_id, "name": call.name, "arguments": call.arguments, "content": json.dumps(result_payload, ensure_ascii=False), "result": result_payload},
         )
-        return {"tool": call.name, "decision": policy_result.decision.value, "result": result_payload}
+        return self._step(call, policy_result.decision.value, result)
+
+    def _step(self, call: LLMToolCall, decision: str, result: ToolResult) -> dict:
+        return {
+            "tool": call.name,
+            "arguments": call.arguments,
+            "decision": decision,
+            "result": result.model_dump(),
+        }

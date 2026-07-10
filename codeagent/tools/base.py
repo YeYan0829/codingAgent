@@ -34,3 +34,13 @@ class ToolSpec:
     permission_level: PermissionLevel
     schema: dict[str, Any]
     handler: ToolHandler
+
+    def to_openai_tool(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.schema,
+            },
+        }

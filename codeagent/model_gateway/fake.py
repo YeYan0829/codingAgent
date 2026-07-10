@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall
+from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest
 
 
 class FakeLLM(BaseModelClient):
     """用于本地验证 runtime loop 的确定性假模型。"""
 
-    def complete(self, messages: list[dict[str, Any]]) -> LLMResponse:
+    def complete(self, request: ModelRequest) -> LLMResponse:
+        messages = request.messages
         observations = [m for m in messages if m.get("role") == "tool"]
         if not observations:
             return LLMResponse(
@@ -19,7 +20,7 @@ class FakeLLM(BaseModelClient):
             )
 
         last = observations[-1]
-        tool_name = last.get("name")
+        tool_name = last.get("name") or self._tool_name_for_call(messages, last.get("tool_call_id"))
         payload = self._parse_content(last.get("content", ""))
 
         if tool_name == "list_dir":
@@ -53,9 +54,18 @@ class FakeLLM(BaseModelClient):
 
     def _previous_list_dir(self, messages: list[dict[str, Any]]) -> str:
         for msg in reversed(messages):
-            if msg.get("role") == "tool" and msg.get("name") == "list_dir":
+            if msg.get("role") == "tool" and (msg.get("name") == "list_dir" or self._tool_name_for_call(messages, msg.get("tool_call_id")) == "list_dir"):
                 return self._parse_content(msg.get("content", "")).get("content", "")
         return ""
+
+    def _tool_name_for_call(self, messages: list[dict[str, Any]], call_id: str | None) -> str | None:
+        if not call_id:
+            return None
+        for msg in reversed(messages):
+            for call in msg.get("tool_calls", []) or []:
+                if call.get("id") == call_id:
+                    return (call.get("function") or {}).get("name")
+        return None
 
     def _summarize_without_readme(self, listing: str) -> str:
         return (

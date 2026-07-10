@@ -146,12 +146,23 @@ def build_fs_tools(guard: PathGuard, sensitive_listing_mode: SensitiveListingMod
             return ToolResult(ok=False, error=str(exc))
 
     return [
-        ToolSpec(name="list_dir", description="列出目录内容，不递归。", permission_level=PermissionLevel.READ, schema={"path": "str"}, handler=list_dir),
-        ToolSpec(name="show_tree", description="显示简化目录树。", permission_level=PermissionLevel.READ, schema={"path": "str", "max_depth": "int"}, handler=show_tree),
-        ToolSpec(name="read_file", description="读取文本文件，可指定行范围。", permission_level=PermissionLevel.READ, schema={"path": "str", "start_line": "int?", "end_line": "int?"}, handler=read_file),
-        ToolSpec(name="search_text", description="在工作区内做简单文本搜索。", permission_level=PermissionLevel.READ, schema={"query": "str", "path": "str"}, handler=search_text),
-        ToolSpec(name="find_files", description="使用 glob 查找文件。", permission_level=PermissionLevel.READ, schema={"pattern": "str", "path": "str"}, handler=find_files),
+        ToolSpec(name="list_dir", description="列出目录内容，不递归。", permission_level=PermissionLevel.READ, schema=_schema({"path": ("string", "相对 workspace 的目录路径，默认 .。")}), handler=list_dir),
+        ToolSpec(name="show_tree", description="显示简化目录树。", permission_level=PermissionLevel.READ, schema=_schema({"path": ("string", "相对 workspace 的目录路径，默认 .。"), "max_depth": ("integer", "目录树最大深度，默认 2。")}), handler=show_tree),
+        ToolSpec(name="read_file", description="读取文本文件，可指定行范围。", permission_level=PermissionLevel.READ, schema=_schema({"path": ("string", "相对 workspace 的文本文件路径。"), "start_line": ("integer", "起始行号，从 1 开始。"), "end_line": ("integer", "结束行号，包含该行。")}, required=["path"]), handler=read_file),
+        ToolSpec(name="search_text", description="在工作区内做简单文本搜索。", permission_level=PermissionLevel.READ, schema=_schema({"query": ("string", "要搜索的字符串。"), "path": ("string", "搜索起点目录，默认 .。")}, required=["query"]), handler=search_text),
+        ToolSpec(name="find_files", description="使用 glob 查找文件。", permission_level=PermissionLevel.READ, schema=_schema({"pattern": ("string", "glob 模式，例如 *.py。"), "path": ("string", "搜索起点目录，默认 .。")}), handler=find_files),
     ]
+
+
+def _schema(properties: dict[str, tuple[str, str]], required: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            name: {"type": kind, "description": description}
+            for name, (kind, description) in properties.items()
+        },
+        "required": required or [],
+    }
 
 
 def _is_safe_workspace_entry(guard: PathGuard, path: Path) -> bool:

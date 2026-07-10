@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codeagent-runtime"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local readonly coding agent runtime prototype."
 requires-python = ">=3.11"
 dependencies = [
   "typer>=0.12",
   "rich>=13.0",
   "pydantic>=2.0",
+  "openai>=1.0",
 ]
 
 [project.optional-dependencies]

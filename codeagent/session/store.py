@@ -23,7 +23,7 @@ class SessionStore:
         self.events_path = self.session_dir / "events.jsonl"
         self.transcript_path = self.session_dir / "transcript.md"
 
-    def create(self, *, mode: str = "readonly", model: str = "fake") -> "SessionStore":
+    def create(self, *, mode: str = "readonly", provider: str = "fake", model: str = "fake") -> "SessionStore":
         now = datetime.now(timezone.utc).isoformat()
         self.session_dir.mkdir(parents=True, exist_ok=False)
         meta = {
@@ -32,6 +32,7 @@ class SessionStore:
             "created_at": now,
             "last_active_at": now,
             "mode": mode,
+            "provider": provider,
             "model": model,
         }
         self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -101,6 +102,7 @@ class SessionStore:
             "tool_denied": "Tool Denied",
             "approval_requested": "Approval Requested",
             "approval_decision": "Approval Decision",
+            "assistant_tool_calls": "Assistant Tool Calls",
             "cli_command": "CLI Command",
             "error": "Error",
         }

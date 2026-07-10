@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-
-from codeagent.model_gateway.base import BaseModelClient, LLMResponse
+from codeagent.model_gateway.base import BaseModelClient, LLMResponse, ModelRequest
 
 
 class OpenAIClient(BaseModelClient):
-    """预留真实模型适配器；v0.1 不主动调用网络 API。"""
+    """预留 OpenAI 适配器；v0.2 只实现 DeepSeek。"""
 
-    def complete(self, messages: list[dict[str, Any]]) -> LLMResponse:
-        raise RuntimeError("OpenAIClient is a placeholder in v0.1. Use FakeLLM by default.")
+    def complete(self, request: ModelRequest) -> LLMResponse:
+        raise RuntimeError("OpenAIClient is a placeholder in v0.2. Use FakeLLM or DeepSeekClient.")

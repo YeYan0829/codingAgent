@@ -17,7 +17,16 @@ class LLMResponse(BaseModel):
     tool_calls: list[LLMToolCall] = Field(default_factory=list)
 
 
+class ModelRequest(BaseModel):
+    messages: list[dict[str, Any]]
+    tools: list[dict[str, Any]] = Field(default_factory=list)
+    tool_choice: str | dict[str, Any] = "auto"
+    model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+
+
 class BaseModelClient(ABC):
     @abstractmethod
-    def complete(self, messages: list[dict[str, Any]]) -> LLMResponse:
-        """根据上下文返回文本或工具请求。"""
+    def complete(self, request: ModelRequest) -> LLMResponse:
+        """根据上下文和工具定义返回文本或工具请求。"""

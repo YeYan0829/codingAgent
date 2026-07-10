@@ -6,6 +6,8 @@ from typing import Any
 
 from codeagent.tools.base import PermissionLevel, ToolResult, ToolSpec
 
+EMPTY_SCHEMA = {"type": "object", "properties": {}, "required": []}
+
 
 def build_git_tools(workspace_root: Path) -> list[ToolSpec]:
     def run_git(args: dict[str, Any], command: list[str]) -> ToolResult:
@@ -23,8 +25,8 @@ def build_git_tools(workspace_root: Path) -> list[ToolSpec]:
             return ToolResult(ok=False, error=str(exc))
 
     return [
-        ToolSpec(name="git_status", description="执行 git status --short。", permission_level=PermissionLevel.EXEC_READONLY, schema={}, handler=lambda args: run_git(args, ["git", "status", "--short"])),
-        ToolSpec(name="git_diff_stat", description="执行 git diff --stat。", permission_level=PermissionLevel.EXEC_READONLY, schema={}, handler=lambda args: run_git(args, ["git", "diff", "--stat"])),
+        ToolSpec(name="git_status", description="执行 git status --short。", permission_level=PermissionLevel.EXEC_READONLY, schema=EMPTY_SCHEMA, handler=lambda args: run_git(args, ["git", "status", "--short"])),
+        ToolSpec(name="git_diff_stat", description="执行 git diff --stat。", permission_level=PermissionLevel.EXEC_READONLY, schema=EMPTY_SCHEMA, handler=lambda args: run_git(args, ["git", "diff", "--stat"])),
     ]
 
 
