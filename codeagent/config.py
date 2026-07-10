@@ -1,4 +1,6 @@
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -21,3 +23,10 @@ class ModelConfig:
         if self.provider == "deepseek":
             return "deepseek-v4-flash"
         return "fake"
+
+
+def default_session_root() -> Path:
+    configured = os.environ.get("CODEAGENT_SESSION_ROOT")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".codeagent" / "sessions"

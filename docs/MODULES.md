@@ -2,72 +2,68 @@
 
 ## Interface
 
-职责：提供用户入口和展示层。
+`codeagent.cli` 提供 `start`、`ask`、`list-sessions`、`resume`。CLI 支持 `--provider`、`--model`、`--session-root`。
 
-v0.2 实现：`codeagent.cli` 提供 `start`、`ask`、`list-sessions`、`resume`，并支持 `--provider` / `--model`。默认 provider 是 `fake`。CLI 展示工具调用时会打印参数，例如 `read_file {"path": "sort_utils.py"}`。
+CLI 不直接执行业务逻辑，只创建 workspace、session store 和 runner。工具调用展示会打印参数，例如 `read_file {"path": "sort_utils.py"}`。
 
-当前边界：不直接执行业务逻辑，只创建 workspace、session、runner。
+`list-sessions` 和 `resume` 默认面向统一 session root 下的全部 session。传 `--workspace <workspace>` 时才过滤到某个 workspace。`resume <session_id>` 会从全局 session root 中按 id 找到 workspace；`resume <session_id> <workspace>` 作为旧用法仍保持兼容。
 
 ## Session
 
-职责：管理会话状态和审计日志。
+`SessionStore` 管理 `meta.json`、append-only `events.jsonl` 和 `transcript.md`。
 
-v0.2 实现：每个 session 存在 workspace-local 的 `.codeagent/sessions/<session_id>/`，包含 `meta.json`、append-only `events.jsonl` 和 `transcript.md`。`meta.json` 记录 provider/model。
+默认路径：
 
-当前边界：只做本地文件存储，不做并发锁、远端同步或全局 session index。因此跨 workspace 查看历史需要先知道 workspace。
+```text
+~/.codeagent/sessions/<workspace-key>/<session_id>/
+```
+
+可配置路径：
+
+- 环境变量：`CODEAGENT_SESSION_ROOT`
+- CLI 参数：`--session-root`
+
+`meta.json` 记录 `session_id`、`title`、`workspace`、`session_root`、`workspace_key`、`provider`、`model` 等信息，不记录 API key。全局列表和选择器依赖 `workspace` 字段展示项目位置。
+
+旧路径 `<workspace>/.codeagent/sessions/<session_id>/` 仍作为 load fallback。
 
 ## Runtime
 
-职责：执行权中心，调度 ReAct-style loop。
-
-v0.2 实现：`AgentRunner` 构造 `ModelRequest`，传入 messages、tools 和 model 参数。工具调用仍必须经过 ToolRegistry、Policy 和 Approval。
-
-当前边界：只支持同步非流式调用。
+`AgentRunner` 是执行权中心，负责一次用户 turn 内部的 ReAct-style loop。工具调用仍必须经过 ToolRegistry、Policy 和 Approval。
 
 ## Model Gateway
 
-职责：隔离 provider API 差异。
+`ModelRequest` 隔离 provider 请求结构。当前 provider：
 
-v0.2 实现：`FakeLLM`、`DeepSeekClient`、`ModelRequest`、`build_model_client`。DeepSeek 使用 OpenAI SDK，`base_url=https://api.deepseek.com`，key 来自 `DEEPSEEK_API_KEY`，默认模型 `deepseek-v4-flash`。
+- `fake`
+- `deepseek`
 
-当前边界：OpenAIClient 仍是占位；DeepSeek strict mode 未启用，thinking mode 默认关闭。
+DeepSeek 使用 OpenAI SDK，`base_url=https://api.deepseek.com`，key 来自 `DEEPSEEK_API_KEY`，默认模型 `deepseek-v4-flash`。
 
 ## Tool / MCP
 
-职责：封装本地能力。
-
-v0.2 实现：本地 `ToolRegistry` 可以导出 OpenAI / DeepSeek-compatible tools 格式：
+本地 `ToolRegistry` 可以导出 OpenAI / DeepSeek-compatible tools 格式：
 
 ```json
 {"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}
 ```
 
-当前边界：没有真实 MCP 协议，也没有写工具。
+当前没有真实 MCP 协议，也没有写工具。
 
 ## Safety
 
-职责：强制安全边界。
-
-v0.2 实现：workspace path guard、敏感内容读取拒绝、敏感文件列表标记、权限策略和 approval gate。真实 LLM 不获得任何直接文件或命令执行能力。
-
-当前边界：没有容器隔离，也没有系统调用沙箱；敏感检测仍是文件名规则，不是 secret scanner。
+实现 workspace path guard、敏感内容读取拒绝、敏感文件列表标记、权限策略和 approval gate。真实 LLM 不获得直接文件或命令执行能力。
 
 ## Context / Memory
 
-职责：构建模型上下文。
+`ContextBuilder` 读取最近 session events，并重建 assistant tool_calls 与 tool result 的配对历史。
 
-v0.2 实现：`ContextBuilder` 读取最近 session events，并重建 assistant tool_calls 与 tool result 的配对历史。
-
-当前边界：不做长期记忆、向量库或复杂压缩。
+当前不做长期记忆、向量库或复杂压缩。
 
 ## Workspace
 
-职责：表示工作区根目录和路径隔离。
+`Workspace` 持有 root 与 `PathGuard`，所有文件访问必须 resolve 到 workspace 内。
 
-v0.2 实现：`Workspace` 持有 root 与 `PathGuard`，所有文件访问必须 resolve 到 workspace 内。
+## Observability
 
-## Report / Eval / Observability
-
-职责：记录可审计过程。
-
-v0.2 实现：`events.jsonl` 记录 `assistant_tool_calls`、`tool_requested`、`tool_result` 等事件，`transcript.md` 给人阅读。
+`events.jsonl` 用于程序恢复和审计，`transcript.md` 给人阅读。session title 提升 `list-sessions` 和 `resume` 的可读性。
