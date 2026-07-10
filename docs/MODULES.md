@@ -23,13 +23,11 @@ CLI 不直接执行业务逻辑，只创建 workspace、session store 和 runner
 - 环境变量：`CODEAGENT_SESSION_ROOT`
 - CLI 参数：`--session-root`
 
-`meta.json` 记录 `session_id`、`title`、`workspace`、`session_root`、`workspace_key`、`provider`、`model` 等信息，不记录 API key。全局列表和选择器依赖 `workspace` 字段展示项目位置。
-
-旧路径 `<workspace>/.codeagent/sessions/<session_id>/` 仍作为 load fallback。
+`meta.json` 记录 `session_id`、`title`、`workspace`、`session_root`、`workspace_key`、`provider`、`model` 等信息，不记录 API key。旧路径 `<workspace>/.codeagent/sessions/<session_id>/` 仍作为 load fallback。
 
 ## Runtime
 
-`AgentRunner` 是执行权中心，负责一次用户 turn 内部的 ReAct-style loop。工具调用仍必须经过 ToolRegistry、Policy 和 Approval。
+`AgentRunner` 是执行权中心，负责一次用户 turn 内部的 ReAct-style loop。它只认内部模型抽象：`ModelRequest`、`LLMResponse`、`LLMToolCall` 和 `ModelTool`。工具调用仍必须经过 ToolRegistry、Policy 和 Approval。
 
 ## Model Gateway
 
@@ -38,14 +36,16 @@ CLI 不直接执行业务逻辑，只创建 workspace、session store 和 runner
 - `fake`
 - `deepseek`
 
-DeepSeek 使用 OpenAI SDK，`base_url=https://api.deepseek.com`，key 来自 `DEEPSEEK_API_KEY`，默认模型 `deepseek-v4-flash`。
+`ModelRequest.tools` 是内部 `ModelTool` 列表，不是 DeepSeek/OpenAI schema。DeepSeekClient 使用 OpenAI SDK，`base_url=https://api.deepseek.com`，key 来自 `DEEPSEEK_API_KEY`，默认模型 `deepseek-v4-flash`。DeepSeekClient 内部负责把 `ModelTool` 转成 Chat Completions tools schema。
 
 ## Tool / MCP
 
-本地 `ToolRegistry` 可以导出 OpenAI / DeepSeek-compatible tools 格式：
+本地 `ToolRegistry` 管理 `ToolSpec`。`ToolSpec` 包含 runtime 执行信息：权限、schema 和 handler。
 
-```json
-{"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}
+转换链路：
+
+```text
+ToolSpec -> ModelTool -> provider tool schema
 ```
 
 当前没有真实 MCP 协议，也没有写工具。

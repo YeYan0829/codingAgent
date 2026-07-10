@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from codeagent.model_gateway.base import ModelTool
+
 
 class PermissionLevel(StrEnum):
     READ = "READ"
@@ -35,12 +37,5 @@ class ToolSpec:
     schema: dict[str, Any]
     handler: ToolHandler
 
-    def to_openai_tool(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.schema,
-            },
-        }
+    def to_model_tool(self) -> ModelTool:
+        return ModelTool(name=self.name, description=self.description, parameters=self.schema)

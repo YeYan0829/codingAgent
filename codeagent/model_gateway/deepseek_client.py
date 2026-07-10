@@ -6,7 +6,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest
+from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest, ModelTool
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_API_KEY_ENV = "DEEPSEEK_API_KEY"
@@ -30,7 +30,7 @@ class DeepSeekClient(BaseModelClient):
             "extra_body": {"thinking": {"type": "disabled"}},
         }
         if request.tools:
-            kwargs["tools"] = request.tools
+            kwargs["tools"] = [_to_chat_completion_tool(tool) for tool in request.tools]
         if request.temperature is not None:
             kwargs["temperature"] = request.temperature
         if request.max_tokens is not None:
@@ -73,3 +73,14 @@ def _get(obj: Any, name: str) -> Any:
     if isinstance(obj, dict):
         return obj.get(name)
     return getattr(obj, name, None)
+
+
+def _to_chat_completion_tool(tool: ModelTool) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        },
+    }

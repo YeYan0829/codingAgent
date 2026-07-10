@@ -45,7 +45,7 @@ class AgentRunner:
         for _ in range(self.config.max_steps_per_turn):
             request = ModelRequest(
                 messages=ContextBuilder(self.session_store).build(),
-                tools=self.tools.as_openai_tools(),
+                tools=self.tools.as_model_tools(),
                 model=self.model_config.resolved_model,
                 temperature=self.model_config.temperature,
                 max_tokens=self.model_config.max_tokens,

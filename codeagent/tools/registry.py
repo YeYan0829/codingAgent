@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from codeagent.model_gateway.base import ModelTool
 from codeagent.tools.base import ToolSpec
 
 
@@ -18,8 +19,8 @@ class ToolRegistry:
     def list_tools(self) -> list[ToolSpec]:
         return list(self._tools.values())
 
-    def as_openai_tools(self) -> list[dict]:
-        return [tool.to_openai_tool() for tool in self.list_tools()]
+    def as_model_tools(self) -> list[ModelTool]:
+        return [tool.to_model_tool() for tool in self.list_tools()]
 
     def call(self, name: str, arguments: dict) -> object:
         return self.get(name).handler(arguments)

@@ -17,9 +17,15 @@ class LLMResponse(BaseModel):
     tool_calls: list[LLMToolCall] = Field(default_factory=list)
 
 
+class ModelTool(BaseModel):
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
 class ModelRequest(BaseModel):
     messages: list[dict[str, Any]]
-    tools: list[dict[str, Any]] = Field(default_factory=list)
+    tools: list[ModelTool] = Field(default_factory=list)
     tool_choice: str | dict[str, Any] = "auto"
     model: str | None = None
     temperature: float | None = None

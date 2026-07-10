@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from codeagent.model_gateway.base import ModelRequest
+from codeagent.model_gateway.base import ModelRequest, ModelTool
 from codeagent.model_gateway.deepseek_client import DeepSeekClient
 
 
@@ -33,6 +33,29 @@ def test_deepseek_text_response_to_llm_response():
     assert response.text == "hello"
     assert response.tool_calls == []
     assert client.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_deepseek_converts_model_tools_to_chat_completion_tools():
+    client = FakeClient(response_with_message(SimpleNamespace(content="hello", tool_calls=None)))
+    deepseek = DeepSeekClient(api_key="key", client=client)
+    tool = ModelTool(
+        name="read_file",
+        description="Read a file.",
+        parameters={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    )
+
+    deepseek.complete(ModelRequest(messages=[{"role": "user", "content": "hi"}], tools=[tool]))
+
+    assert client.calls[0]["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file.",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+            },
+        }
+    ]
 
 
 def test_deepseek_tool_calls_to_llm_response():

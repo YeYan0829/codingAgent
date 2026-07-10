@@ -2,15 +2,10 @@
 
 ## 当前实现概览
 
-当前版本在 v0.2 readonly runtime 和 DeepSeek tool calling 的基础上，增加了 session UX / storage 优化：
+当前版本保持 readonly runtime 和 DeepSeek tool calling 能力，并完成两项 v0.2.x 稳定性优化：
 
-- 新 session 默认写入用户级 `~/.codeagent/sessions/<workspace-key>/<session_id>/`。
-- 支持 `CODEAGENT_SESSION_ROOT` 和 `--session-root` 指定 session 存储根目录。
-- 兼容读取旧的 `<workspace>/.codeagent/sessions/<session_id>/`。
-- `meta.json` 新增 `title`、`session_root`、`workspace_key`。
-- session title 默认由第一条用户消息生成。
-- `list-sessions` 和 `resume` 默认面向统一 session root 下的所有 session，并显示 workspace。
-- `--workspace <path>` 用于过滤某个 workspace；UTF-8 TTY 使用上下键选择器，Windows GBK 等非 UTF-8 终端和非 TTY 使用编号 fallback。
+- v0.2.1：session 统一存储、全局 list/resume、session title、旧 session fallback。
+- v0.2.2：引入 `ModelTool`，把 provider-specific tool schema 转换从 runtime 边界移到 model client adapter。
 
 ## 分模块说明
 
@@ -18,23 +13,26 @@ Interface：`codeagent.cli` 支持 `--provider`、`--model`、`--session-root`�
 
 Session：`SessionStore` 负责用户级 session root、workspace hash 分桶、旧 session fallback、title 生成、events 和 transcript。
 
-Runtime：`AgentRunner` 仍然构造 `ModelRequest`，传入 messages、tools、model 参数。工具调用仍经过 ToolRegistry、Policy、Approval。
+Runtime：`AgentRunner` 构造 `ModelRequest`，传入 messages、`ModelTool` 列表和 model 参数。工具调用仍经过 ToolRegistry、Policy、Approval。Runtime 不接触 DeepSeek/OpenAI tool schema。
 
-Model Gateway：`FakeLLM` 和 `DeepSeekClient` 保持不变。DeepSeekClient 使用 OpenAI SDK，读取 `DEEPSEEK_API_KEY`，默认模型 `deepseek-v4-flash`。
+Model Gateway：`ModelRequest` 使用内部 `ModelTool` 描述工具。`DeepSeekClient` 使用 OpenAI SDK，读取 `DEEPSEEK_API_KEY`，默认模型 `deepseek-v4-flash`，并负责把 `ModelTool` 转成 Chat Completions tools schema。
+
+Tool：`ToolSpec` 仍是工具执行定义，包含 permission level、schema 和 handler。`ToolRegistry.as_model_tools()` 导出给模型看的轻量工具描述。
 
 Safety：真实 LLM 没有直接读文件或执行工具能力。所有工具仍受 path guard、敏感文件策略、policy 和 approval gate 约束。
 
 ## 核心数据结构
 
+- `ModelTool`：模型可见工具描述，包含 name、description、parameters。
 - `ModelRequest`：模型请求，包含 messages、tools、tool_choice、model、temperature、max_tokens。
 - `LLMResponse`：内部统一模型响应。
 - `LLMToolCall`：内部统一工具调用。
-- `ToolSpec`：工具定义，负责导出 OpenAI-compatible tool schema。
+- `ToolSpec`：runtime 工具定义，包含权限和 handler。
 - `SessionStore`：session 文件布局、meta、events、transcript、title 和 list/load。
 
 ## 测试结果
 
-单元测试覆盖 FakeLLM、DeepSeekClient mock、tool schema、provider factory、CLI model/session options、tool-call history 配对、session root、全局 session listing 和 resume selection fallback。
+单元测试覆盖 FakeLLM、DeepSeekClient mock、tool schema adapter、provider factory、CLI model/session options、tool-call history 配对、session root、全局 session listing、resume selection fallback，以及非交互 approval 自动拒绝。
 
 ## 当前没有做什么
 
@@ -42,4 +40,4 @@ Safety：真实 LLM 没有直接读文件或执行工具能力。所有工具仍
 
 ## 下一步建议
 
-进入 v0.3 前，可以先手动验证 `resume --workspace .` 的 TTY 上下键选择体验。随后再考虑 controlled test runner。
+进入 v0.3 时优先考虑 controlled test runner。写操作、patch、sandbox、benchmark 和 MCP 仍应作为后续独立阶段推进。
