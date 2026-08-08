@@ -6,6 +6,7 @@ from typing import Any
 from codeagent.safety.path_guard import PathGuard, PathGuardError
 from codeagent.safety.sensitive import SensitiveListingMode, sensitive_label
 from codeagent.tools.base import PermissionLevel, ToolResult, ToolSpec
+from codeagent.workspace.workspace import WorkspaceContext
 
 SKIP_DIRS = {".git", "codeagent", "__pycache__", ".pytest_cache", "node_modules", ".mypy_cache", ".ruff_cache"}
 MAX_OUTPUT_CHARS = 12000
@@ -26,7 +27,8 @@ def _is_binary(path: Path) -> bool:
         return True
 
 
-def build_fs_tools(guard: PathGuard, sensitive_listing_mode: SensitiveListingMode = SensitiveListingMode.SHOW_MARKED) -> list[ToolSpec]:
+def build_fs_tools(context: WorkspaceContext, sensitive_listing_mode: SensitiveListingMode = SensitiveListingMode.SHOW_MARKED) -> list[ToolSpec]:
+    guard = PathGuard(context.active_root)
     def list_dir(args: dict[str, Any]) -> ToolResult:
         try:
             path = guard.resolve(args.get("path", "."))

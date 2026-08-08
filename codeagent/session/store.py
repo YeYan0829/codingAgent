@@ -10,6 +10,7 @@ from typing import Any
 
 from codeagent.config import default_session_root
 from codeagent.session.events import SessionEvent
+from codeagent.workspace.workspace import WorkspaceContext
 
 
 class SessionStoreError(RuntimeError):
@@ -30,10 +31,13 @@ class SessionStore:
         self.events_path = self.session_dir / "events.jsonl"
         self.transcript_path = self.session_dir / "transcript.md"
 
-    def create(self, *, mode: str = "readonly", provider: str = "fake", model: str = "fake", title: str | None = None) -> "SessionStore":
+    def create(self, *, mode: str = "readonly", provider: str = "fake", model: str = "fake", title: str | None = None, workspace_context: WorkspaceContext | None = None) -> "SessionStore":
         now = datetime.now(timezone.utc).isoformat()
         self.session_dir.mkdir(parents=True, exist_ok=False)
         session_title = title or self.UNTITLED
+        context = workspace_context or WorkspaceContext.source(self.workspace_root)
+        if context.source_root != self.workspace_root:
+            raise SessionStoreError("workspace context 的 source_root 与 session workspace 不一致")
         meta = {
             "session_id": self.session_id,
             "title": session_title,
@@ -45,12 +49,37 @@ class SessionStore:
             "mode": mode,
             "provider": provider,
             "model": model,
+            **context.to_metadata(),
+            "worktree_lifecycle_state": "active" if context.workspace_kind == "git_worktree" else "not_applicable",
         }
         self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         self.events_path.touch()
         self.transcript_path.write_text(f"# {session_title}\n\nSession: {self.session_id}\nWorkspace: {self.workspace_root}\n\n", encoding="utf-8")
         self.append_event("session_created", {"session_id": self.session_id, "title": session_title, "workspace": str(self.workspace_root)})
         return self
+
+    def workspace_context(self) -> WorkspaceContext:
+        """从新 metadata 恢复 context；旧 session 自动退化为 source context。"""
+        return WorkspaceContext.from_metadata(self.read_meta())
+
+    def update_workspace_context(self, context: WorkspaceContext, lifecycle_state: str = "active") -> None:
+        if context.source_root != self.workspace_root:
+            raise SessionStoreError("workspace context 的 source_root 与 session workspace 不一致")
+        meta = self.read_meta()
+        meta.update(context.to_metadata())
+        meta["worktree_lifecycle_state"] = lifecycle_state
+        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def update_worktree_lifecycle(self, lifecycle_state: str) -> None:
+        meta = self.read_meta()
+        meta["worktree_lifecycle_state"] = lifecycle_state
+        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def update_workspace_state(self, state: str, reason: str = "") -> None:
+        meta = self.read_meta()
+        meta["workspace_state"] = state
+        meta["workspace_state_reason"] = reason
+        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def load(self) -> "SessionStore":
         if not self.meta_path.exists() and (self.legacy_base_dir / self.session_id / "meta.json").exists():

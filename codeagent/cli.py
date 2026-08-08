@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import shutil
 from pathlib import Path
 
 import typer
@@ -9,19 +10,23 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from codeagent import __version__
 from codeagent.config import ModelConfig
 from codeagent.interface.commands import handle_manual_call, print_tools
 from codeagent.model_gateway.factory import build_model_client
 from codeagent.runtime.approval import AutoApprovalGate, ConsoleApprovalGate
+from codeagent.runtime.artifacts import CommandArtifactStore
+from codeagent.runtime.local_executor import LocalCommandExecutor
 from codeagent.runtime.runner import AgentRunner
 from codeagent.session.events import SessionEvent
 from codeagent.session.store import SessionStore, SessionStoreError
 from codeagent.tools.fs_read import build_fs_tools
 from codeagent.tools.git_read import build_git_tools
 from codeagent.tools.registry import ToolRegistry
-from codeagent.workspace.workspace import Workspace
+from codeagent.workspace.workspace import Workspace, WorkspaceContext
+from codeagent.workspace.git_worktree import GitWorktreeError, GitWorktreeManager, WorkspaceState
 
-app = typer.Typer(help="CodeAgent Runtime v0.2")
+app = typer.Typer(help=f"CodeAgent Runtime v{__version__}")
 console = Console()
 
 WORKSPACE_ARG = typer.Argument(Path("."), help="要进入的代码工作区目录；默认 '.' 表示当前目录。")
@@ -32,29 +37,78 @@ SESSION_ROOT_OPT = typer.Option(None, "--session-root", help="session 数据库�
 WORKSPACE_FILTER_OPT = typer.Option(None, "--workspace", "-w", help="只显示/选择某个 workspace 的 session；省略时使用全部 session。")
 
 
+MODE_OPT = typer.Option("readonly", "--mode", help="session 模式：readonly 或 execution。")
+
+
 def build_registry(workspace: Workspace) -> ToolRegistry:
-    registry = ToolRegistry()
-    for tool in build_fs_tools(workspace.guard) + build_git_tools(workspace.root):
+    return build_registry_for_context(workspace.context)
+
+
+def build_registry_for_context(context: WorkspaceContext) -> ToolRegistry:
+    registry = ToolRegistry(workspace_context=context)
+    for tool in build_fs_tools(context) + build_git_tools(context):
         registry.register(tool)
     return registry
 
 
-def build_runner(store: SessionStore, workspace: Workspace, *, interactive: bool, model_config: ModelConfig) -> AgentRunner:
+def build_runner(store: SessionStore, workspace: Workspace, *, interactive: bool, model_config: ModelConfig, execution_allowed: bool = True) -> AgentRunner:
+    context = store.workspace_context()
+    execution = store.read_meta().get("mode") == "execution" and execution_allowed
     return AgentRunner(
         session_store=store,
         model=build_model_client(model_config),
-        tools=build_registry(workspace),
-        approval_gate=ConsoleApprovalGate() if interactive else AutoApprovalGate(allow=False),
+        tools=build_registry_for_context(context),
+        approval_gate=ConsoleApprovalGate(context) if interactive else AutoApprovalGate(allow=False),
         model_config=model_config,
+        workspace_context=context,
+        command_executor=LocalCommandExecutor() if execution else None,
+        command_artifact_store=CommandArtifactStore(store) if execution else None,
     )
 
 
+def _create_session(
+    workspace: Workspace,
+    session_root: Path | None,
+    mode: str,
+    model_config: ModelConfig,
+    title: str | None = None,
+) -> SessionStore:
+    if mode not in {"readonly", "execution"}:
+        raise typer.BadParameter("mode 必须是 readonly 或 execution")
+    store = SessionStore(workspace.root, session_root=session_root)
+    if mode == "readonly":
+        return store.create(mode=mode, provider=model_config.provider, model=model_config.resolved_model, title=title)
+    manager = GitWorktreeManager(store.session_root)
+    try:
+        context = manager.create(workspace.root, store.session_id)
+        return store.create(
+            mode=mode, provider=model_config.provider, model=model_config.resolved_model,
+            title=title, workspace_context=context,
+        )
+    except Exception as exc:
+        cleanup_ok = True
+        if "context" in locals():
+            try:
+                manager.cleanup(context)
+            except GitWorktreeError:
+                cleanup_ok = False
+        if cleanup_ok and store.session_dir.exists():
+            shutil.rmtree(store.session_dir)
+        elif not cleanup_ok:
+            store.session_dir.mkdir(parents=True, exist_ok=True)
+            (store.session_dir / "creation-error.json").write_text(
+                json.dumps({"error": str(exc), "active_workspace": str(context.active_root)}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        raise
+
+
 @app.command()
-def start(workspace: Path = WORKSPACE_ARG, provider: str = PROVIDER_OPT, model: str | None = MODEL_OPT, session_root: Path | None = SESSION_ROOT_OPT):
+def start(workspace: Path = WORKSPACE_ARG, provider: str = PROVIDER_OPT, model: str | None = MODEL_OPT, session_root: Path | None = SESSION_ROOT_OPT, mode: str = MODE_OPT):
     """创建新 session 并进入交互 CLI。"""
     model_config = ModelConfig(provider=provider, model=model)
     ws = Workspace(workspace)
-    store = SessionStore(ws.root, session_root=session_root).create(provider=model_config.provider, model=model_config.resolved_model)
+    store = _create_session(ws, session_root, mode, model_config)
     console.print(
         Panel(
             "\n".join(
@@ -79,15 +133,12 @@ def ask(
     provider: str = PROVIDER_OPT,
     model: str | None = MODEL_OPT,
     session_root: Path | None = SESSION_ROOT_OPT,
+    mode: str = MODE_OPT,
 ):
     """单次非交互运行，用于 smoke test。"""
     model_config = ModelConfig(provider=provider, model=model)
     ws = Workspace(workspace)
-    store = SessionStore(ws.root, session_root=session_root).create(
-        provider=model_config.provider,
-        model=model_config.resolved_model,
-        title=SessionStore.title_from_message(message),
-    )
+    store = _create_session(ws, session_root, mode, model_config, title=SessionStore.title_from_message(message))
     runner = build_runner(store, ws, interactive=False, model_config=model_config)
     output = runner.run_turn(message)
     for step in output.steps:
@@ -113,6 +164,38 @@ def list_sessions(
         return
     for meta in sessions:
         console.print(_format_session_list_row(meta), markup=False)
+
+
+@app.command("cleanup")
+def cleanup_session(
+    session_id: str = typer.Argument(..., help="要清理 worktree 的 execution session id。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """仅清理干净且受管的 execution worktree；不会强制删除。"""
+    meta = SessionStore.find_session(session_id, session_root=session_root)
+    if not meta:
+        console.print(f"[red]session not found: {session_id}[/red]")
+        raise typer.Exit(1)
+    source = meta.get("source_workspace") or meta.get("workspace")
+    store = SessionStore(source, session_id=session_id, session_root=session_root).load()
+    context = store.workspace_context()
+    if context.workspace_kind != "git_worktree":
+        console.print("[red]readonly session 没有可清理的 worktree[/red]")
+        raise typer.Exit(1)
+    manager = GitWorktreeManager(store.session_root)
+    report = manager.inspect(context)
+    if report.worktree_dirty:
+        store.update_workspace_state(WorkspaceState.WORKTREE_DIRTY.value, "dirty worktree 保留，拒绝 cleanup")
+        console.print("[red]worktree dirty；已保留现场，拒绝 cleanup[/red]")
+        raise typer.Exit(1)
+    try:
+        manager.cleanup(context)
+    except GitWorktreeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    store.update_worktree_lifecycle("discarded")
+    store.update_workspace_state(WorkspaceState.DISCARDED.value, "用户显式 cleanup")
+    console.print(f"cleaned worktree: {context.active_root}")
 
 
 @app.command()
@@ -144,13 +227,22 @@ def resume(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
     meta = store.read_meta()
+    context = store.workspace_context()
+    execution_allowed = True
+    if meta.get("mode") == "execution":
+        report = GitWorktreeManager(store.session_root).inspect(context)
+        store.update_workspace_state(report.state.value, report.reason)
+        execution_allowed = report.executable
+        if not execution_allowed:
+            console.print(f"[yellow]execution workspace state: {report.state.value}: {report.reason}; run_check disabled[/yellow]")
+    ws = Workspace(context.active_root)
     model_config = ModelConfig(provider=provider or meta.get("provider", "fake"), model=model or meta.get("model"))
     console.print(Panel(_format_session_overview(store), title="Resumed Session"))
-    _interactive_loop(store, ws, model_config)
+    _interactive_loop(store, ws, model_config, execution_allowed=execution_allowed)
 
 
-def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelConfig) -> None:
-    runner = build_runner(store, ws, interactive=True, model_config=model_config)
+def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelConfig, execution_allowed: bool = True) -> None:
+    runner = build_runner(store, ws, interactive=True, model_config=model_config, execution_allowed=execution_allowed)
     registry = runner.tools
     while True:
         try:

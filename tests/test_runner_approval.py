@@ -22,7 +22,7 @@ def test_noninteractive_runner_denies_approval_required_tool(tmp_path):
     ws = Workspace(tmp_path)
     store = SessionStore(ws.root, session_root=tmp_path / "sessions").create()
     registry = ToolRegistry()
-    for tool in build_git_tools(ws.root):
+    for tool in build_git_tools(ws.context):
         registry.register(tool)
     runner = AgentRunner(store, GitStatusModel(), registry, AutoApprovalGate(allow=False))
 

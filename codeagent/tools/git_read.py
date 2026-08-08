@@ -5,14 +5,15 @@ from pathlib import Path
 from typing import Any
 
 from codeagent.tools.base import PermissionLevel, ToolResult, ToolSpec
+from codeagent.workspace.workspace import WorkspaceContext
 
 EMPTY_SCHEMA = {"type": "object", "properties": {}, "required": []}
 
 
-def build_git_tools(workspace_root: Path) -> list[ToolSpec]:
+def build_git_tools(context: WorkspaceContext) -> list[ToolSpec]:
     def run_git(args: dict[str, Any], command: list[str]) -> ToolResult:
         try:
-            proc = subprocess.run(command, cwd=workspace_root, text=True, capture_output=True, timeout=10, check=False)
+            proc = subprocess.run(command, cwd=context.active_root, text=True, capture_output=True, timeout=10, check=False)
             content = proc.stdout.strip() or proc.stderr.strip()
             error = None if proc.returncode == 0 else _format_git_error(content)
             return ToolResult(

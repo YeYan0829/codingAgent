@@ -1,12 +1,12 @@
-from codeagent.safety.path_guard import PathGuard
 from codeagent.safety.sensitive import SensitiveListingMode
 from codeagent.tools.fs_read import build_fs_tools
 from codeagent.tools.registry import ToolRegistry
+from codeagent.workspace.workspace import WorkspaceContext
 
 
 def registry(tmp_path, sensitive_listing_mode=SensitiveListingMode.SHOW_MARKED):
     reg = ToolRegistry()
-    for tool in build_fs_tools(PathGuard(tmp_path), sensitive_listing_mode=sensitive_listing_mode):
+    for tool in build_fs_tools(WorkspaceContext.source(tmp_path), sensitive_listing_mode=sensitive_listing_mode):
         reg.register(tool)
     return reg
 

@@ -11,6 +11,10 @@ from codeagent.runtime.policy import DefaultPolicy, PolicyDecision
 from codeagent.session.store import SessionStore
 from codeagent.tools.base import ToolResult
 from codeagent.tools.registry import ToolRegistry
+from codeagent.workspace.workspace import WorkspaceContext
+from codeagent.runtime.command import CommandArtifactStoreProtocol, CommandExecutor
+from codeagent.runtime.command_service import CommandService
+from codeagent.runtime.policy import CommandPolicy
 
 
 @dataclass
@@ -29,6 +33,10 @@ class AgentRunner:
         policy: DefaultPolicy | None = None,
         config: RuntimeConfig | None = None,
         model_config: ModelConfig | None = None,
+        workspace_context: WorkspaceContext | None = None,
+        command_executor: CommandExecutor | None = None,
+        command_policy: CommandPolicy | None = None,
+        command_artifact_store: CommandArtifactStoreProtocol | None = None,
     ) -> None:
         self.session_store = session_store
         self.model = model
@@ -37,6 +45,20 @@ class AgentRunner:
         self.policy = policy or DefaultPolicy()
         self.config = config or RuntimeConfig()
         self.model_config = model_config or ModelConfig()
+        self.workspace_context = workspace_context or tools.workspace_context
+        self.command_service: CommandService | None = None
+        if command_executor is not None:
+            if self.workspace_context is None:
+                raise ValueError("command executor requires WorkspaceContext")
+            self.command_service = CommandService(
+                context=self.workspace_context,
+                policy=command_policy or CommandPolicy(),
+                approval_gate=approval_gate,
+                executor=command_executor,
+                session_store=session_store,
+                artifact_store=command_artifact_store,
+            )
+            self.tools.register_run_check(self.command_service)
 
     def run_turn(self, message: str) -> RunnerOutput:
         self.session_store.append_event("user_message", {"message": message})

@@ -1,11 +1,11 @@
-from codeagent.safety.path_guard import PathGuard
 from codeagent.tools.fs_read import build_fs_tools
 from codeagent.tools.registry import ToolRegistry
+from codeagent.workspace.workspace import WorkspaceContext
 
 
 def test_registry_exports_internal_model_tools(tmp_path):
     registry = ToolRegistry()
-    for tool in build_fs_tools(PathGuard(tmp_path)):
+    for tool in build_fs_tools(WorkspaceContext.source(tmp_path)):
         registry.register(tool)
 
     tools = registry.as_model_tools()

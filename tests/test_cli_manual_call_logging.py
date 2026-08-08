@@ -18,7 +18,7 @@ def test_manual_call_logs_cli_command_to_events_and_transcript(tmp_path):
     ws = Workspace(tmp_path)
     store = SessionStore(ws.root).create()
     registry = ToolRegistry()
-    for tool in build_fs_tools(ws.guard):
+    for tool in build_fs_tools(ws.context):
         registry.register(tool)
     runner = AgentRunner(store, FakeLLM(), registry, AutoApprovalGate(allow=False))
 

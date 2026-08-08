@@ -14,7 +14,7 @@ def test_runner_fake_llm_completes_tool_loop(tmp_path):
     ws = Workspace(tmp_path)
     store = SessionStore(ws.root).create()
     registry = ToolRegistry()
-    for tool in build_fs_tools(ws.guard) + build_git_tools(ws.root):
+    for tool in build_fs_tools(ws.context) + build_git_tools(ws.context):
         registry.register(tool)
     runner = AgentRunner(store, FakeLLM(), registry, AutoApprovalGate(allow=False))
 

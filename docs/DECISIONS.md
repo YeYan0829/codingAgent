@@ -1,52 +1,121 @@
 # 设计决策
 
-## 为什么默认 session 不再写入 workspace
+本文记录当前已经采用的设计及其边界。未来方向放在 [ROADMAP.md](ROADMAP.md)，具体模块行为放在 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-会话历史是用户级运行记录，不是项目源码的一部分。默认把 session 写到用户级 `~/.codeagent/sessions/<workspace-key>/<session_id>/`，避免每个项目目录都出现 `.codeagent/`。
+## 1. 模型只有请求权，Runtime 持有执行权
 
-`workspace-key` 由 workspace 名称和路径 hash 组成，避免不同目录同名项目冲突。`meta.json` 仍记录真实 workspace 路径，因此全局 session 列表和选择器可以显示每条会话来自哪个项目。
-
-## 为什么保留 `--session-root`
-
-`CODEAGENT_SESSION_ROOT` 和 `--session-root` 的含义是“统一会话库的位置”，不是 workspace 过滤条件。它允许用户把 session 放到指定磁盘、加密目录或临时目录。CLI 参数优先级高于环境变量。
-
-## 为什么兼容旧 workspace-local session
-
-v0.2 之前的 session 存在 `<workspace>/.codeagent/sessions/<session_id>/`。新版 `SessionStore.load()` 会在统一 session root 找不到时回退到旧路径，避免历史会话突然不可恢复。
-
-## 为什么标题先用第一条用户消息生成
-
-session 需要在刚开始时就具备可读性，但不能让 session 创建依赖额外 LLM 调用。当前标题由第一条用户消息裁剪生成，稳定、便宜、可测试。后续可以增加 LLM-generated title，但应作为可选增强。
-
-## 为什么 resume 支持选择器
-
-完全依靠 session id 不适合人类使用。`list-sessions` 默认显示统一会话库里的所有 session，并展示 title、id、model 和 workspace。`resume` 不带 id 时默认从全部 session 里选择；传 `--workspace <path>` 时才过滤到某个 workspace。UTF-8 TTY 中使用上下键选择器；Windows GBK 等非 UTF-8 终端和非交互环境退回编号输入，避免中文显示乱码。
-
-## 为什么默认仍然是 fake
-
-默认 fake 能保证没有 API key 时仍可运行测试和 demo。真实 provider 通过 `--provider deepseek` 显式启用，避免把开发体验绑在外部网络和 key 上。
-
-## 为什么引入 ModelTool
-
-`ToolSpec` 是 runtime/tool 层的完整工具定义，包含 `permission_level` 和 `handler`。模型并不需要知道这些执行细节，它只需要工具的 `name`、`description` 和 JSON schema。
-
-因此 v0.2.2 引入 `ModelTool` 作为 model gateway 的轻量内部工具描述：
+真实 LLM 只返回文本或结构化 tool call，不能直接接触文件系统、子进程、Policy 或 Approval。完整工具定义保存在 `ToolSpec`，模型只看到轻量 `ModelTool`：
 
 ```text
-ToolSpec -> ModelTool -> provider-specific tool schema
+ToolSpec → ModelTool → provider-specific schema
 ```
 
-`AgentRunner` 只把 `ModelTool` 放进 `ModelRequest`，不再调用 `as_openai_tools()` 或接触 OpenAI/DeepSeek tool schema。DeepSeekClient 负责把 `ModelTool` 转成 Chat Completions 的 `tools` 格式。
+这样可以防止 provider adapter 获得 handler 或权限信息，也避免 Runtime 依赖 OpenAI/DeepSeek 的具体 schema。
 
-这个设计避免两种泄漏：
+## 2. 默认 provider 使用 FakeLLM
 
-- Runtime 不知道 DeepSeek/OpenAI 的 provider schema。
-- Model Gateway 不需要拿到完整 `ToolSpec.handler` 或权限信息。
+默认 fake 使项目在没有 API key 和网络时仍可运行测试与 demo。真实 provider 通过 `--provider deepseek` 显式启用，避免把本地开发和自动化测试绑定到外部服务。
 
-## 为什么 DeepSeek 只接入 Model Gateway
+## 3. Session 默认保存在用户级目录
 
-runtime 是执行权中心。真实 LLM 只应该提出 tool call，不能直接读文件或执行工具。因此 DeepSeekClient 只负责模型请求和响应转换，不触碰 ToolRegistry、Policy、Approval 或文件系统。
+Session 是用户运行记录，不是项目源码，因此默认写入：
 
-## 为什么保留敏感文件 listing 标记
+```text
+~/.codeagent/sessions/<workspace-key>/<session-id>/
+```
 
-Safety 的核心边界是禁止读取 secret value，而不是让 agent 假装敏感配置文件不存在。默认显示敏感文件存在并标记 content blocked。
+而不是污染每个项目的 `.codeagent/`。`workspace-key` 使用目录名和路径 hash，避免同名项目冲突；metadata 仍记录真实 workspace 路径。
+
+`CODEAGENT_SESSION_ROOT` 和 `--session-root` 用于选择统一 session 数据库位置。旧 workspace-local session 在已知 workspace 下保留 load fallback，但全局发现能力主要面向新目录结构。
+
+## 4. Session title 不依赖额外模型调用
+
+标题由第一条用户消息裁剪生成，保证 session 创建稳定、便宜、可测试。未来可以增加可选的 LLM title，但不能成为创建 session 的前置条件。
+
+## 5. 敏感文件可以显示存在，但默认阻止内容读取
+
+目录 listing 默认可以显示敏感文件名称，并标记 `content blocked`。目标是保护 secret value，而不是让 Agent 错误判断配置文件不存在。
+
+这是保守的启发式边界，不是 secret scanner。敏感目录的父路径组件检查仍需加强，文件名关键词也可能误伤正常源码；后续应允许项目级 policy 配置。
+
+## 6. v0.3 只支持 pytest
+
+每一种命令都需要独立考虑 schema、argv 构造、路径规则、环境、timeout 和副作用。v0.3 先用 pytest 验证：
+
+```text
+CommandSpec → Policy → Approval → Executor → Artifact
+```
+
+而不是通过“白名单 shell”过早扩大攻击面。npm、pnpm、ruff、mypy 和依赖安装应分别设计，不接受模型提交任意 command string。
+
+## 7. Execution 使用 detached worktree
+
+测试可能创建缓存、临时文件或修改 tracked 文件。独立 worktree 可以把这些 Git 状态变化留在任务目录，并固定 `base_commit`，同时支持普通退出后的 resume。
+
+Detached worktree 不绑定用户正式分支，也不会自动 merge、rebase 或同步回 source。它是代码状态隔离，不是主机访问隔离。
+
+## 8. v0.3 的 execution 只接受 clean Git source
+
+Worktree 从 source HEAD 创建。如果 source 含未提交修改，直接创建的 worktree 看不到用户当前磁盘内容，Agent 会分析和测试错误版本。
+
+v0.3 因此选择 fail closed，不自动 stash、commit 或复制用户修改。这是阶段性限制，不是最终产品体验。未来 dirty source 支持需要记录：
+
+```text
+base commit
++ staged changes
++ unstaged changes
++ untracked files
+= source snapshot
+```
+
+并保证最终候选只包含 Agent 相对于初始 snapshot 的增量。
+
+## 9. Resume 恢复原现场，不做自动同步
+
+当前一个 execution session 绑定一个 worktree 和一个 `base_commit`。Resume 检查 source/worktree/HEAD/dirty/registration 状态，只在 `ready` 时恢复执行能力。
+
+Source 变化后旧 session 标记 stale 或 source_dirty，不自动刷新。自动同步会让旧对话、测试和 artifacts 突然对应另一份代码，破坏审计语义。
+
+近期如果需要基于最新 source 继续，应创建派生任务并记录 parent session；长期再评估逻辑 session 下的多个 workspace revision。
+
+## 10. 普通退出保留 worktree，cleanup 保守执行
+
+保留 worktree 可以支持 resume，也能保存失败测试和副作用现场。只有用户显式 cleanup 才尝试移除，并且不使用 `--force`。Dirty worktree 始终保留。
+
+## 11. Worktree、Approval 和 Sandbox 互不替代
+
+- Worktree 保护 source 的 Git 状态。
+- Policy 判断系统规则是否允许请求。
+- Approval 表达用户是否同意一次固定操作。
+- Audit 记录实际发生的行为。
+- Host sandbox 限制进程可访问的宿主资源。
+
+v0.3 没有 host sandbox，因此只适用于可信本地仓库。不能因为命令经过 approval 或运行在 worktree 中，就声称它对恶意代码安全。
+
+## 12. 长期交付模型采用候选修改，而不是 Agent 直接写 source
+
+完整 Coding Agent 的目标体验是：
+
+```text
+source snapshot
+→ Agent 在独立任务工作区编辑
+→ 在候选代码上运行测试
+→ 冻结 candidate 和测试证据
+→ 用户审查
+→ apply 前重新检查 source
+→ 用户批准后才进入正式项目
+```
+
+因此写工具应先只操作 task workspace。正式 apply 是独立 Runtime 操作，需要绑定固定 candidate hash、目标 source 和预期 source snapshot，不能作为普通 `write_file` 的延伸。
+
+## 13. 用户不应被迫理解内部 mode、worktree 和锁
+
+`readonly` / `execution` 是 v0.3 为验证能力边界而暴露的 CLI 模式。成熟产品应让用户描述任务，由 Runtime 按需申请读取、测试、候选编辑和正式应用权限。
+
+Worktree ownership、session lock、base commit 和 apply lock 属于内部一致性机制。默认 UX 只应要求用户决定：
+
+- 是否信任一次有风险的执行；
+- 是否接受最终候选修改；
+- source 变化或语义冲突时希望保留什么。
+
+高级诊断界面仍可展示内部状态，但不能把理解 Git worktree 作为普通使用前提。

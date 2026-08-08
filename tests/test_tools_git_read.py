@@ -1,8 +1,9 @@
 from codeagent.tools.git_read import build_git_tools
+from codeagent.workspace.workspace import WorkspaceContext
 
 
 def test_git_status_reports_invalid_repository_clearly(tmp_path):
-    tool = {tool.name: tool for tool in build_git_tools(tmp_path)}["git_status"]
+    tool = {tool.name: tool for tool in build_git_tools(WorkspaceContext.source(tmp_path))}["git_status"]
 
     result = tool.handler({})
 
