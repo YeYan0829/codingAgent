@@ -12,10 +12,16 @@ class CommandArtifactStore:
 
     def __init__(self, session_store: SessionStore) -> None:
         self.root = session_store.session_dir / "artifacts" / "commands"
+        # 子进程会继续在 HOME/TEMP 下创建任意深度的目录。若把 runtime
+        # 放进 command artifact，Windows 很容易超过传统路径长度限制。
+        # 使用 session-root 下的短路径，同时保留 session/command 隔离。
+        self.runtime_root = session_store.session_root / "runtime" / session_store.session_id
 
     def prepare(self, spec: CommandSpec) -> CommandArtifactPaths:
         command_dir = self.root / spec.command_id
         command_dir.mkdir(parents=True, exist_ok=False)
+        command_runtime_dir = self.runtime_root / spec.command_id[:12]
+        command_runtime_dir.mkdir(parents=True, exist_ok=False)
         paths = CommandArtifactPaths(
             command_dir=command_dir,
             request_path=command_dir / "request.json",
@@ -23,8 +29,8 @@ class CommandArtifactStore:
             stdout_path=command_dir / "stdout.log",
             stderr_path=command_dir / "stderr.log",
             workspace_change_path=command_dir / "workspace-change.patch",
-            runtime_home=command_dir / "runtime" / "home",
-            runtime_temp=command_dir / "runtime" / "tmp",
+            runtime_home=command_runtime_dir / "home",
+            runtime_temp=command_runtime_dir / "tmp",
         )
         paths.runtime_home.mkdir(parents=True)
         paths.runtime_temp.mkdir(parents=True)

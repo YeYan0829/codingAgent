@@ -247,11 +247,18 @@ PYTHONDONTWRITEBYTECODE=1
 ├── result.json
 ├── stdout.log
 ├── stderr.log
-├── workspace-change.patch
-└── runtime/
-    ├── home/
-    └── tmp/
+└── workspace-change.patch
 ```
+
+子进程的 HOME/TEMP 使用独立短路径，避免 Windows 上被测程序继续创建深层目录时超过路径长度限制：
+
+```text
+<session_root>/runtime/<session_id>/<command_id 前 12 位>/
+├── home/
+└── tmp/
+```
+
+Runtime 目录与 command artifact 通过 session id 和 command id 关联，但不是长期审计证据。当前 v0.3 仍会保留这些目录；自动清理和 retention policy 留待后续生命周期增强。
 
 真实命令前后采集 `git status --porcelain --untracked-files=all`。结束后保存 tracked binary diff 和 untracked no-index diff；receipt 记录 changed files、`workspace_changed` 和 audit error。Audit 失败不会覆盖已经获得的 pytest 结果，也不能被解释为“workspace 没有变化”。
 

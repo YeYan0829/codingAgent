@@ -91,7 +91,7 @@ ACTIVE_ROOT=
 ### 8. Command artifacts 完整生成
 
 - 执行命令：检查 `<session_dir>/artifacts/commands/<command_id>/`。
-- 预期结果：存在 `request.json`、`result.json`、`stdout.log`、`stderr.log`、`workspace-change.patch` 和 `runtime/`；完整输出在日志中。
+- 预期结果：存在 `request.json`、`result.json`、`stdout.log`、`stderr.log` 和 `workspace-change.patch`，完整输出在日志中；命令 HOME/TEMP 位于 `<session_root>/runtime/<session_id>/<短 command_id>/`，不再嵌套于 artifact 目录。
 - 实际结果：
 - 是否通过：`[ ]`
 - 备注：

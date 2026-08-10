@@ -9,7 +9,7 @@ pytest -q
 v0.3 开发过程中记录的最近基线：
 
 ```text
-91 passed, 1 skipped
+92 passed, 1 skipped
 ```
 
 该数字是仓库文档中的历史记录，不等同于当前工作区已经完成 release 验收。v0.3 仍应在收口后重新运行完整测试，并把运行环境、commit 和结果记录到 release 验收中。

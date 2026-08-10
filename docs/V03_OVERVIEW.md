@@ -16,7 +16,7 @@ v0.3 的核心目标不是交付完整 coding loop，而是验证下面这条受
 → 精简结果返回模型
 ```
 
-当前包版本已标记为 `0.3.0`，但 Git 已提交基线仍是 v0.2.2，v0.3 代码和文档处于工作区开发状态。自动化测试基线记录为 `91 passed, 1 skipped`；真实 TTY、DeepSeek 和完整生命周期仍需按[人工验收清单](V03_MANUAL_TEST.md)完成 release 验收。
+当前包版本已标记为 `0.3.0`，v0.3 已在 WIP 分支形成 checkpoint，但尚未合并到 master 或正式发布。当前自动化测试基线为 `92 passed, 1 skipped`；真实 TTY 已完成基础 deny/approve/run/resume 验证，DeepSeek 和剩余完整生命周期仍需按[人工验收清单](V03_MANUAL_TEST.md)完成 release 验收。
 
 ## 2. 用户现在能做什么
 
@@ -146,13 +146,18 @@ v0.3 实现了前四项，没有实现 host sandbox。pytest 仍是当前用户�
 ├── result.json
 ├── stdout.log
 ├── stderr.log
-├── workspace-change.patch
-└── runtime/
-    ├── home/
-    └── tmp/
+└── workspace-change.patch
 ```
 
-真实执行时，stdout/stderr 从进程启动起直接写入日志。模型只接收有限的头尾摘要；tracked diff、untracked diff、changed files 和 audit error 写入结构化结果。Policy deny 和 Approval deny 也生成 request/result 与空日志，保证审计链完整。
+每次真实命令还使用短路径运行目录：
+
+```text
+<session_root>/runtime/<session_id>/<短 command_id>/
+├── home/
+└── tmp/
+```
+
+真实执行时，stdout/stderr 从进程启动起直接写入日志。模型只接收有限的头尾摘要；tracked diff、untracked diff、changed files 和 audit error 写入结构化结果。HOME/TEMP 与深层 artifact 路径分离，为 Windows 子进程保留路径空间。Policy deny 和 Approval deny 也生成 request/result 与空日志，保证审计链完整，但不会创建 runtime 目录。
 
 ## 9. 当前成熟度
 

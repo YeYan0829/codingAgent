@@ -70,6 +70,27 @@ def test_real_pytest_success_and_artifacts_outside_worktree(tmp_path):
     assert command_dir.parent.parent.parent == store.session_dir
     assert context.active_root not in command_dir.parents
     assert {"request.json", "result.json", "stdout.log", "stderr.log"} <= {p.name for p in command_dir.iterdir()}
+    runtime_dir = artifacts.runtime_root / saved["command_spec"]["command_id"][:12]
+    assert runtime_dir.is_dir()
+    assert command_dir not in runtime_dir.parents
+    assert {"home", "tmp"} == {path.name for path in runtime_dir.iterdir()}
+
+
+def test_runtime_temp_keeps_path_budget_for_nested_directories(tmp_path):
+    code = (
+        "import tempfile\n"
+        "from pathlib import Path\n"
+        "def test_nested_temp():\n"
+        "    target = Path(tempfile.gettempdir()) / ('a' * 40) / ('b' * 40)\n"
+        "    target.mkdir(parents=True)\n"
+        "    assert target.is_dir()\n"
+    )
+    service, store, _, _, artifacts = execution_case(tmp_path, {"test_nested_temp.py": code})
+    result = run(service, "test_nested_temp.py")
+    saved = last_receipt(store)
+    runtime_dir = artifacts.runtime_root / saved["command_spec"]["command_id"][:12]
+    assert result.ok
+    assert (runtime_dir / "tmp" / ("a" * 40) / ("b" * 40)).is_dir()
 
 
 def test_real_pytest_failure_is_completed(tmp_path):
