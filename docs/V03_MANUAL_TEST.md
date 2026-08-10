@@ -155,12 +155,22 @@ ACTIVE_ROOT=
 
 ## 汇总
 
-- 测试日期：
-- 操作系统与终端：
-- Python / pytest 版本：
+- 测试日期：2026-08-10
+- 操作系统与终端：Windows / PowerShell 真实 TTY
+- Python / pytest 版本：Python 3.11.5 / pytest 9.1.1
 - CodeAgent 版本：`v0.3.0`
-- DeepSeek model：
-- 通过项数：`__/15`
-- 阻塞问题：
-- Artifact/session 备份位置：
-- 验收结论：
+- DeepSeek model：`deepseek-v4-flash`
+- 核心 smoke session：`abeed1f609e4`
+- 核心 smoke：通过；完整 15 项清单没有逐项手工重复，生命周期和双 session 场景由自动化测试覆盖
+- 阻塞问题：无
+- Artifact/session 位置：`<TEMP>/ca-v03-ds/`；批准命令 artifact 已验证包含 request/result、stdout/stderr 和 workspace patch
+- 验收结论：DeepSeek 连接、tool calling、deny/approve、pytest、结果回传、artifact、worktree 隔离和 Windows 短 TEMP 路径均通过。v0.3 核心 release smoke 通过。
+
+### 本次核心 smoke 实际记录
+
+1. readonly 非交互请求收到“DeepSeek 连接成功”。
+2. execution session 创建 active worktree，`/tools` 显示 `run_check`。
+3. 第一次运行 `tests/test_runner_fake_llm.py` 时选择 deny；pytest 未执行，DeepSeek 正确解释拒绝并继续对话。
+4. 第二次选择 approve once；receipt 为 `status=completed`、`exit_code=0`、`timed_out=false`，pytest 为 `1 passed in 1.26s`。
+5. `workspace_changed=false`、changed files 为空，source `git status --short` 无输出。
+6. artifact 文件完整；命令在短 runtime TEMP 下完成，没有复现原 Windows 路径过长错误。

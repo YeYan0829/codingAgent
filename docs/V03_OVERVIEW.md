@@ -16,7 +16,7 @@ v0.3 的核心目标不是交付完整 coding loop，而是验证下面这条受
 → 精简结果返回模型
 ```
 
-当前包版本已标记为 `0.3.0`，v0.3 已在 WIP 分支形成 checkpoint，但尚未合并到 master 或正式发布。当前自动化测试基线为 `92 passed, 1 skipped`；真实 TTY 已完成基础 deny/approve/run/resume 验证，DeepSeek 和剩余完整生命周期仍需按[人工验收清单](V03_MANUAL_TEST.md)完成 release 验收。
+当前包版本为 `0.3.0`。v0.3 已在 `wip/v0.3` 分支形成经过验证的开发基线，但尚未合并到 `master` 或创建公开 release/tag。自动化测试基线为 `92 passed, 1 skipped`；2026-08-10 已在 Windows PowerShell 中完成 DeepSeek V4 Flash 真实 TTY 核心端到端验收，包括连接、tool calling、deny 后继续对话、approve once、真实 pytest、artifact 和 source clean 检查。详细记录见[人工验收清单](V03_MANUAL_TEST.md)。
 
 ## 2. 用户现在能做什么
 
@@ -172,7 +172,22 @@ v0.3 已经建立“理解代码 + 受控验证”的底座，但还不是完整
 主机级隔离      尚未实现
 ```
 
-近期重点应是先稳定 v0.3，再实现“隔离修改 → 测试 → 候选 diff → 用户接受或放弃”的最小闭环。详细顺序见 [ROADMAP.md](ROADMAP.md)。
+v0.3 现在作为受控执行基线冻结。下一阶段直接实现“隔离修改 → 测试 → 候选 diff → 用户接受并安全应用或放弃”的最小完整闭环，不再以零散基础设施优化延迟用户可用能力。详细范围见 [ROADMAP.md](ROADMAP.md)。
+
+### v0.3 验收结论
+
+2026-08-10 的 release smoke 使用 Python 3.11.5、pytest 9.1.1 和 `deepseek-v4-flash`，验证了：
+
+- readonly DeepSeek 请求能够正常完成；
+- execution session 从 clean source 创建独立 detached worktree；
+- DeepSeek 能发现并调用 `run_check`；
+- 用户 deny 后命令不执行，模型仍能收到 observation 并继续回答；
+- approve once 后在 active worktree 中运行目标 pytest，结果为 `completed / exit_code=0 / 1 passed`；
+- command request/result、stdout/stderr 和 workspace patch 均有留痕；
+- `workspace_changed=false`，source `git status --short` 保持无输出；
+- Windows 命令 TEMP 短路径修复在原失败用例上生效。
+
+这证明 v0.3 的核心“模型请求 → Policy → Approval → 隔离执行 → 审计 → 模型解释”链路可用。它不证明恶意代码受到主机沙箱隔离，也不改变 pytest-only、clean source 和不能编辑文件的产品边界。
 
 ## 10. 文档入口
 

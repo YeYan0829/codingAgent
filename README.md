@@ -2,7 +2,7 @@
 
 CodeAgent Runtime 是一个本地运行的受控 Coding Agent Runtime。v0.3.0 支持只读代码分析，以及 pytest-only controlled execution：模型可以读取代码、申请运行 pytest、观察结果并继续分析，但不能主动编辑项目文件。
 
-当前包版本已标记为 `0.3.0`，但 Git 已提交基线仍是 v0.2.2，v0.3 代码和文档处于开发工作区中，尚待完整 release 验收。
+当前包版本为 `0.3.0`。v0.3 的自动化回归和 Windows 真实 TTY/DeepSeek 核心端到端验收已经通过，形成可继续开发的受控执行基线；当前仍位于 `wip/v0.3` 分支，尚未合并到 `master` 或创建公开 release/tag。
 
 Execution session 从用户仓库当前 HEAD 创建独立的 Git detached worktree，测试产生的缓存和代码状态变化留在任务工作区。命令还必须经过 `Policy` 和逐次 `Approval`，完整输出与副作用审计保存为 session artifact。
 
