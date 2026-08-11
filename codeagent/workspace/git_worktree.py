@@ -17,6 +17,7 @@ class WorkspaceState(StrEnum):
     SOURCE_DIRTY = "source_dirty"
     STALE = "stale"
     WORKTREE_DIRTY = "worktree_dirty"
+    CANDIDATE_CHANGES = "candidate_changes"
     MISSING = "missing"
     COMPLETED = "completed"
     DISCARDED = "discarded"
@@ -34,7 +35,7 @@ class WorkspaceStateReport:
 
     @property
     def executable(self) -> bool:
-        return self.state == WorkspaceState.READY
+        return self.state in {WorkspaceState.READY, WorkspaceState.CANDIDATE_CHANGES}
 
 
 class GitWorktreeManager:
@@ -83,7 +84,7 @@ class GitWorktreeManager:
             raise GitWorktreeError("worktree HEAD 与 session 记录的 base commit 不一致")
         return WorkspaceContext(source, active, "git_worktree", base_commit or actual_commit, task_workspace_id)
 
-    def inspect(self, context: WorkspaceContext) -> WorkspaceStateReport:
+    def inspect(self, context: WorkspaceContext, *, candidate_changes: bool = False) -> WorkspaceStateReport:
         if context.workspace_kind != "git_worktree" or not context.source_root.is_dir() or not context.active_root.is_dir():
             return WorkspaceStateReport(WorkspaceState.MISSING, reason="source 或 active worktree 不存在")
         try:
@@ -105,7 +106,13 @@ class GitWorktreeManager:
         if source_head != context.base_commit or worktree_head != context.base_commit:
             return WorkspaceStateReport(WorkspaceState.STALE, reason="HEAD 与 base_commit 不一致", **common)
         if worktree_dirty:
-            return WorkspaceStateReport(WorkspaceState.WORKTREE_DIRTY, reason="task worktree 存在变化", **common)
+            if not candidate_changes:
+                return WorkspaceStateReport(WorkspaceState.WORKTREE_DIRTY, reason="task worktree 存在未归因变化", **common)
+            return WorkspaceStateReport(
+                WorkspaceState.CANDIDATE_CHANGES,
+                reason="task worktree 包含候选修改，可继续编辑和运行检查",
+                **common,
+            )
         return WorkspaceStateReport(WorkspaceState.READY, reason="execution workspace ready", **common)
 
     @staticmethod

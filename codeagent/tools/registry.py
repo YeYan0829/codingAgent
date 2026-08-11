@@ -31,3 +31,10 @@ class ToolRegistry:
         from codeagent.tools.run_check import build_run_check_tool
 
         self.register(build_run_check_tool(service))
+
+    def register_candidate_tools(self, edit_service: "TextPatchService", candidate_service: "CandidateService") -> None:
+        from codeagent.tools.candidate import build_freeze_candidate_tool
+        from codeagent.tools.text_patch import build_text_patch_tool
+
+        self.register(build_text_patch_tool(edit_service))
+        self.register(build_freeze_candidate_tool(candidate_service))

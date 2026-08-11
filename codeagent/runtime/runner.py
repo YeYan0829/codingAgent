@@ -14,6 +14,8 @@ from codeagent.tools.registry import ToolRegistry
 from codeagent.workspace.workspace import WorkspaceContext
 from codeagent.runtime.command import CommandArtifactStoreProtocol, CommandExecutor
 from codeagent.runtime.command_service import CommandService
+from codeagent.runtime.candidate import CandidateService
+from codeagent.runtime.edit_service import TextPatchService
 from codeagent.runtime.policy import CommandPolicy
 
 
@@ -47,6 +49,8 @@ class AgentRunner:
         self.model_config = model_config or ModelConfig()
         self.workspace_context = workspace_context or tools.workspace_context
         self.command_service: CommandService | None = None
+        self.edit_service: TextPatchService | None = None
+        self.candidate_service: CandidateService | None = None
         if command_executor is not None:
             if self.workspace_context is None:
                 raise ValueError("command executor requires WorkspaceContext")
@@ -59,6 +63,9 @@ class AgentRunner:
                 artifact_store=command_artifact_store,
             )
             self.tools.register_run_check(self.command_service)
+            self.edit_service = TextPatchService(self.workspace_context, session_store)
+            self.candidate_service = CandidateService(self.workspace_context, session_store)
+            self.tools.register_candidate_tools(self.edit_service, self.candidate_service)
 
     def run_turn(self, message: str) -> RunnerOutput:
         self.session_store.append_event("user_message", {"message": message})
@@ -82,7 +89,7 @@ class AgentRunner:
             for call in response.tool_calls:
                 steps.append(self._handle_tool_call(call))
 
-        final = "本轮达到最大工具调用步数，建议缩小任务范围或继续下一轮。"
+        final = "本轮达到最大模型步骤数，建议缩小任务范围或继续下一轮。"
         self.session_store.append_event("assistant_message", {"message": final})
         return RunnerOutput(final_text=final, steps=steps)
 

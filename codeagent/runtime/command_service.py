@@ -109,6 +109,8 @@ class CommandService:
                 "stderr_artifact": result.stderr_artifact,
                 "workspace_changed": result.workspace_changed,
                 "changed_files": list(result.changed_files[:20]),
+                "preexisting_changed_files": list(result.preexisting_changed_files[:20]),
+                "command_introduced_changes": list(result.command_introduced_changes[:20]),
                 "workspace_change_artifact": result.workspace_change_artifact,
             },
         )

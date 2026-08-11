@@ -6,13 +6,21 @@
 pytest -q
 ```
 
-v0.3 开发过程中记录的最近基线：
+v0.3 冻结基线：
 
 ```text
 92 passed, 1 skipped
 ```
 
-该数字是仓库文档中的历史记录，不等同于当前工作区已经完成 release 验收。v0.3 仍应在收口后重新运行完整测试，并把运行环境、commit 和结果记录到 release 验收中。
+该数字是 v0.3 的历史记录，不等同于当前 v0.4 工作区结果；v0.4 的最终数字以本次全量 `pytest -q` 为准。
+
+2026-08-11 v0.4 功能分支全量结果（Python 3.11 / Windows）：
+
+```text
+112 passed, 2 skipped in 76.95s
+```
+
+两个 skip 都是当前 Windows 测试环境不能创建 symlink；对应拒绝逻辑仍由可创建 symlink 的平台用例覆盖，不是功能执行失败。
 
 测试覆盖：
 
@@ -30,6 +38,14 @@ v0.3 开发过程中记录的最近基线：
 - 命令前后 tracked/untracked workspace side-effect audit。
 - Windows 可信绝对 `taskkill.exe` 路径。
 - FakeLLM、DeepSeekClient mock、tool call history 和 readonly 回归。
+- `apply_text_patch` 对 active/source 边界、越界、symlink、敏感路径、二进制、UTF-8、大小和上下文匹配的检查。
+- Windows CRLF 文件可以使用 `read_file` 返回的 LF 上下文编辑，并保持 CRLF；混合行尾不被隐式重写。
+- edit journal 的前后 hash、diff 和 session/workspace identity。
+- 确定性模型执行读取、pytest 失败、编辑、pytest 通过、冻结 Candidate 的完整 tool loop。
+- Candidate patch/hash 冻结、UTF-8 新文件、测试 receipt 引用和 workspace side effects。
+- apply 拒绝、source dirty、HEAD 改变、批准期间并发变化、固定 hash 应用与 apply receipt。
+- journaled candidate dirty resume 与普通未知 dirty worktree 的能力分流。
+- 八个工具步骤之后仍保留最终模型总结额度；Candidate status 路径解析保留 Git porcelain 前导状态列。
 
 `tests/conftest.py` 会把 `CODEAGENT_SESSION_ROOT` 指向临时目录，集成测试也使用临时 Git 仓库和 detached worktree，不依赖用户真实项目。
 
@@ -52,21 +68,14 @@ codeagent ask examples\buggy-repos\tiny-sort-bug "请只读分析测试为什么
 
 预期：真实模型请求只读工具，Runtime 记录 tool calls，不运行 pytest，也不写文件。
 
-## v0.3 真实终端验收
+## 真实终端验收
 
-完整 15 项清单见 [V03_MANUAL_TEST.md](V03_MANUAL_TEST.md)。当前清单仍是待填写模板，覆盖：
+当前唯一清单见 [MANUAL_TEST.md](MANUAL_TEST.md)，合并覆盖历史 v0.3 readonly/controlled pytest 基线和 v0.4 edit/Candidate/apply 闭环。真实 DeepSeek 验收需要 API key、网络和真实 TTY，只能使用 disposable fixture。
 
-- readonly/execution mode 分流；
-- detached worktree 与 `run_check`；
-- 真实 approval deny/approve once；
-- pytest、摘要和 command artifacts；
-- source 不受测试副作用污染；
-- exit、resume、stale、dirty 和 cleanup；
-- workspace side-effect audit；
-- 两个 execution session 的隔离。
-
-真实 DeepSeek 验收需要 API key、网络和真实 TTY。不要使用包含敏感代码或未提交修改的重要仓库。
+人工清单关注用户可观察行为和最终交付证据；内部 schema、逐个 artifact 文件、异常分支组合和平台差异主要由自动化测试覆盖。
 
 ## 当前测试不能证明什么
 
 自动化测试验证协议、路径、审计和生命周期行为，但不能证明 pytest 受到主机级安全隔离。当前没有网络、CPU、内存、磁盘、进程数量或系统调用 sandbox；只应在可信本地仓库中使用 execution mode。
+
+自动化测试也不证明真实 DeepSeek 在所有任务上都会主动选择正确的编辑上下文或完成多轮自我修正。真实 provider 的 TTY 验收步骤见 [MANUAL_TEST.md](MANUAL_TEST.md)，需要用户显式提供 API Key 和网络授权。

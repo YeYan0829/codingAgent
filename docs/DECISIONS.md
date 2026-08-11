@@ -119,3 +119,27 @@ Worktree ownership、session lock、base commit 和 apply lock 属于内部一�
 - source 变化或语义冲突时希望保留什么。
 
 高级诊断界面仍可展示内部状态，但不能把理解 Git worktree 作为普通使用前提。
+
+## 14. v0.4 只提供一种受控文本 patch
+
+Execution session 注册 `apply_text_patch(path, old_text, new_text)`，不同时提供 `write_file`、`edit_file` 和通用 unified patch 三套重叠接口。已有文件要求唯一上下文匹配；新增文件要求空 `old_text` 和既存父目录。第一版拒绝删除、symlink、敏感路径、二进制、非 UTF-8 和超限内容。
+
+工具只绑定 `WorkspaceContext.active_root`，并再次要求独立 Git worktree。Readonly registry 不包含该工具，普通 `PermissionLevel.WRITE` 仍保持全局拒绝；受控能力使用单独的 `CANDIDATE_WRITE` 语义。
+
+## 15. Candidate 是不可变交付物
+
+Candidate 的 manifest 和 patch artifact 在冻结时固定，读取时重新验证 SHA-256。状态变化写入独立 `status.json`，不原地改写已展示的 manifest/patch。成功 pytest 必须有真实 command receipt，并且发生在最近编辑之后。
+
+正式 apply 不从当前 worktree 重建 diff，只读取固定 artifact bytes。因此冻结后的继续编辑不能偷换旧 Candidate。
+
+## 16. Apply 是用户控制的独立 Runtime 操作
+
+Agent 不获得 source 写权限。`apply-candidate` 在批准前和批准后分别检查 source HEAD/clean 与 patch preflight，随后应用已展示 hash 对应的完全相同 bytes。拒绝、source dirty、HEAD 改变或并发变化均 fail closed；不自动 stash、reset、merge、rebase 或覆盖用户现场。
+
+## 17. 审计证据不等于用户界面
+
+v0.4 为验证安全不变量，选择保存完整 command、edit、Candidate 和 apply 证据。这回答“模型请求了什么、实际执行了什么、测试产生了什么变化、最终应用的是否为同一 patch”，但不意味着普通用户应直接浏览所有 JSON、日志和目录。
+
+产品默认视图应只呈现任务进度、changed files、diff、测试结论、风险和最终审批。原始 trace 是按需展开的诊断信息。Candidate/hash/apply receipt 属于稳定交付记录；完整 stdout/stderr、逐次 edit journal 和 runtime HOME/TEMP 应有 retention，而不是永久无限保存。
+
+同理，`readonly` / `execution` 是当前 capability 装配方式，不是长期用户心智模型。未来应由任务意图和实际工具需求触发能力升级，同时继续保留显式 Policy/Approval 和 workspace identity。

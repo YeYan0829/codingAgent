@@ -28,9 +28,10 @@ class DefaultPolicy:
         mapping = {
             PermissionLevel.READ: (PolicyDecision.ALLOW, "readonly tool is allowed"),
             PermissionLevel.EXEC_READONLY: (PolicyDecision.ASK, "readonly executable tool requires approval"),
-            PermissionLevel.WRITE: (PolicyDecision.DENY, "write tools are disabled in v0.1"),
-            PermissionLevel.NETWORK: (PolicyDecision.DENY, "network tools are disabled in v0.1"),
-            PermissionLevel.DANGEROUS: (PolicyDecision.DENY, "dangerous tools are disabled in v0.1"),
+            PermissionLevel.WRITE: (PolicyDecision.DENY, "普通 write 工具未开放；只能使用受控 candidate 写入"),
+            PermissionLevel.CANDIDATE_WRITE: (PolicyDecision.ALLOW, "受控 candidate 写入只作用于 execution worktree"),
+            PermissionLevel.NETWORK: (PolicyDecision.DENY, "network tools are disabled"),
+            PermissionLevel.DANGEROUS: (PolicyDecision.DENY, "dangerous tools are disabled"),
         }
         decision, reason = mapping[tool.permission_level]
         return PolicyResult(decision=decision, reason=reason)

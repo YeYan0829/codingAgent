@@ -14,6 +14,7 @@ class PermissionLevel(StrEnum):
     READ = "READ"
     EXEC_READONLY = "EXEC_READONLY"
     WRITE = "WRITE"
+    CANDIDATE_WRITE = "CANDIDATE_WRITE"
     NETWORK = "NETWORK"
     DANGEROUS = "DANGEROUS"
 

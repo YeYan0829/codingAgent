@@ -19,7 +19,8 @@ class PathGuard:
         resolved = target.resolve()
         if not self._is_relative_to(resolved, self.workspace_root):
             raise PathGuardError(f"path escapes workspace: {path}")
-        if reject_sensitive and is_sensitive_path(resolved):
+        relative = resolved.relative_to(self.workspace_root)
+        if reject_sensitive and is_sensitive_path(relative):
             raise PathGuardError(f"sensitive file is blocked: {resolved.name}")
         return resolved
 

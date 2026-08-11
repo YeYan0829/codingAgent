@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 import sys
 import shutil
+import hashlib
+import subprocess
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+from rich.prompt import Confirm
 
 from codeagent import __version__
 from codeagent.config import ModelConfig
@@ -18,6 +21,7 @@ from codeagent.runtime.approval import AutoApprovalGate, ConsoleApprovalGate
 from codeagent.runtime.artifacts import CommandArtifactStore
 from codeagent.runtime.local_executor import LocalCommandExecutor
 from codeagent.runtime.runner import AgentRunner
+from codeagent.runtime.candidate import ApplyStatus, CandidateError, CandidateService
 from codeagent.session.events import SessionEvent
 from codeagent.session.store import SessionStore, SessionStoreError
 from codeagent.tools.fs_read import build_fs_tools
@@ -198,6 +202,82 @@ def cleanup_session(
     console.print(f"cleaned worktree: {context.active_root}")
 
 
+@app.command("freeze-candidate")
+def freeze_candidate(
+    session_id: str = typer.Argument(..., help="要冻结当前 task worktree 的 execution session id。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """把当前已记录编辑与成功 pytest 证据冻结为不可变 Candidate。"""
+    store = _load_candidate_store(session_id, session_root)
+    try:
+        candidate = CandidateService(store.workspace_context(), store).freeze()
+    except CandidateError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    _print_candidate(candidate, CandidateService(store.workspace_context(), store).load(candidate["candidate_id"])[1])
+
+
+@app.command("show-candidate")
+def show_candidate(
+    identifier: str = typer.Argument(..., help="session id 或 candidate id。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """显示 Candidate identity、测试证据和完整固定 diff。"""
+    store = _load_candidate_store(identifier, session_root)
+    service = CandidateService(store.workspace_context(), store)
+    try:
+        candidate_id = None if identifier == store.session_id else identifier
+        manifest, patch = service.load(candidate_id)
+    except CandidateError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    _print_candidate(manifest, patch)
+
+
+@app.command("reject-candidate")
+def reject_candidate(
+    identifier: str = typer.Argument(..., help="session id 或 candidate id。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """拒绝 Candidate；保留 artifacts 和 dirty task worktree，不修改 source。"""
+    store = _load_candidate_store(identifier, session_root)
+    service = CandidateService(store.workspace_context(), store)
+    try:
+        receipt = service.reject(None if identifier == store.session_id else identifier)
+    except CandidateError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(json.dumps(receipt, ensure_ascii=False, indent=2), markup=False)
+
+
+@app.command("apply-candidate")
+def apply_candidate(
+    identifier: str = typer.Argument(..., help="session id 或 candidate id。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """复检 source identity，经明确批准后应用固定 Candidate patch。"""
+    store = _load_candidate_store(identifier, session_root)
+    service = CandidateService(store.workspace_context(), store)
+
+    def approve(manifest: dict, patch: str) -> bool:
+        _print_candidate(manifest, patch.encode("utf-8"))
+        if not sys.stdin.isatty():
+            return False
+        try:
+            return Confirm.ask("确认把以上固定 Candidate 应用到 source？", default=False)
+        except (EOFError, KeyboardInterrupt):
+            return False
+
+    try:
+        receipt = service.apply(None if identifier == store.session_id else identifier, approve)
+    except CandidateError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(json.dumps(receipt, ensure_ascii=False, indent=2), markup=False)
+    if receipt["status"] != ApplyStatus.APPLIED.value:
+        raise typer.Exit(1)
+
+
 @app.command()
 def resume(
     session_id: str | None = typer.Argument(None, help="要恢复的 session id；省略时打开全局选择器。"),
@@ -230,7 +310,9 @@ def resume(
     context = store.workspace_context()
     execution_allowed = True
     if meta.get("mode") == "execution":
-        report = GitWorktreeManager(store.session_root).inspect(context)
+        report = GitWorktreeManager(store.session_root).inspect(
+            context, candidate_changes=_has_resumable_candidate_changes(store, context)
+        )
         store.update_workspace_state(report.state.value, report.reason)
         execution_allowed = report.executable
         if not execution_allowed:
@@ -277,6 +359,63 @@ def _load_session_list(workspace_filter: Path | None, session_root: Path | None)
         ws = Workspace(workspace_filter)
         return SessionStore.list_sessions(ws.root, session_root=session_root, include_legacy=session_root is None)
     return SessionStore.list_all_sessions(session_root=session_root)
+
+
+def _load_candidate_store(identifier: str, session_root: Path | None) -> SessionStore:
+    metas = SessionStore.list_all_sessions(session_root=session_root)
+    for meta in metas:
+        session_id = meta.get("session_id")
+        source = meta.get("source_workspace") or meta.get("workspace")
+        if not session_id or not source:
+            continue
+        store = SessionStore(source, session_id=session_id, session_root=session_root).load()
+        if identifier == session_id or (store.session_dir / "artifacts" / "candidates" / identifier / "candidate.json").is_file():
+            return store
+    console.print(f"[red]session/candidate not found: {identifier}[/red]")
+    raise typer.Exit(1)
+
+
+def _has_resumable_candidate_changes(store: SessionStore, context: WorkspaceContext) -> bool:
+    """只把 edit journal 和 command delta 可解释的 dirty 状态视为可恢复候选现场。"""
+    edit_hashes: dict[str, str] = {}
+    allowed_paths: set[str] = set()
+    for event in store.read_events():
+        if event.type == "edit_receipt":
+            path = str(event.payload.get("path", ""))
+            if path:
+                allowed_paths.add(path)
+                edit_hashes[path] = str(event.payload.get("after_sha256", ""))
+        elif event.type == "command_receipt":
+            result = event.payload.get("result") or {}
+            allowed_paths.update(str(item).replace("\\", "/") for item in result.get("command_introduced_changes", []))
+    if not edit_hashes:
+        return False
+    for relative, expected_hash in edit_hashes.items():
+        target = context.active_root / relative
+        if not target.is_file() or target.is_symlink() or hashlib.sha256(target.read_bytes()).hexdigest() != expected_hash:
+            return False
+    proc = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=context.active_root,
+        text=True, capture_output=True, shell=False, check=False, timeout=10,
+    )
+    if proc.returncode:
+        return False
+    dirty_paths = {line[3:].replace("\\", "/") for line in proc.stdout.splitlines() if len(line) > 3}
+    return bool(dirty_paths) and dirty_paths <= allowed_paths
+
+
+def _print_candidate(manifest: dict, patch: bytes) -> None:
+    summary = {
+        "candidate_id": manifest.get("candidate_id"),
+        "session_id": manifest.get("session_id"),
+        "base_commit": manifest.get("base_commit"),
+        "patch_sha256": manifest.get("patch_sha256"),
+        "changed_files": manifest.get("changed_files"),
+        "workspace_side_effects": manifest.get("workspace_side_effects"),
+        "test_receipts": manifest.get("test_receipts"),
+    }
+    console.print(Panel(json.dumps(summary, ensure_ascii=False, indent=2), title="Frozen Candidate"), markup=False)
+    console.print(patch.decode("utf-8"), markup=False)
 
 
 def _resolve_resume_workspace(session_id: str, workspace_filter: Path | None, session_root: Path | None) -> Path | None:

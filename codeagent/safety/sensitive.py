@@ -15,7 +15,11 @@ class SensitiveListingMode(StrEnum):
 
 
 def is_sensitive_path(path: Path) -> bool:
-    name = path.name.lower()
+    return any(_is_sensitive_name(part) for part in path.parts)
+
+
+def _is_sensitive_name(value: str) -> bool:
+    name = value.lower()
     if name in ENV_TEMPLATE_NAMES:
         return False
     if name in SENSITIVE_EXACT:

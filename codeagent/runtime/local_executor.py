@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import signal
 import subprocess
 import sys
@@ -40,6 +41,7 @@ class LocalCommandExecutor:
         cwd = (workspace_context.active_root / spec.cwd).resolve()
         environment = _minimal_environment(artifacts)
         before, audit_error = _git_status(workspace_context.active_root)
+        before_fingerprints = _workspace_fingerprints(workspace_context.active_root, before)
         popen_kwargs = {
             "cwd": cwd,
             "env": environment,
@@ -66,7 +68,7 @@ class LocalCommandExecutor:
                     status = CommandExecutionStatus.TIMED_OUT
                     timed_out = True
         except OSError as exc:
-            audit = _workspace_audit(workspace_context.active_root, artifacts, before, audit_error)
+            audit = _workspace_audit(workspace_context.active_root, artifacts, before, before_fingerprints, audit_error)
             return self._result(
                 status=CommandExecutionStatus.SPAWN_FAILED,
                 exit_code=None,
@@ -78,7 +80,7 @@ class LocalCommandExecutor:
                 audit=audit,
             )
 
-        audit = _workspace_audit(workspace_context.active_root, artifacts, before, audit_error)
+        audit = _workspace_audit(workspace_context.active_root, artifacts, before, before_fingerprints, audit_error)
         return self._result(
             status=status,
             exit_code=exit_code,
@@ -155,10 +157,14 @@ class LocalCommandExecutor:
             environment_names=tuple(sorted(environment)),
             workspace_changed=audit.get("changed") if audit else None,
             changed_files=tuple(audit.get("files", ())) if audit else (),
+            preexisting_changed_files=tuple(audit.get("preexisting_files", ())) if audit else (),
+            command_introduced_changes=tuple(audit.get("introduced_files", ())) if audit else (),
             workspace_change_artifact=str(artifacts.workspace_change_path) if artifacts else None,
             workspace_audit_error=audit.get("error") if audit else None,
             git_status_before=audit.get("before") if audit else None,
             git_status_after=audit.get("after") if audit else None,
+            git_fingerprints_before=audit.get("before_fingerprints") if audit else None,
+            git_fingerprints_after=audit.get("after_fingerprints") if audit else None,
         )
 
 
@@ -235,7 +241,7 @@ def _git_status(root: Path) -> tuple[str | None, str | None]:
     try:
         proc = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=all"], cwd=root,
-            text=True, capture_output=True, shell=False, check=False, timeout=10,
+            text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, check=False, timeout=10,
         )
         if proc.returncode:
             return None, proc.stderr.strip() or "git status failed"
@@ -244,14 +250,20 @@ def _git_status(root: Path) -> tuple[str | None, str | None]:
         return None, str(exc)
 
 
-def _workspace_audit(root: Path, artifacts: CommandArtifactPaths, before: str | None, prior_error: str | None) -> dict:
+def _workspace_audit(
+    root: Path,
+    artifacts: CommandArtifactPaths,
+    before: str | None,
+    before_fingerprints: dict[str, str],
+    prior_error: str | None,
+) -> dict:
     after, after_error = _git_status(root)
     errors = [item for item in (prior_error, after_error) if item]
     patch_text = ""
     try:
         diff = subprocess.run(
             ["git", "diff", "--binary", "--no-ext-diff"], cwd=root,
-            text=True, capture_output=True, shell=False, check=False, timeout=10,
+            text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, check=False, timeout=10,
         )
         if diff.returncode:
             errors.append(diff.stderr.strip() or "git diff failed")
@@ -259,7 +271,16 @@ def _workspace_audit(root: Path, artifacts: CommandArtifactPaths, before: str | 
             patch_text = diff.stdout
     except (OSError, subprocess.SubprocessError) as exc:
         errors.append(str(exc))
-    files = sorted({line[3:] for line in (after or "").splitlines() if len(line) > 3})
+    before_rows = {line for line in (before or "").splitlines() if len(line) > 3}
+    after_rows = {line for line in (after or "").splitlines() if len(line) > 3}
+    after_fingerprints = _workspace_fingerprints(root, after)
+    files = sorted({line[3:] for line in after_rows})
+    preexisting_files = sorted({line[3:] for line in before_rows})
+    introduced_files = sorted(
+        path
+        for path in set(before_fingerprints) | set(after_fingerprints)
+        if before_fingerprints.get(path) != after_fingerprints.get(path)
+    )
     untracked = [line[3:] for line in (after or "").splitlines() if line.startswith("?? ")]
     if untracked:
         patch_text += "\n# Untracked files\n"
@@ -267,13 +288,13 @@ def _workspace_audit(root: Path, artifacts: CommandArtifactPaths, before: str | 
             try:
                 untracked_diff = subprocess.run(
                     ["git", "diff", "--no-index", "--binary", "--", "/dev/null", relative],
-                    cwd=root, text=True, capture_output=True, shell=False, check=False, timeout=10,
+                    cwd=root, text=True, encoding="utf-8", errors="replace", capture_output=True, shell=False, check=False, timeout=10,
                 )
                 if untracked_diff.returncode not in {0, 1}:
                     errors.append(untracked_diff.stderr.strip() or f"untracked diff failed: {relative}")
                     patch_text += f"# unavailable: {relative}\n"
                 else:
-                    patch_text += untracked_diff.stdout
+                    patch_text += untracked_diff.stdout or ""
             except (OSError, subprocess.SubprocessError) as exc:
                 errors.append(f"{relative}: {exc}")
     try:
@@ -285,5 +306,26 @@ def _workspace_audit(root: Path, artifacts: CommandArtifactPaths, before: str | 
         "after": after,
         "changed": None if before is None or after is None else before != after,
         "files": files,
+        "preexisting_files": preexisting_files,
+        "introduced_files": introduced_files,
+        "before_fingerprints": before_fingerprints,
+        "after_fingerprints": after_fingerprints,
         "error": "; ".join(errors) or None,
     }
+
+
+def _workspace_fingerprints(root: Path, status: str | None) -> dict[str, str]:
+    fingerprints: dict[str, str] = {}
+    for line in (status or "").splitlines():
+        if len(line) <= 3:
+            continue
+        relative = line[3:].replace("\\", "/")
+        # 第一版编辑不支持 rename；对 Git rename 的展示形式仍保留可审计 marker。
+        if " -> " in relative:
+            relative = relative.split(" -> ", 1)[1]
+        target = root / relative
+        try:
+            fingerprints[relative] = hashlib.sha256(target.read_bytes()).hexdigest() if target.is_file() else "<missing>"
+        except OSError as exc:
+            fingerprints[relative] = f"<unavailable:{type(exc).__name__}>"
+    return fingerprints

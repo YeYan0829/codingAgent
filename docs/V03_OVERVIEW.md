@@ -16,7 +16,7 @@ v0.3 的核心目标不是交付完整 coding loop，而是验证下面这条受
 → 精简结果返回模型
 ```
 
-当前包版本为 `0.3.0`。v0.3 已在 `wip/v0.3` 分支形成经过验证的开发基线，但尚未合并到 `master` 或创建公开 release/tag。自动化测试基线为 `92 passed, 1 skipped`；2026-08-10 已在 Windows PowerShell 中完成 DeepSeek V4 Flash 真实 TTY 核心端到端验收，包括连接、tool calling、deny 后继续对话、approve once、真实 pytest、artifact 和 source clean 检查。详细记录见[人工验收清单](V03_MANUAL_TEST.md)。
+当前包版本为 `0.3.0`。v0.3 已在 `wip/v0.3` 分支形成经过验证的开发基线，但尚未合并到 `master` 或创建公开 release/tag。自动化测试基线为 `92 passed, 1 skipped`；2026-08-10 已在 Windows PowerShell 中完成 DeepSeek V4 Flash 真实 TTY 核心端到端验收，包括连接、tool calling、deny 后继续对话、approve once、真实 pytest、artifact 和 source clean 检查。历史结果已并入[统一人工验收](MANUAL_TEST.md)。
 
 ## 2. 用户现在能做什么
 
@@ -76,15 +76,15 @@ Clean-only 是 v0.3 的阶段性限制。因为 worktree 从 Git HEAD 创建，�
 
 ## 4. 核心对象
 
-| 对象 | 含义 | 当前职责 |
-| --- | --- | --- |
-| Source workspace | 用户原始项目目录 | 保存正式代码；Runtime 不 stash、不自动 commit，也不回写 task 变化 |
-| Active workspace | 当前工具实际操作的目录 | readonly 时等于 source；execution 时是 worktree |
-| Worktree | execution session 的独立 Git 工作目录 | 隔离 source 与测试产生的 Git 状态变化 |
-| Session | 一次任务的持久化记录 | 保存对话、tool calls、metadata、workspace 状态和 artifacts |
-| CommandSpec | Runtime 固化后的不可变命令 | 固定 argv、cwd、timeout 和 command kind |
-| Receipt | 一次命令的结构化回执 | 记录 policy、approval、状态、结果和副作用 |
-| Artifact | 完整执行证据 | 保存 request/result、stdout/stderr 和 workspace diff |
+| 对象             | 含义                                  | 当前职责                                                          |
+| ---------------- | ------------------------------------- | ----------------------------------------------------------------- |
+| Source workspace | 用户原始项目目录                      | 保存正式代码；Runtime 不 stash、不自动 commit，也不回写 task 变化 |
+| Active workspace | 当前工具实际操作的目录                | readonly 时等于 source；execution 时是 worktree                   |
+| Worktree         | execution session 的独立 Git 工作目录 | 隔离 source 与测试产生的 Git 状态变化                             |
+| Session          | 一次任务的持久化记录                  | 保存对话、tool calls、metadata、workspace 状态和 artifacts        |
+| CommandSpec      | Runtime 固化后的不可变命令            | 固定 argv、cwd、timeout 和 command kind                           |
+| Receipt          | 一次命令的结构化回执                  | 记录 policy、approval、状态、结果和副作用                         |
+| Artifact         | 完整执行证据                          | 保存 request/result、stdout/stderr 和 workspace diff              |
 
 当前一个 execution session 绑定一个 worktree 和一个 `base_commit`。Resume 只检查并恢复原现场，不做自动同步、merge 或 rebase。
 
@@ -172,7 +172,7 @@ v0.3 已经建立“理解代码 + 受控验证”的底座，但还不是完整
 主机级隔离      尚未实现
 ```
 
-v0.3 现在作为受控执行基线冻结。下一阶段直接实现“隔离修改 → 测试 → 候选 diff → 用户接受并安全应用或放弃”的最小完整闭环，不再以零散基础设施优化延迟用户可用能力。详细范围见 [ROADMAP.md](ROADMAP.md)。
+近期重点应是先稳定 v0.3，再实现“隔离修改 → 测试 → 候选 diff → 用户接受或放弃”的最小闭环。详细顺序见 [ROADMAP.md](ROADMAP.md)。
 
 ### v0.3 验收结论
 
@@ -195,4 +195,4 @@ v0.3 现在作为受控执行基线冻结。下一阶段直接实现“隔离修
 - [DECISIONS.md](DECISIONS.md)：关键设计取舍及其适用边界。
 - [ROADMAP.md](ROADMAP.md)：从 v0.3 到完整候选修改闭环的版本路线。
 - [TESTING.md](TESTING.md)：自动化测试、smoke test 和测试不能证明的内容。
-- [V03_MANUAL_TEST.md](V03_MANUAL_TEST.md)：真实终端 release 验收清单。
+- [MANUAL_TEST.md](MANUAL_TEST.md)：合并后的当前真实终端验收清单。

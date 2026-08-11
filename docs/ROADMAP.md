@@ -34,9 +34,9 @@
 
 当前包版本为 `0.3.0`。自动化回归和 Windows 真实 TTY/DeepSeek 核心端到端验收已经通过；当前基线位于 `wip/v0.3`，尚未合并到 `master` 或创建公开 release/tag。
 
-## 下一阶段
+## 当前任务闭环
 
-### v0.4：最小完整候选修改闭环
+### v0.4：最小完整候选修改闭环（当前实现）
 
 不再把写入、测试、diff 和应用拆成多个长期版本。v0.4 以一条可实际使用的纵向链路为目标：
 
@@ -68,16 +68,37 @@ Candidate 至少绑定：
 
 验收目标：在一个小型真实任务中，Agent 能完成读取、编辑、pytest、自我修正、展示候选 diff，并由用户明确批准后安全写入 source；拒绝或 source 已变化时不写 source。
 
-### 不阻塞 v0.4 的可靠性待办
+当前功能分支已经实现这一纵向链路和确定性 fixture，包括 edit journal、不可变 Candidate、测试 receipt 绑定、拒绝/并发变化 fail closed、apply receipt 以及 candidate dirty resume。自动化回归和 Windows/DeepSeek 真实终端 1–7 人工验收已通过；合并、release/tag 仍需用户检查后单独执行。
+
+### v0.4.1：体验与生命周期收敛
+
+真实使用已经证明闭环可用，也暴露出当前架构术语和审计细节直接进入 UX：
+
+- 用户必须预先选择 readonly/execution，而不是只描述任务；
+- 自定义 session root 在 resume/apply 时需要反复传入；
+- Candidate、receipt、完整日志和 runtime 目录缺少统一任务视图；
+- 所有诊断副产物默认长期保留，缺少容量/时间策略；
+- pytest cache 等普通副作用会干扰 clean-source 体验。
+
+近期优先收敛：
+
+1. task-first CLI：默认读取，首次测试/编辑时申请 capability upgrade；
+2. 用 workspace revision 显式表达 source → task worktree 的迁移，不能静默切根；
+3. 一个任务时间线聚合进度、diff、测试和审批，底层 artifacts 默认折叠；
+4. 将数据分为交付证据、任务历史和诊断副产物，并加入 retention/容量/删除策略；
+5. 记住 session root，统一 pytest cache 策略，减少用户手工恢复现场。
+
+这些工作不削弱 Candidate hash、source identity、Policy 或 Approval；目标是把安全机制留在 Runtime 内部，而不是让用户操作机制本身。
+
+### v0.4.x 可靠性 backlog
 
 以下问题继续按风险处理，不再默认成为写入闭环的前置项目：
 
-- 敏感目录父路径检查；
 - pytest cache 与 resume/cleanup 体验；
 - 文件搜索跳过目录规则；
 - timeout 后进程树终止兜底；
 - Runtime 侧统一工具参数 schema validation；
-- artifact/runtime retention。
+- artifact/runtime retention（已提升为 v0.4.1 体验主线）。
 
 其中任何问题一旦涉及 source 数据破坏、路径越界、Policy/Approval 绕过、密钥泄露或真实 provider 阻断，立即升级为阻塞项；其余随 v0.4 纵向用例触发修复。
 

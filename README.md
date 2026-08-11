@@ -1,74 +1,53 @@
 # CodeAgent Runtime
 
-CodeAgent Runtime 是一个本地运行的受控 Coding Agent Runtime。v0.3.0 支持只读代码分析，以及 pytest-only controlled execution：模型可以读取代码、申请运行 pytest、观察结果并继续分析，但不能主动编辑项目文件。
+CodeAgent Runtime 是一个本地运行、以不覆盖用户代码为首要约束的最小 Coding Agent Runtime。v0.4.0 已实现完整候选修改闭环：
 
-当前包版本为 `0.3.0`。v0.3 的自动化回归和 Windows 真实 TTY/DeepSeek 核心端到端验收已经通过，形成可继续开发的受控执行基线；当前仍位于 `wip/v0.3` 分支，尚未合并到 `master` 或创建公开 release/tag。
+```text
+描述任务 → 读取代码 → pytest 基线 → 在隔离工作区编辑 → 再次验证
+→ 冻结 Candidate → 用户审查 diff → 拒绝或批准进入 source
+```
 
-Execution session 从用户仓库当前 HEAD 创建独立的 Git detached worktree，测试产生的缓存和代码状态变化留在任务工作区。命令还必须经过 `Policy` 和逐次 `Approval`，完整输出与副作用审计保存为 session artifact。
+当前仍是功能分支上的 L2 任务闭环实现，尚未合并到 `master`，也没有创建 release/tag。它适用于用户信任的本地 Git 仓库；Git worktree 保护代码状态，但不是主机安全沙箱。
 
-当前项目面向可信的本地 Git 仓库。Git worktree 保护的是代码状态，不是宿主机安全沙箱；项目不承诺抵御恶意仓库中的 Python 代码。
+## v0.4 用户能力
 
-## 当前能力
+- 使用 Fake 或 DeepSeek provider 探索本地代码。
+- 在独立 task worktree 中运行受控 pytest，不接受任意 shell。
+- 使用唯一的受控文本 patch 工具修改 UTF-8 文件，不能直接写 source。
+- 测试通过后冻结包含固定 diff、hash、changed files 和测试结果的 Candidate。
+- 用户可以查看、拒绝或批准 Candidate。
+- Apply 前后检查 source HEAD 和 clean 状态；source 变化时拒绝，不自动 merge/rebase。
+- 退出后可以恢复包含候选修改的 worktree；dirty worktree 不会被 cleanup 静默删除。
 
-- Typer CLI：`start`、`ask`、`list-sessions`、`resume`、`cleanup`。
-- Session 持久化、标题、事件历史、transcript 和跨进程 resume。
-- Fake provider，以及通过 OpenAI SDK 适配的 DeepSeek Chat Completions tool calling。
-- 只读文件工具：`list_dir`、`show_tree`、`read_file`、`search_text`、`find_files`。
-- 只读 Git 工具：`git_status`、`git_diff_stat`。
-- `readonly` 与 `execution` 两种 session mode；默认仍为 `readonly`。
-- Execution session 只接受完全干净的 Git 仓库，并创建唯一 detached worktree。
-- 模型可通过 `run_check` 请求固定的 `sys.executable -m pytest ...`，不能提交 shell command string。
-- `CommandPolicy` 与 `approve_once` / `deny`；非交互终端默认拒绝需要 approval 的命令。
-- 固定 timeout、最小环境变量、`shell=False`、不可交互 stdin。
-- 完整 stdout/stderr、request、result 和 workspace diff artifacts。
-- Resume 时检查 source/worktree HEAD、Git 注册关系及 dirty 状态。
-- `ready`、`source_dirty`、`stale`、`worktree_dirty`、`missing`、`discarded` 等 workspace 状态。
-- 普通退出保留 worktree；用户可显式 cleanup，dirty worktree 不会被静默删除。
-- 每次真实命令前后记录 Git 状态、tracked diff、untracked 文件和 changed files。
+## 快速使用
 
-版本能力和完整数据流见 [v0.3 总览](docs/V03_OVERVIEW.md)。
-
-## 安装
+安装开发版本：
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-## CLI 示例
-
-### Readonly
-
-默认 mode 是 `readonly`，不创建 worktree，也不注册 `run_check`：
+只读探索：
 
 ```bash
-codeagent start .
-codeagent ask . "分析这个项目的结构"
-```
-
-使用 DeepSeek：
-
-```powershell
-$env:DEEPSEEK_API_KEY="你的 key"
 codeagent start . --provider deepseek --model deepseek-v4-flash
 ```
 
-### Execution
-
-Execution mode 只支持完全干净的 Git 仓库：
+执行完整 Coding Agent 任务：
 
 ```bash
 codeagent start . --mode execution --provider deepseek --model deepseek-v4-flash
 ```
 
-交互过程中，模型调用 `run_check` 时 CLI 会展示固定后的完整 argv、相对 cwd、timeout、active workspace 和安全提示。用户只能选择本次批准或拒绝。
-
-非交互命令也可创建 execution session，但当前会默认拒绝需要 approval 的 pytest：
+Candidate 审查与处理：
 
 ```bash
-codeagent ask . "运行 pytest 并解释失败" --mode execution --provider deepseek
+codeagent show-candidate <session-id-or-candidate-id>
+codeagent apply-candidate <session-id-or-candidate-id>
+codeagent reject-candidate <session-id-or-candidate-id>
 ```
 
-### Resume 与 cleanup
+Session 恢复和保守清理：
 
 ```bash
 codeagent list-sessions
@@ -76,34 +55,51 @@ codeagent resume <session-id>
 codeagent cleanup <session-id>
 ```
 
-普通退出不会删除 worktree，便于 resume。`cleanup` 只清理干净、仍被 Git 注册且位于受管 session root 的 worktree，不使用强制删除。
-
-可通过环境变量或选项指定 session root：
+如果创建 session 时使用了 `--session-root`，后续命令目前也必须传入同一个值。也可以统一设置：
 
 ```powershell
 $env:CODEAGENT_SESSION_ROOT="D:\codeagent-sessions"
-codeagent list-sessions
-codeagent resume <session-id> --session-root D:\codeagent-sessions
 ```
 
-## 当前限制
+## 为什么现在需要 readonly / execution
 
-- 只支持 pytest，不支持 npm、pnpm、ruff、mypy 或任意 shell。
-- Agent 不能主动写文件、编辑文件、应用 patch、merge 或 rebase。
-- 不自动发现项目 `.venv`，pytest 使用运行 CodeAgent 的 `sys.executable`。
-- 不安装 Python、Node 或其他项目依赖。
-- 没有网络隔离或受控网络访问。
-- 没有 Docker、bubblewrap、VM 或其他主机级 sandbox。
-- 没有 CPU、内存、磁盘、进程数量和系统调用限制。
-- Worktree 只隔离 Git 代码状态，不限制进程能访问的宿主机资源。
-- pytest 仍以当前用户权限运行，可能访问 workspace 之外的文件、网络和本地服务。
-- 当前仅适用于用户信任的本地仓库，不应对不可信项目启用 execution mode。
+这是当前实现的能力边界，不是理想产品交互：
 
-## 文档
+- `readonly` 直接读取 source，不创建 worktree，也不注册测试和编辑工具。
+- `execution` 要求 clean Git source，预先创建 detached worktree，再注册 pytest、编辑和 Candidate 工具。
 
-- [v0.3 总览](docs/V03_OVERVIEW.md)：当前能力、模式、生命周期、安全边界和成熟度。
-- [架构说明](docs/ARCHITECTURE.md)：模块职责、执行链、workspace、session 和 artifacts。
-- [设计决策](docs/DECISIONS.md)：关键取舍以及为何不自动同步、stash 或直接写 source。
-- [Roadmap](docs/ROADMAP.md)：从稳定 v0.3 到候选修改、正式 apply 和 dirty snapshot。
-- [测试说明](docs/TESTING.md)：自动化测试、smoke test 和测试边界。
-- [真实终端人工验收](docs/V03_MANUAL_TEST.md)：v0.3 release 前的人工检查清单。
+这样做让 v0.4 的权限边界容易验证，但迫使用户在任务开始前理解内部 mode。成熟体验应该只有“开始一个任务”：Agent 先读取；真正需要测试或编辑时，Runtime 再申请权限并创建隔离工作区。`readonly` / `execution` 应逐步退回内部 capability，而不是长期作为用户必须选择的产品概念。
+
+## 为什么保存这么多 artifacts
+
+真实 Coding Agent 通常也会保存部分对话、tool trace、diff、测试结果和审批记录，企业环境往往保存得更多；区别是这些内容通常被折叠在任务时间线或诊断页面中，而不是要求用户直接理解目录和 receipt。
+
+v0.4 采用 audit-first 实现，为验证安全不变量，当前会保留每次命令的 request/result、stdout/stderr、workspace diff，每次编辑的 journal，以及 Candidate/apply receipt。它们默认位于用户级 session root，不写入项目 source，但目前没有自动 retention，因此确实比正常个人 Coding Agent 体验更重。
+
+长期应分成三层：
+
+| 层级 | 内容 | 目标生命周期 |
+| --- | --- | --- |
+| 交付证据 | Candidate patch/hash、changed files、最终测试摘要、apply receipt | 长期保留，用户可见 |
+| 任务历史 | 对话、关键 tool timeline、失败原因 | 随 session 保留，可删除或导出 |
+| 诊断副产物 | 完整 stdout/stderr、逐次 edit journal、runtime HOME/TEMP、命令中间 diff | 默认隐藏，按容量/时间自动清理 |
+
+当前实现完成了证据采集，但尚未完成分层展示、压缩和 retention。这是明确的 UX/生命周期待办，不应被描述为最终用户必须承担的操作方式。
+
+## 安全与功能边界
+
+- 只支持 pytest，不支持 npm、pnpm、ruff、mypy、依赖安装或任意 shell。
+- 文本 patch 不支持删除、移动/重命名、非 UTF-8、二进制、symlink、敏感路径、超大文件或自动建目录。
+- 不支持 dirty source snapshot、自动 merge/rebase 或冲突解决。
+- 不自动发现项目 `.venv`，pytest 使用运行 CodeAgent 的 Python。
+- 没有网络、CPU、内存、磁盘、进程数量或系统调用 sandbox。
+- pytest 仍以当前用户权限运行，只应对可信仓库启用 execution capability。
+
+## 文档职责
+
+- [架构说明](docs/ARCHITECTURE.md)：内部模块、workspace、执行、Candidate、apply 和证据分层。
+- [设计决策](docs/DECISIONS.md)：安全与产品取舍，以及当前模式为何只是阶段性实现。
+- [Roadmap](docs/ROADMAP.md)：已完成能力、体验收敛和后续可靠性路线。
+- [测试说明](docs/TESTING.md)：自动化覆盖与不能证明的边界。
+- [人工验收](docs/MANUAL_TEST.md)：当前版本唯一的真实终端验收清单。
+- [v0.3 总览](docs/V03_OVERVIEW.md)：历史版本基线，仅用于回溯。

@@ -176,7 +176,7 @@ def _is_safe_workspace_entry(guard: PathGuard, path: Path) -> bool:
 
 
 def _render_listing_item(path: Path, mode: SensitiveListingMode, display_name: str | None = None) -> str | None:
-    label = sensitive_label(path)
+    label = sensitive_label(Path(path.name))
     name = display_name or f"{path.name}{'/' if path.is_dir() else ''}"
     if label is None:
         return name

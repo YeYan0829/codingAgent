@@ -1,6 +1,6 @@
 # 架构说明
 
-本文是当前代码结构的唯一详细说明，合并了原 `MODULES.md`、workspace、command execution、local executor 和 CLI execution 等分散文档。版本定位和用户能力先看 [V03_OVERVIEW.md](V03_OVERVIEW.md)。
+本文只说明当前内部架构、信任边界和演进方向。用户能力先看项目 [README](../README.md)，真实终端验收见 [MANUAL_TEST.md](MANUAL_TEST.md)；历史 v0.3 行为见 [V03_OVERVIEW.md](V03_OVERVIEW.md)。
 
 ## 1. 总体结构
 
@@ -18,6 +18,8 @@ CLI
         ├── ApprovalGate
         ├── LocalCommandExecutor
         └── CommandArtifactStore
+    ├── TextPatchService / Edit journal
+    └── CandidateService / Apply receipt
 ```
 
 主要模块：
@@ -32,6 +34,23 @@ CLI
 | `tools` | 工具 schema、权限级别和 handler | 绕过 Policy 或直接开放 shell |
 | `runtime` | Agent loop、Policy、Approval 和命令编排 | provider-specific response 解析 |
 | `safety` | workspace 路径与敏感内容边界 | 主机级 sandbox |
+
+v0.4 的纵向关系是：
+
+```text
+Source workspace (用户正式代码)
+  │ clean HEAD snapshot
+  ▼
+Task worktree (Agent 读取、pytest、受控编辑)
+  │ freeze immutable patch + test evidence
+  ▼
+Candidate (用户审查的交付物)
+  │ explicit approval + source identity recheck
+  ▼
+Source workspace (应用完全相同的 patch bytes)
+```
+
+对话和工具循环只操作 active workspace；正式 apply 是独立 CLI/Runtime 路径，不是 Agent 写工具。
 
 ## 2. Readonly Agent 数据流
 
@@ -143,7 +162,7 @@ Resume 检查：
 - source/worktree HEAD 是否等于 `base_commit`；
 - source 和 worktree 是否 dirty。
 
-只有 `ready` 恢复 execution capability。Runtime 不自动刷新 stale session，也不把 source 新变化同步到旧 worktree。
+`ready` 和可由 edit journal/command delta 解释的 `candidate_changes` 可以恢复 execution capability。Runtime 不自动刷新 stale session，也不把 source 新变化同步到旧 worktree。
 
 ### Cleanup
 
@@ -258,7 +277,7 @@ PYTHONDONTWRITEBYTECODE=1
 └── tmp/
 ```
 
-Runtime 目录与 command artifact 通过 session id 和 command id 关联，但不是长期审计证据。当前 v0.3 仍会保留这些目录；自动清理和 retention policy 留待后续生命周期增强。
+Runtime 目录与 command artifact 通过 session id 和 command id 关联，但不是长期交付证据。当前 v0.4 仍会保留这些目录；自动清理和 retention policy 尚未实现。
 
 真实命令前后采集 `git status --porcelain --untracked-files=all`。结束后保存 tracked binary diff 和 untracked no-index diff；receipt 记录 changed files、`workspace_changed` 和 audit error。Audit 失败不会覆盖已经获得的 pytest 结果，也不能被解释为“workspace 没有变化”。
 
@@ -285,9 +304,9 @@ pytest 默认缓存可能让未配置忽略规则的 worktree 变脏，从而影
 - CPU、内存、磁盘、进程数量和系统调用限制；
 - 对恶意或不可信仓库代码的保护；
 - dirty source snapshot；
-- 写工具与候选 patch apply。
+- dirty source snapshot、自动 merge/rebase 和通用写文件接口。
 
-敏感路径检查目前主要依据目标文件名，嵌套在敏感目录中的普通文件名仍需补充父路径组件检查。工具 schema 也需要在 Runtime 侧统一验证，而不只作为模型提示。
+敏感路径检查覆盖 workspace 内的父路径组件。工具 schema 仍需要在 Runtime 侧统一验证，而不只作为模型提示。
 
 ## 11. CLI 组装边界
 
@@ -304,4 +323,103 @@ create/load session
 
 非交互 `ask --mode execution` 可以创建 execution session，但需要 approval 的 pytest 默认 fail closed。交互 `start` 使用 console approval。只有 ready execution session 注册 `run_check`。
 
-长期产品可以把 readonly/execution 降为内部 capability，而不是要求普通用户预先理解模式；这是 UX 演进，不是 v0.3 当前行为。
+长期产品应把 readonly/execution 降为内部 capability，而不是要求普通用户预先理解 mode；这是明确的 UX 演进项，不是当前 v0.4 行为。
+
+## 12. v0.4 受控编辑
+
+只有可执行的 execution session 注册 `apply_text_patch`。服务必须同时确认：
+
+- `workspace_kind == git_worktree` 且 `active_root != source_root`；
+- 相对路径位于 `active_root`，路径组件不是 symlink，且不属于敏感路径；
+- 已有文件是有限大小的 UTF-8 文本，新增文件的父目录已经存在；
+- 已有文件的 `old_text` 非空并且只匹配一次；
+- patch 与编辑后文件没有超过固定上限。
+
+`read_file` 对文本使用通用换行语义；因此当文件统一使用 CRLF、LF 或 CR 时，patch 服务会把模型提交的上下文适配到原文件行尾后再匹配，并保持原行尾风格。混合行尾文件不做隐式规范化，仍要求原始上下文精确匹配。
+
+第一版只提供这一种文本替换/新增能力，不删除文件。写入成功后保存：
+
+```text
+artifacts/edits/<edit-id>.json
+  edit_id / path / before_sha256 / after_sha256 / patch / created_at
+  session_id / source_root / active_root / base_commit
+```
+
+journal 写入失败时回滚文件变化。Readonly registry 不包含写工具；provider 仍只收到不含 handler 的轻量 schema。
+
+## 13. Frozen Candidate
+
+`CandidateService.freeze` 只收集 edit journal 明确归属的文件，并要求最后一次编辑后存在成功的真实 pytest command receipt。冻结时校验 worktree HEAD/base、文件类型以及当前内容与最后 journal hash；测试产生但不属于编辑的 dirty path 单独记录为 `workspace_side_effects`。
+
+```text
+artifacts/candidates/<candidate-id>/
+├── candidate.json       # immutable manifest
+├── candidate.patch      # immutable delivery bytes
+└── status.json          # frozen/rejected/applied 等可变生命周期
+```
+
+Manifest 绑定 candidate/session/source/active/base、patch SHA-256、changed files、测试 receipt 和创建时间。读取 Candidate 时总是重新计算 artifact hash，因此 worktree 后续变化或 artifact 篡改不能静默改变用户看到的交付物。
+
+## 14. 独立 Apply 流程
+
+正式 apply 不注册为 Agent 普通写工具。CLI/Runtime 依次执行：
+
+```text
+load + verify candidate hash
+→ source HEAD == base_commit 且完全 clean
+→ git apply --check 固定 patch
+→ 展示 identity、测试证据和完整 diff
+→ 用户明确批准
+→ 再次检查 HEAD/clean 和 patch preflight
+→ git apply 完全相同的 bytes
+→ artifacts/applies/<apply-id>.json
+```
+
+拒绝、source dirty、HEAD 改变、preflight 失败或批准期间并发变化都生成 receipt 且不应用 Candidate。第一版不自动 merge/rebase，也不对 dirty source 建 snapshot。
+
+## 15. Candidate workspace 与命令审计
+
+普通未知 dirty worktree 仍是 `worktree_dirty`，禁用 execution capability。只有当前文件 hash 能由 edit journal 解释，且其余 dirty path 能由 command delta 解释时，resume 才标记为 `candidate_changes` 并继续开放编辑与 pytest。
+
+命令 receipt 同时记录：
+
+- `preexisting_changed_files`：命令开始前已有的 Candidate 状态；
+- `command_introduced_changes`：命令前后新增的 Git 状态行；
+- `changed_files`：命令结束后的完整 dirty 文件集合。
+
+这样 pytest 开始前已有的 Agent edits 不会被误报成该命令新产生的副作用。
+
+## 16. 产品任务与内部 capability
+
+当前 CLI 在 session 创建前要求选择 `readonly` 或 `execution`，原因是 worktree、工具注册和 executor 必须在 `AgentRunner` 构造前固定。这使安全边界清楚，但把内部实现泄漏给了用户：用户想表达的是“分析或修复这个任务”，而不是选择 workspace backend。
+
+目标形态应是：
+
+```text
+用户创建一个 task
+→ Agent 默认读取
+→ 首次需要 pytest/编辑时 Runtime 展示能力升级和风险
+→ 用户批准后创建 task workspace
+→ 同一任务继续测试、编辑、审查和 apply
+```
+
+要实现它，session 需要支持显式 workspace revision/capability transition，而不能在同一个 loop 中静默切换 `active_root`。在该数据模型完成前，v0.4 保留 mode 参数作为诚实但偏底层的入口。
+
+## 17. 证据、诊断和 retention
+
+当前 session 目录混合了三类生命周期不同的数据：
+
+```text
+长期交付证据
+  candidate.patch / candidate.json / apply receipt / 最终测试摘要
+
+任务历史
+  messages / tool timeline / approval decisions / 关键失败原因
+
+诊断与运行副产物
+  完整 stdout/stderr / command workspace patch / edit journals / runtime HOME/TEMP
+```
+
+完整 trace 对开发安全边界、复现 Windows/pytest 问题和验证 Candidate 没有被偷换很有价值；真实 Coding Agent 和企业平台也常保存这些信息。但产品层通常只展示任务摘要、diff 和测试状态，把底层 trace 放入“诊断详情”，并对大日志与临时目录设置 retention。
+
+v0.4 是 audit-first 原型：三层目前都持久化，`cleanup` 也只处理 worktree，不删除 session/artifacts。这不是最终存储策略。后续应保持 Candidate/apply 证据稳定，同时为命令日志、edit journal 和 runtime 目录增加容量上限、TTL、压缩/聚合和用户可控删除；模型上下文也应消费摘要而非长期依赖全部原始文件。

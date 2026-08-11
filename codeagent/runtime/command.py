@@ -66,15 +66,22 @@ class CommandResult:
     environment_names: tuple[str, ...] = ()
     workspace_changed: bool | None = None
     changed_files: tuple[str, ...] = ()
+    preexisting_changed_files: tuple[str, ...] = ()
+    command_introduced_changes: tuple[str, ...] = ()
     workspace_change_artifact: str | None = None
     workspace_audit_error: str | None = None
     git_status_before: str | None = None
     git_status_after: str | None = None
+    git_fingerprints_before: dict[str, str] | None = None
+    git_fingerprints_after: dict[str, str] | None = None
 
     def to_dict(self) -> dict:
         data = asdict(self)
         data["status"] = self.status.value
         data["environment_names"] = list(self.environment_names)
+        data["changed_files"] = list(self.changed_files)
+        data["preexisting_changed_files"] = list(self.preexisting_changed_files)
+        data["command_introduced_changes"] = list(self.command_introduced_changes)
         return data
 
 
