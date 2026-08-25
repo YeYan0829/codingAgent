@@ -9,6 +9,10 @@ CodeAgent Runtime 是一个本地运行、以不覆盖用户代码为首要约�
 
 当前仍是功能分支上的 L2 任务闭环实现，尚未合并到 `master`，也没有创建 release/tag。它适用于用户信任的本地 Git 仓库；Git worktree 保护代码状态，但不是主机安全沙箱。
 
+原 Repository Understanding、Project Model 和 Shared Project View 方案已停止推进并归档。当前保留 v0.4 Runtime 作为已实现底座，下一实践方向等待重新调研和规划；简单绘图 MCP 服务或插件目前只是待验证假设。
+
+第一次接管项目，请先读 [System Vision](docs/系统目标.md) 和[当前设计上下文](docs/PROJECT_GUIDE.md)。如果要运行或排查现有 v0.4 Runtime，再查阅当前实现和测试文档；历史目标架构和未实现设计统一保存在 `docs/archive/`。
+
 ## v0.4 用户能力
 
 - 使用 Fake 或 DeepSeek provider 探索本地代码。
@@ -97,9 +101,10 @@ v0.4 采用 audit-first 实现，为验证安全不变量，当前会保留每�
 
 ## 文档职责
 
-- [架构说明](docs/ARCHITECTURE.md)：内部模块、workspace、执行、Candidate、apply 和证据分层。
-- [设计决策](docs/DECISIONS.md)：安全与产品取舍，以及当前模式为何只是阶段性实现。
-- [Roadmap](docs/ROADMAP.md)：已完成能力、体验收敛和后续可靠性路线。
+- [System Vision](docs/系统目标.md)：项目为什么存在、目标、原则、非目标和成功标准。
+- [当前设计上下文](docs/PROJECT_GUIDE.md)：当前有效边界、已暂停方向和下一轮待调研问题。
+- [当前 Runtime 实现](docs/ARCHITECTURE.md)：v0.4 已实现模块、状态和运行边界，主要用于开发与排障。
 - [测试说明](docs/TESTING.md)：自动化覆盖与不能证明的边界。
 - [人工验收](docs/MANUAL_TEST.md)：当前版本唯一的真实终端验收清单。
-- [v0.3 总览](docs/V03_OVERVIEW.md)：历史版本基线，仅用于回溯。
+
+旧 v0.3、原 v0.5 VS Code 路线、已暂停的 Target Architecture、Repository Understanding 方案、阶段性 Roadmap、历史决策和原始产品思考保存在 `docs/archive/`，不再作为当前实现或规划入口。

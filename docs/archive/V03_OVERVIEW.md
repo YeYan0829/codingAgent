@@ -1,5 +1,7 @@
 # CodeAgent Runtime v0.3 总览
 
+> **Historical version：** 本文只用于回溯 v0.3 基线。当前实现见 [当前 Runtime 实现](../ARCHITECTURE.md)，当前验收见[测试说明](../TESTING.md)和[人工验收](../MANUAL_TEST.md)。
+
 ## 1. 当前定位
 
 CodeAgent Runtime v0.3 是一个面向**可信本地 Git 仓库**的受控 Coding Agent Runtime。它已经支持只读代码探索和 pytest-only controlled execution：模型可以读取代码、申请运行 pytest、观察结果并继续分析，但还不能主动编辑项目文件或把 patch 应用到用户仓库。
@@ -16,7 +18,7 @@ v0.3 的核心目标不是交付完整 coding loop，而是验证下面这条受
 → 精简结果返回模型
 ```
 
-当前包版本为 `0.3.0`。v0.3 已在 `wip/v0.3` 分支形成经过验证的开发基线，但尚未合并到 `master` 或创建公开 release/tag。自动化测试基线为 `92 passed, 1 skipped`；2026-08-10 已在 Windows PowerShell 中完成 DeepSeek V4 Flash 真实 TTY 核心端到端验收，包括连接、tool calling、deny 后继续对话、approve once、真实 pytest、artifact 和 source clean 检查。历史结果已并入[统一人工验收](MANUAL_TEST.md)。
+当前包版本为 `0.3.0`。v0.3 已在 `wip/v0.3` 分支形成经过验证的开发基线，但尚未合并到 `master` 或创建公开 release/tag。自动化测试基线为 `92 passed, 1 skipped`；2026-08-10 已在 Windows PowerShell 中完成 DeepSeek V4 Flash 真实 TTY 核心端到端验收，包括连接、tool calling、deny 后继续对话、approve once、真实 pytest、artifact 和 source clean 检查。历史结果已并入[统一人工验收](../MANUAL_TEST.md)。
 
 ## 2. 用户现在能做什么
 
@@ -191,8 +193,8 @@ v0.3 已经建立“理解代码 + 受控验证”的底座，但还不是完整
 
 ## 10. 文档入口
 
-- [ARCHITECTURE.md](ARCHITECTURE.md)：模块边界、运行链路、workspace、命令执行和 artifacts。
+- [ARCHITECTURE.md](../ARCHITECTURE.md)：模块边界、运行链路、workspace、命令执行和 artifacts。
 - [DECISIONS.md](DECISIONS.md)：关键设计取舍及其适用边界。
 - [ROADMAP.md](ROADMAP.md)：从 v0.3 到完整候选修改闭环的版本路线。
-- [TESTING.md](TESTING.md)：自动化测试、smoke test 和测试不能证明的内容。
-- [MANUAL_TEST.md](MANUAL_TEST.md)：合并后的当前真实终端验收清单。
+- [TESTING.md](../TESTING.md)：自动化测试、smoke test 和测试不能证明的内容。
+- [MANUAL_TEST.md](../MANUAL_TEST.md)：合并后的当前真实终端验收清单。

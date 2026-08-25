@@ -1,6 +1,8 @@
-# 架构说明
+# 当前 Runtime 实现
 
-本文只说明当前内部架构、信任边界和演进方向。用户能力先看项目 [README](../README.md)，真实终端验收见 [MANUAL_TEST.md](MANUAL_TEST.md)；历史 v0.3 行为见 [V03_OVERVIEW.md](V03_OVERVIEW.md)。
+本文按模块记录 v0.4 Runtime 已经实现的结构、状态和运行边界，用于代码接入与排障。它不定义下一版本方向，也不表示归档设计已经实现。
+
+项目目标见 [System Vision](系统目标.md)，当前设计状态和下一步调研入口见[当前设计上下文](PROJECT_GUIDE.md)。用户能力见项目 [README](../README.md)，测试边界见 [TESTING.md](TESTING.md)，真实终端验收见 [MANUAL_TEST.md](MANUAL_TEST.md)。
 
 ## 1. 总体结构
 
@@ -111,7 +113,7 @@ ToolSpec → ModelTool → provider-specific tools schema
 {"role": "tool", "tool_call_id": "...", "content": "..."}
 ```
 
-当前拒绝类事件的配对仍需加强：Policy/Approval denial 不能只留下 `tool_denied` 而让 provider 看到没有结果的 assistant tool call。该问题应在 v0.3 收口时修复并补 provider-compatible context 测试。
+当前拒绝类事件的配对仍需加强：Policy/Approval denial 目前只留下 `tool_denied`，可能让 provider 看到没有配对结果的 assistant tool call。这是当前实现待办，需要补 provider-compatible context 测试；不能描述为已解决能力。
 
 ## 4. WorkspaceContext
 
@@ -281,7 +283,7 @@ Runtime 目录与 command artifact 通过 session id 和 command id 关联，但
 
 真实命令前后采集 `git status --porcelain --untracked-files=all`。结束后保存 tracked binary diff 和 untracked no-index diff；receipt 记录 changed files、`workspace_changed` 和 audit error。Audit 失败不会覆盖已经获得的 pytest 结果，也不能被解释为“workspace 没有变化”。
 
-pytest 默认缓存可能让未配置忽略规则的 worktree 变脏，从而影响 resume 和 cleanup。v0.3 收口时应明确缓存重定向或禁用策略，而不是依赖仓库自己的 `.gitignore`。
+pytest 默认缓存可能让未配置忽略规则的 worktree 变脏，从而影响 resume 和 cleanup。当前尚未统一缓存重定向或禁用策略，不能依赖仓库自己的 `.gitignore`。
 
 ## 10. Safety 边界
 
@@ -304,7 +306,7 @@ pytest 默认缓存可能让未配置忽略规则的 worktree 变脏，从而影
 - CPU、内存、磁盘、进程数量和系统调用限制；
 - 对恶意或不可信仓库代码的保护；
 - dirty source snapshot；
-- dirty source snapshot、自动 merge/rebase 和通用写文件接口。
+- 自动 merge/rebase 和通用写文件接口。
 
 敏感路径检查覆盖 workspace 内的父路径组件。工具 schema 仍需要在 Runtime 侧统一验证，而不只作为模型提示。
 

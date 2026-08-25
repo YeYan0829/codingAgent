@@ -1,6 +1,8 @@
 # 设计决策
 
-本文记录当前已经采用的设计及其边界。未来方向放在 [ROADMAP.md](ROADMAP.md)，具体模块行为放在 [ARCHITECTURE.md](ARCHITECTURE.md)。
+> **Historical design：** 本文保存 v0.3/v0.4 阶段的完整决策记录，不再作为当前设计入口。当时的后续逻辑架构见已归档的 [Target Architecture](TARGET_ARCHITECTURE.md)，当前实现事实见 [当前 Runtime 实现](../ARCHITECTURE.md)。
+
+本文记录当时已经采用的设计及其边界。当时的未来方向见 [ROADMAP.md](ROADMAP.md)，具体模块行为见 [ARCHITECTURE.md](../ARCHITECTURE.md)。
 
 ## 1. 模型只有请求权，Runtime 持有执行权
 
