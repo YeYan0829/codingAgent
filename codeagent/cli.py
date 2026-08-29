@@ -19,15 +19,16 @@ from codeagent.interface.commands import handle_manual_call, print_tools
 from codeagent.model_gateway.factory import build_model_client
 from codeagent.runtime.approval import AutoApprovalGate, ConsoleApprovalGate
 from codeagent.runtime.artifacts import CommandArtifactStore
-from codeagent.runtime.local_executor import LocalCommandExecutor
+from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
 from codeagent.runtime.runner import AgentRunner
 from codeagent.runtime.candidate import ApplyStatus, CandidateError, CandidateService
+from codeagent.runtime.current_changes import CurrentChangesError, CurrentChangesService
 from codeagent.session.events import SessionEvent
 from codeagent.session.store import SessionStore, SessionStoreError
 from codeagent.tools.fs_read import build_fs_tools
 from codeagent.tools.git_read import build_git_tools
 from codeagent.tools.registry import ToolRegistry
-from codeagent.workspace.workspace import Workspace, WorkspaceContext
+from codeagent.workspace.workspace import SessionWorkspaceState, Workspace, WorkspaceContext
 from codeagent.workspace.git_worktree import GitWorktreeError, GitWorktreeManager, WorkspaceState
 
 app = typer.Typer(help=f"CodeAgent Runtime v{__version__}")
@@ -41,9 +42,6 @@ SESSION_ROOT_OPT = typer.Option(None, "--session-root", help="session 数据库�
 WORKSPACE_FILTER_OPT = typer.Option(None, "--workspace", "-w", help="只显示/选择某个 workspace 的 session；省略时使用全部 session。")
 
 
-MODE_OPT = typer.Option("readonly", "--mode", help="session 模式：readonly 或 execution。")
-
-
 def build_registry(workspace: Workspace) -> ToolRegistry:
     return build_registry_for_context(workspace.context)
 
@@ -55,9 +53,17 @@ def build_registry_for_context(context: WorkspaceContext) -> ToolRegistry:
     return registry
 
 
-def build_runner(store: SessionStore, workspace: Workspace, *, interactive: bool, model_config: ModelConfig, execution_allowed: bool = True) -> AgentRunner:
+def build_runner(
+    store: SessionStore,
+    workspace: Workspace,
+    *,
+    interactive: bool,
+    model_config: ModelConfig,
+    execution_allowed: bool = True,
+    progress_callback=None,
+) -> AgentRunner:
     context = store.workspace_context()
-    execution = store.read_meta().get("mode") == "execution" and execution_allowed
+    execution = context.workspace_kind == "git_worktree" and execution_allowed
     return AgentRunner(
         session_store=store,
         model=build_model_client(model_config),
@@ -65,54 +71,29 @@ def build_runner(store: SessionStore, workspace: Workspace, *, interactive: bool
         approval_gate=ConsoleApprovalGate(context) if interactive else AutoApprovalGate(allow=False),
         model_config=model_config,
         workspace_context=context,
-        command_executor=LocalCommandExecutor() if execution else None,
+        command_executor=SandboxedCommandExecutor() if execution else None,
         command_artifact_store=CommandArtifactStore(store) if execution else None,
+        dynamic_workspace=not execution and store.workspace_state() == SessionWorkspaceState.SOURCE_ONLY,
+        progress_callback=progress_callback,
     )
 
 
 def _create_session(
     workspace: Workspace,
     session_root: Path | None,
-    mode: str,
     model_config: ModelConfig,
     title: str | None = None,
 ) -> SessionStore:
-    if mode not in {"readonly", "execution"}:
-        raise typer.BadParameter("mode 必须是 readonly 或 execution")
     store = SessionStore(workspace.root, session_root=session_root)
-    if mode == "readonly":
-        return store.create(mode=mode, provider=model_config.provider, model=model_config.resolved_model, title=title)
-    manager = GitWorktreeManager(store.session_root)
-    try:
-        context = manager.create(workspace.root, store.session_id)
-        return store.create(
-            mode=mode, provider=model_config.provider, model=model_config.resolved_model,
-            title=title, workspace_context=context,
-        )
-    except Exception as exc:
-        cleanup_ok = True
-        if "context" in locals():
-            try:
-                manager.cleanup(context)
-            except GitWorktreeError:
-                cleanup_ok = False
-        if cleanup_ok and store.session_dir.exists():
-            shutil.rmtree(store.session_dir)
-        elif not cleanup_ok:
-            store.session_dir.mkdir(parents=True, exist_ok=True)
-            (store.session_dir / "creation-error.json").write_text(
-                json.dumps({"error": str(exc), "active_workspace": str(context.active_root)}, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        raise
+    return store.create(provider=model_config.provider, model=model_config.resolved_model, title=title)
 
 
 @app.command()
-def start(workspace: Path = WORKSPACE_ARG, provider: str = PROVIDER_OPT, model: str | None = MODEL_OPT, session_root: Path | None = SESSION_ROOT_OPT, mode: str = MODE_OPT):
+def start(workspace: Path = WORKSPACE_ARG, provider: str = PROVIDER_OPT, model: str | None = MODEL_OPT, session_root: Path | None = SESSION_ROOT_OPT):
     """创建新 session 并进入交互 CLI。"""
     model_config = ModelConfig(provider=provider, model=model)
     ws = Workspace(workspace)
-    store = _create_session(ws, session_root, mode, model_config)
+    store = _create_session(ws, session_root, model_config)
     console.print(
         Panel(
             "\n".join(
@@ -137,12 +118,11 @@ def ask(
     provider: str = PROVIDER_OPT,
     model: str | None = MODEL_OPT,
     session_root: Path | None = SESSION_ROOT_OPT,
-    mode: str = MODE_OPT,
 ):
     """单次非交互运行，用于 smoke test。"""
     model_config = ModelConfig(provider=provider, model=model)
     ws = Workspace(workspace)
-    store = _create_session(ws, session_root, mode, model_config, title=SessionStore.title_from_message(message))
+    store = _create_session(ws, session_root, model_config, title=SessionStore.title_from_message(message))
     runner = build_runner(store, ws, interactive=False, model_config=model_config)
     output = runner.run_turn(message)
     for step in output.steps:
@@ -172,110 +152,79 @@ def list_sessions(
 
 @app.command("cleanup")
 def cleanup_session(
-    session_id: str = typer.Argument(..., help="要清理 worktree 的 execution session id。"),
+    session_id: str = typer.Argument(..., help="要清理诊断数据的 Session id。"),
     session_root: Path | None = SESSION_ROOT_OPT,
 ):
-    """仅清理干净且受管的 execution worktree；不会强制删除。"""
+    """清理不影响业务状态的诊断数据；当前修改请使用 discard-changes。"""
     meta = SessionStore.find_session(session_id, session_root=session_root)
     if not meta:
         console.print(f"[red]session not found: {session_id}[/red]")
         raise typer.Exit(1)
     source = meta.get("source_workspace") or meta.get("workspace")
     store = SessionStore(source, session_id=session_id, session_root=session_root).load()
-    context = store.workspace_context()
-    if context.workspace_kind != "git_worktree":
-        console.print("[red]readonly session 没有可清理的 worktree[/red]")
+    if store.workspace_state() in {SessionWorkspaceState.WORKSPACE_TAINTED, SessionWorkspaceState.RECOVERY_REQUIRED}:
+        console.print("[red]workspace tainted/recovery 诊断材料不能清理；请先 discard 或人工检查[/red]")
         raise typer.Exit(1)
-    manager = GitWorktreeManager(store.session_root)
-    report = manager.inspect(context)
-    if report.worktree_dirty:
-        store.update_workspace_state(WorkspaceState.WORKTREE_DIRTY.value, "dirty worktree 保留，拒绝 cleanup")
-        console.print("[red]worktree dirty；已保留现场，拒绝 cleanup[/red]")
+    shutil.rmtree(store.diagnostics_dir, ignore_errors=True)
+    console.print("diagnostics cleaned")
+
+
+@app.command("show-changes")
+def show_changes(
+    session_id: str = typer.Argument(..., help="Session id。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """按需显示 Agent worktree 相对 base 的当前 diff，不创建长期 patch。"""
+    store = _load_changes_store(session_id, session_root, allow_tainted=True)
+    try:
+        patch = CurrentChangesService(store).preview()
+    except CandidateError as exc:
+        console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
-    try:
-        manager.cleanup(context)
-    except GitWorktreeError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    store.update_worktree_lifecycle("discarded")
-    store.update_workspace_state(WorkspaceState.DISCARDED.value, "用户显式 cleanup")
-    console.print(f"cleaned worktree: {context.active_root}")
+    console.print(patch.decode("utf-8", errors="replace"), markup=False)
 
 
-@app.command("freeze-candidate")
-def freeze_candidate(
-    session_id: str = typer.Argument(..., help="要冻结当前 task worktree 的 execution session id。"),
+@app.command("accept-changes")
+def accept_changes(
+    session_id: str = typer.Argument(..., help="Session id。"),
     session_root: Path | None = SESSION_ROOT_OPT,
 ):
-    """把当前已记录编辑与成功 pytest 证据冻结为不可变 Candidate。"""
-    store = _load_candidate_store(session_id, session_root)
-    try:
-        candidate = CandidateService(store.workspace_context(), store).freeze()
-    except CandidateError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    _print_candidate(candidate, CandidateService(store.workspace_context(), store).load(candidate["candidate_id"])[1])
-
-
-@app.command("show-candidate")
-def show_candidate(
-    identifier: str = typer.Argument(..., help="session id 或 candidate id。"),
-    session_root: Path | None = SESSION_ROOT_OPT,
-):
-    """显示 Candidate identity、测试证据和完整固定 diff。"""
-    store = _load_candidate_store(identifier, session_root)
-    service = CandidateService(store.workspace_context(), store)
-    try:
-        candidate_id = None if identifier == store.session_id else identifier
-        manifest, patch = service.load(candidate_id)
-    except CandidateError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    _print_candidate(manifest, patch)
-
-
-@app.command("reject-candidate")
-def reject_candidate(
-    identifier: str = typer.Argument(..., help="session id 或 candidate id。"),
-    session_root: Path | None = SESSION_ROOT_OPT,
-):
-    """拒绝 Candidate；保留 artifacts 和 dirty task worktree，不修改 source。"""
-    store = _load_candidate_store(identifier, session_root)
-    service = CandidateService(store.workspace_context(), store)
-    try:
-        receipt = service.reject(None if identifier == store.session_id else identifier)
-    except CandidateError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    console.print(json.dumps(receipt, ensure_ascii=False, indent=2), markup=False)
-
-
-@app.command("apply-candidate")
-def apply_candidate(
-    identifier: str = typer.Argument(..., help="session id 或 candidate id。"),
-    session_root: Path | None = SESSION_ROOT_OPT,
-):
-    """复检 source identity，经明确批准后应用固定 Candidate patch。"""
-    store = _load_candidate_store(identifier, session_root)
-    service = CandidateService(store.workspace_context(), store)
+    """冻结、复检并采纳当前修改。"""
+    store = _load_changes_store(session_id, session_root)
+    service = CurrentChangesService(store)
 
     def approve(manifest: dict, patch: str) -> bool:
-        _print_candidate(manifest, patch.encode("utf-8"))
+        _print_changes(manifest, patch.encode("utf-8"))
         if not sys.stdin.isatty():
             return False
         try:
-            return Confirm.ask("确认把以上固定 Candidate 应用到 source？", default=False)
+            return Confirm.ask("确认把以上当前修改应用到 source？", default=False)
         except (EOFError, KeyboardInterrupt):
             return False
 
     try:
-        receipt = service.apply(None if identifier == store.session_id else identifier, approve)
-    except CandidateError as exc:
+        receipt = service.accept(approve)
+    except CurrentChangesError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
     console.print(json.dumps(receipt, ensure_ascii=False, indent=2), markup=False)
     if receipt["status"] != ApplyStatus.APPLIED.value:
         raise typer.Exit(1)
+
+
+@app.command("discard-changes")
+def discard_changes(
+    session_id: str = typer.Argument(..., help="Session id。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """丢弃当前修改，不改变 source，Session 可以继续。"""
+    store = _load_changes_store(session_id, session_root, allow_tainted=True)
+    try:
+        receipt = CurrentChangesService(store).discard()
+    except CurrentChangesError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(json.dumps(receipt, ensure_ascii=False, indent=2), markup=False)
 
 
 @app.command()
@@ -309,14 +258,39 @@ def resume(
     meta = store.read_meta()
     context = store.workspace_context()
     execution_allowed = True
-    if meta.get("mode") == "execution":
+    if store.workspace_state() in {
+        SessionWorkspaceState.PREPARING_WORKSPACE,
+        SessionWorkspaceState.ACCEPTING,
+        SessionWorkspaceState.DISCARDING,
+    }:
+        store.mark_recovery_required("检测到未完成的 workspace lifecycle transition")
+        execution_allowed = False
+    if store.workspace_state() in {
+        SessionWorkspaceState.CHANGES_ACTIVE,
+        SessionWorkspaceState.WORKSPACE_TAINTED,
+        SessionWorkspaceState.RECOVERY_REQUIRED,
+    }:
+        recovery_required = _recover_atomic_transactions(store, context)
         report = GitWorktreeManager(store.session_root).inspect(
-            context, candidate_changes=_has_resumable_candidate_changes(store, context)
+            context,
+            candidate_changes=False if recovery_required else _has_resumable_candidate_changes(store, context),
+            recovery_required=recovery_required,
+            allow_source_changes=True,
         )
-        store.update_workspace_state(report.state.value, report.reason)
         execution_allowed = report.executable
-        if not execution_allowed:
-            console.print(f"[yellow]execution workspace state: {report.state.value}: {report.reason}; run_check disabled[/yellow]")
+        if recovery_required or store.workspace_state() == SessionWorkspaceState.RECOVERY_REQUIRED:
+            store.mark_recovery_required(report.reason)
+            execution_allowed = False
+        elif store.workspace_state() == SessionWorkspaceState.WORKSPACE_TAINTED:
+            execution_allowed = False
+        elif execution_allowed:
+            store.restore_changes_active(report.reason)
+        else:
+            store.mark_recovery_required(report.reason)
+        if store.workspace_state() == SessionWorkspaceState.WORKSPACE_TAINTED:
+            console.print("[yellow]Agent workspace state: workspace_tainted；仅允许只读检查和 discard-changes[/yellow]")
+        elif not execution_allowed:
+            console.print(f"[yellow]Agent workspace state: {report.state.value}: {report.reason}; 受保护能力已关闭[/yellow]")
     ws = Workspace(context.active_root)
     model_config = ModelConfig(provider=provider or meta.get("provider", "fake"), model=model or meta.get("model"))
     console.print(Panel(_format_session_overview(store), title="Resumed Session"))
@@ -324,8 +298,24 @@ def resume(
 
 
 def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelConfig, execution_allowed: bool = True) -> None:
-    runner = build_runner(store, ws, interactive=True, model_config=model_config, execution_allowed=execution_allowed)
-    registry = runner.tools
+    def show_progress(event: dict) -> None:
+        if event["type"] == "assistant_progress":
+            console.print(Text("Agent ", style="bold blue"), Text(str(event["message"])))
+            return
+        step = event["step"]
+        console.print(_format_tool_step(step))
+        result = step.get("result", {})
+        if result.get("error"):
+            console.print(f"[red]{result['error']}[/red]")
+
+    runner = build_runner(
+        store,
+        ws,
+        interactive=True,
+        model_config=model_config,
+        execution_allowed=execution_allowed,
+        progress_callback=show_progress,
+    )
     while True:
         try:
             raw = console.input("[bold]> [/bold]").strip()
@@ -340,17 +330,15 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
             console.print(Panel(_format_session_overview(store), title="Session Status"))
             continue
         if raw == "/tools":
-            print_tools(console, registry)
+            print_tools(console, runner.tools)
             continue
         if raw == "/log":
-            console.print(str(store.transcript_path))
+            console.print(str(store.events_path))
             continue
         if raw.startswith("/call"):
             handle_manual_call(console, runner, raw)
             continue
         output = runner.run_turn(raw)
-        for step in output.steps:
-            console.print(_format_tool_step(step))
         console.print(Panel(Text(output.final_text), title="Assistant"))
 
 
@@ -361,52 +349,55 @@ def _load_session_list(workspace_filter: Path | None, session_root: Path | None)
     return SessionStore.list_all_sessions(session_root=session_root)
 
 
-def _load_candidate_store(identifier: str, session_root: Path | None) -> SessionStore:
-    metas = SessionStore.list_all_sessions(session_root=session_root)
-    for meta in metas:
-        session_id = meta.get("session_id")
-        source = meta.get("source_workspace") or meta.get("workspace")
-        if not session_id or not source:
-            continue
-        store = SessionStore(source, session_id=session_id, session_root=session_root).load()
-        if identifier == session_id or (store.session_dir / "artifacts" / "candidates" / identifier / "candidate.json").is_file():
-            return store
-    console.print(f"[red]session/candidate not found: {identifier}[/red]")
-    raise typer.Exit(1)
+def _load_changes_store(session_id: str, session_root: Path | None, *, allow_tainted: bool = False) -> SessionStore:
+    meta = SessionStore.find_session(session_id, session_root=session_root)
+    if not meta:
+        console.print(f"[red]session not found: {session_id}[/red]")
+        raise typer.Exit(1)
+    store = SessionStore(meta["workspace"], session_id=session_id, session_root=session_root).load()
+    allowed = {SessionWorkspaceState.CHANGES_ACTIVE}
+    if allow_tainted:
+        allowed.add(SessionWorkspaceState.WORKSPACE_TAINTED)
+    if store.workspace_state() not in allowed:
+        if store.workspace_state() == SessionWorkspaceState.WORKSPACE_TAINTED:
+            console.print("[red]workspace_tainted 禁止采纳；只允许只读检查和 discard-changes[/red]")
+        else:
+            console.print("[red]当前 Session 没有可处理的修改[/red]")
+        raise typer.Exit(1)
+    return store
 
 
 def _has_resumable_candidate_changes(store: SessionStore, context: WorkspaceContext) -> bool:
-    """只把 edit journal 和 command delta 可解释的 dirty 状态视为可恢复候选现场。"""
-    edit_hashes: dict[str, str] = {}
-    allowed_paths: set[str] = set()
-    for event in store.read_events():
-        if event.type == "edit_receipt":
-            path = str(event.payload.get("path", ""))
-            if path:
-                allowed_paths.add(path)
-                edit_hashes[path] = str(event.payload.get("after_sha256", ""))
-        elif event.type == "command_receipt":
-            result = event.payload.get("result") or {}
-            allowed_paths.update(str(item).replace("\\", "/") for item in result.get("command_introduced_changes", []))
-    if not edit_hashes:
+    """Candidate revision 领先 accepted baseline 且 worktree dirty 即可恢复。
+
+    每条命令/编辑的细粒度事件用于诊断，不再承担重建当前修改的职责；异常状态由
+    recovery_required/workspace_tainted 的更高优先级 gate 处理。
+    """
+    meta = store.read_meta()
+    if int(meta.get("candidate_revision", 0)) <= int(meta.get("accepted_candidate_revision", 0)):
         return False
-    for relative, expected_hash in edit_hashes.items():
-        target = context.active_root / relative
-        if not target.is_file() or target.is_symlink() or hashlib.sha256(target.read_bytes()).hexdigest() != expected_hash:
-            return False
     proc = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=context.active_root,
-        text=True, capture_output=True, shell=False, check=False, timeout=10,
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd=context.active_root,
+        capture_output=True, shell=False, check=False, timeout=10,
     )
     if proc.returncode:
         return False
-    dirty_paths = {line[3:].replace("\\", "/") for line in proc.stdout.splitlines() if len(line) > 3}
-    return bool(dirty_paths) and dirty_paths <= allowed_paths
+    return bool(proc.stdout)
 
 
-def _print_candidate(manifest: dict, patch: bytes) -> None:
+def _recover_atomic_transactions(store: SessionStore, context: WorkspaceContext) -> bool:
+    """先恢复未完成事务；任何无法确认的状态都优先关闭 execution capability。"""
+    from codeagent.runtime.atomic_edit import AtomicEditError, AtomicEditService
+
+    try:
+        AtomicEditService(context, store).ensure_recovered()
+    except AtomicEditError:
+        return True
+    return False
+
+
+def _print_changes(manifest: dict, patch: bytes) -> None:
     summary = {
-        "candidate_id": manifest.get("candidate_id"),
         "session_id": manifest.get("session_id"),
         "base_commit": manifest.get("base_commit"),
         "patch_sha256": manifest.get("patch_sha256"),
@@ -414,7 +405,7 @@ def _print_candidate(manifest: dict, patch: bytes) -> None:
         "workspace_side_effects": manifest.get("workspace_side_effects"),
         "test_receipts": manifest.get("test_receipts"),
     }
-    console.print(Panel(json.dumps(summary, ensure_ascii=False, indent=2), title="Frozen Candidate"), markup=False)
+    console.print(Panel(json.dumps(summary, ensure_ascii=False, indent=2), title="当前修改"), markup=False)
     console.print(patch.decode("utf-8"), markup=False)
 
 
@@ -437,7 +428,7 @@ def _format_session_list_row(meta: dict) -> str:
     workspace = _safe_text(meta.get("workspace", "<unknown workspace>"))
     return (
         f"{_safe_text(meta.get('title', SessionStore.UNTITLED))}  {meta.get('session_id')}  "
-        f"{meta.get('last_active_at')}  {meta.get('mode')}  {provider}/{meta.get('model')}  "
+        f"{meta.get('last_active_at')}  {meta.get('workspace_state')}  {provider}/{meta.get('model')}  "
         f"workspace={workspace}"
     )
 
@@ -458,9 +449,9 @@ def _format_session_overview(store: SessionStore, recent_count: int = 6) -> str:
         f"session_root: {meta.get('session_root') or store.session_root}",
         f"created_at: {meta.get('created_at')}",
         f"last_active_at: {meta.get('last_active_at')}",
-        f"mode/provider/model: {meta.get('mode')} / {meta.get('provider', 'fake')} / {meta.get('model')}",
+        f"state/provider/model: {meta.get('workspace_state')} / {meta.get('provider', 'fake')} / {meta.get('model')}",
         f"events: {len(events)}",
-        f"transcript: {store.transcript_path}",
+        f"events: {store.events_path}",
     ]
     recent = [event for event in events if event.type != "session_created"][-recent_count:]
     if recent:

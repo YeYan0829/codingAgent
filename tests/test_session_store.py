@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from codeagent.session.store import SessionStore
 
@@ -19,7 +20,8 @@ def test_session_store_create_append_and_read(tmp_path):
     assert meta["session_root"] == str(session_root.resolve())
     assert [event.type for event in events] == ["session_created", "user_message", "assistant_message"]
     assert store.events_path.read_text(encoding="utf-8").count("\n") == 3
-    assert "hello" in store.transcript_path.read_text(encoding="utf-8")
+    assert not (store.session_dir / "transcript.md").exists()
+    assert store.meta_path.name == "session.json"
     assert not (workspace / ".codeagent" / "sessions").exists()
 
 
@@ -52,7 +54,7 @@ def test_list_all_sessions_across_workspaces(tmp_path):
     assert workspaces == {str(workspace_a.resolve()), str(workspace_b.resolve())}
 
 
-def test_legacy_workspace_sessions_can_still_be_loaded(tmp_path):
+def test_legacy_workspace_sessions_are_not_loaded(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_id = "legacy123456"
@@ -64,10 +66,9 @@ def test_legacy_workspace_sessions_can_still_be_loaded(tmp_path):
     )
     (legacy_dir / "events.jsonl").write_text("", encoding="utf-8")
 
-    loaded = SessionStore(workspace, session_id=session_id, session_root=tmp_path / "new-sessions").load()
-
-    assert loaded.session_id == session_id
-    assert loaded.read_meta()["title"] == "Legacy"
+    from codeagent.session.store import SessionStoreError
+    with pytest.raises(SessionStoreError):
+        SessionStore(workspace, session_id=session_id, session_root=tmp_path / "new-sessions").load()
 
 
 def test_explicit_session_root_can_exclude_legacy_sessions(tmp_path):

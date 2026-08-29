@@ -6,14 +6,16 @@ from typing import Protocol
 from rich.prompt import Confirm
 
 from codeagent.model_gateway.base import LLMToolCall
-from codeagent.runtime.command import ApprovalDecision, CommandSpec
+from codeagent.runtime.command import CommandRequest
+from codeagent.runtime.sandbox_policy import PermissionEvaluation
 from codeagent.tools.base import ToolSpec
 from codeagent.workspace.workspace import WorkspaceContext
 
 
 class ApprovalGate(Protocol):
     def request(self, tool: ToolSpec, call: LLMToolCall | None = None) -> bool: ...
-    def request_command(self, spec: CommandSpec) -> ApprovalDecision: ...
+    def request_workspace_upgrade(self, tool_name: str, arguments: dict) -> bool: ...
+    def request_permissions(self, command: CommandRequest, evaluations: tuple[PermissionEvaluation, ...]) -> bool: ...
 
 
 class ConsoleApprovalGate:
@@ -28,20 +30,52 @@ class ConsoleApprovalGate:
         except (EOFError, KeyboardInterrupt):
             return False
 
-    def request_command(self, spec: CommandSpec) -> ApprovalDecision:
+    def request_workspace_upgrade(self, tool_name: str, arguments: dict) -> bool:
         if not sys.stdin.isatty():
-            return ApprovalDecision.DENY
-        workspace = self.workspace_context.active_root if self.workspace_context else "<unknown>"
-        prompt = (
-            f"允许执行一次命令？\nkind={spec.command_kind}\nargv={' '.join(spec.argv)}\n"
-            f"cwd={spec.cwd}\ntimeout={spec.timeout_seconds}\nactive_workspace={workspace}\n"
-            "警告：当前只有 Git worktree 隔离，没有主机级 sandbox 或网络隔离"
+            return False
+        if tool_name == "apply_workspace_edit":
+            operations = arguments.get("operations", [])
+            targets = []
+            for item in operations:
+                operation = item.get("op", "unknown")
+                if operation == "move_file":
+                    target = f"{item.get('source', '<unknown>')} -> {item.get('destination', '<unknown>')}"
+                else:
+                    target = str(item.get("path", "<unknown>"))
+                targets.append(f"{operation}: {target}")
+            detail = "\n".join(f"- {target}" for target in targets[:10]) or "- 未提供有效操作"
+            action = f"准备修改 {len(operations)} 项文件：\n{detail}"
+        else:
+            action = (
+                "准备在隔离工作区运行命令：\n"
+                f"command={arguments.get('command', '')}\n"
+                f"cwd={arguments.get('cwd', '.')}\n"
+                f"purpose={arguments.get('purpose', 'utility')}"
+            )
+        try:
+            return Confirm.ask(
+                "当前 Session 仍为只读。\n"
+                f"{action}\n"
+                "允许创建 Session 专属隔离工作区，并在其中执行以上操作？",
+                default=False,
+            )
+        except (EOFError, KeyboardInterrupt):
+            return False
+
+    def request_permissions(self, command: CommandRequest, evaluations: tuple[PermissionEvaluation, ...]) -> bool:
+        if not sys.stdin.isatty():
+            return False
+        details = "\n".join(
+            f"- {item.request.capability.value}: requested={item.request.requested_resource} "
+            f"resolved={item.request.resolved_resource} scope={item.request.scope.value} reason={item.request.reason}"
+            for item in evaluations
         )
         try:
-            allowed = Confirm.ask(prompt, default=False)
+            return Confirm.ask(
+                f"允许命令的增量资源权限？\ncommand={command.command}\ncwd={command.cwd}\n{details}", default=False,
+            )
         except (EOFError, KeyboardInterrupt):
-            allowed = False
-        return ApprovalDecision.APPROVE_ONCE if allowed else ApprovalDecision.DENY
+            return False
 
 
 class AutoApprovalGate:
@@ -51,16 +85,18 @@ class AutoApprovalGate:
     def request(self, tool: ToolSpec, call: LLMToolCall | None = None) -> bool:
         return self.allow
 
-    def request_command(self, spec: CommandSpec) -> ApprovalDecision:
-        return ApprovalDecision.APPROVE_ONCE if self.allow else ApprovalDecision.DENY
+    def request_workspace_upgrade(self, tool_name: str, arguments: dict) -> bool:
+        return self.allow
+
+    def request_permissions(self, command: CommandRequest, evaluations: tuple[PermissionEvaluation, ...]) -> bool:
+        return self.allow
 
 
 class FakeApprovalGate(AutoApprovalGate):
-    def __init__(self, decision: ApprovalDecision = ApprovalDecision.DENY) -> None:
-        super().__init__(allow=decision == ApprovalDecision.APPROVE_ONCE)
-        self.decision = decision
-        self.command_requests: list[CommandSpec] = []
+    def __init__(self, allow: bool = False) -> None:
+        super().__init__(allow=allow)
+        self.permission_requests: list[tuple[CommandRequest, tuple[PermissionEvaluation, ...]]] = []
 
-    def request_command(self, spec: CommandSpec) -> ApprovalDecision:
-        self.command_requests.append(spec)
-        return self.decision
+    def request_permissions(self, command: CommandRequest, evaluations: tuple[PermissionEvaluation, ...]) -> bool:
+        self.permission_requests.append((command, evaluations))
+        return self.allow

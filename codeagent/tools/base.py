@@ -23,6 +23,7 @@ class ToolResult(BaseModel):
     ok: bool
     content: str = ""
     error: str | None = None
+    error_code: str | None = None
     truncated: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 

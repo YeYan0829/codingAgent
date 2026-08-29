@@ -78,16 +78,17 @@ def test_session_resume_recovers_worktree_context(tmp_path):
     store = SessionStore(repo, session_root=session_root).create()
     manager = GitWorktreeManager(session_root)
     created = manager.create(repo, store.session_id)
-    store.update_workspace_context(created)
+    store.begin_workspace_upgrade(1)
+    store.activate_workspace(created)
     loaded = SessionStore(repo, session_id=store.session_id, session_root=session_root).load()
     recovered = manager.recover(**{
         "source_root": loaded.workspace_context().source_root,
         "active_root": loaded.workspace_context().active_root,
-        "task_workspace_id": loaded.workspace_context().task_workspace_id,
+        "workspace_revision": loaded.workspace_context().workspace_revision,
         "base_commit": loaded.workspace_context().base_commit,
     })
     assert recovered == created
-    assert loaded.read_meta()["worktree_lifecycle_state"] == "active"
+    assert loaded.read_meta()["workspace_state"] == "changes_active"
 
 
 def test_cleanup_keeps_source_workspace_unchanged(tmp_path):

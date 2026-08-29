@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import dataclass
+from enum import StrEnum
 
 from codeagent.safety.path_guard import PathGuard
 
@@ -20,6 +21,16 @@ class Workspace:
         return WorkspaceContext.source(self.root)
 
 
+class SessionWorkspaceState(StrEnum):
+    SOURCE_ONLY = "source_only"
+    PREPARING_WORKSPACE = "preparing_workspace"
+    CHANGES_ACTIVE = "changes_active"
+    WORKSPACE_TAINTED = "workspace_tainted"
+    ACCEPTING = "accepting"
+    DISCARDING = "discarding"
+    RECOVERY_REQUIRED = "recovery_required"
+
+
 @dataclass(frozen=True)
 class WorkspaceContext:
     """一次任务实际使用的工作区身份与路径。"""
@@ -28,7 +39,7 @@ class WorkspaceContext:
     active_root: Path
     workspace_kind: str = "source"
     base_commit: str | None = None
-    task_workspace_id: str | None = None
+    workspace_revision: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "source_root", Path(self.source_root).expanduser().resolve())
@@ -47,7 +58,7 @@ class WorkspaceContext:
             "active_workspace": str(self.active_root),
             "workspace_kind": self.workspace_kind,
             "base_commit": self.base_commit,
-            "task_workspace_id": self.task_workspace_id,
+            "workspace_revision": self.workspace_revision,
         }
 
     @classmethod
@@ -60,5 +71,5 @@ class WorkspaceContext:
             active_root=meta.get("active_workspace") or source,
             workspace_kind=meta.get("workspace_kind", "source"),
             base_commit=meta.get("base_commit"),
-            task_workspace_id=meta.get("task_workspace_id"),
+            workspace_revision=int(meta.get("workspace_revision", 0)),
         )

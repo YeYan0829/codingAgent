@@ -1,6 +1,7 @@
 import hashlib
 import json
 import subprocess
+import sys
 
 import pytest
 from typer.testing import CliRunner
@@ -10,8 +11,9 @@ from codeagent.runtime.artifacts import CommandArtifactStore
 from codeagent.runtime.candidate import ApplyStatus, CandidateError, CandidateService
 from codeagent.runtime.command_service import CommandService
 from codeagent.runtime.edit_service import TextPatchService
-from codeagent.runtime.local_executor import LocalCommandExecutor
-from codeagent.runtime.policy import CommandPolicy
+from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
+from codeagent.runtime.bubblewrap import BubblewrapFeatures
+from pathlib import Path
 from codeagent.runtime.runner import AgentRunner
 from codeagent.config import RuntimeConfig
 from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest
@@ -58,20 +60,31 @@ def execution_session(tmp_path):
     repo = make_bug_repo(tmp_path)
     session_root = tmp_path / "sessions"
     store = SessionStore(repo, session_root=session_root)
-    context = GitWorktreeManager(session_root).create(repo, store.session_id)
-    store.create(mode="execution", workspace_context=context)
+    store.create()
+    store.begin_workspace_upgrade(1)
+    context = GitWorktreeManager(session_root).create(repo, store.session_id, 1)
+    store.activate_workspace(context)
     return repo, store, context
 
 
 def command_service(store, context):
-    return CommandService(
-        context=context,
-        policy=CommandPolicy(),
-        approval_gate=AutoApprovalGate(allow=True),
-        executor=LocalCommandExecutor(),
-        session_store=store,
-        artifact_store=CommandArtifactStore(store),
-    )
+    service = CommandService(context, AutoApprovalGate(allow=True), SandboxedCommandExecutor(HostFixtureBackend()), store, CommandArtifactStore(store))
+
+    class Commands:
+        def run_check(self, arguments):
+            targets = " ".join(arguments.get("targets", []))
+            return service.run_command({"command": f"{sys.executable} -m pytest -p no:cacheprovider {targets}",
+                                        "purpose": "validation", "timeout_seconds": arguments.get("timeout_seconds", 120)})
+
+    return Commands()
+
+
+class HostFixtureBackend:
+    def probe(self, candidate_root):
+        return BubblewrapFeatures(Path("/fixture/bwrap"), "fixture", False)
+
+    def invocation(self, features, plan, policy, cwd, environment, payload):
+        return ["/usr/bin/env", "-i", *(f"{name}={value}" for name, value in sorted(environment.items())), *payload]
 
 
 def create_passing_candidate(tmp_path):
@@ -107,25 +120,30 @@ def test_minimal_complete_candidate_loop_applies_verified_patch(tmp_path):
     assert shown == {"hash": manifest["patch_sha256"], "files": ["sort_utils.py"]}
     assert "sorted(values)" in (repo / "sort_utils.py").read_text(encoding="utf-8")
     assert git(repo, "diff", "--", "sort_utils.py")
-    assert json.loads((store.session_dir / "artifacts" / "applies" / f"{receipt['apply_id']}.json").read_text(encoding="utf-8"))["patch_sha256"] == manifest["patch_sha256"]
+    assert [event for event in store.read_events() if event.type == "changes_apply_result"][-1].payload["patch_sha256"] == manifest["patch_sha256"]
 
 
 class CandidateLoopModel(BaseModelClient):
-    def __init__(self):
+    def __init__(self, expected_sha256):
         self.step = 0
+        self.expected_sha256 = expected_sha256
 
     def complete(self, request: ModelRequest) -> LLMResponse:
-        assert {"read_file", "run_check", "apply_text_patch", "freeze_candidate"} <= {tool.name for tool in request.tools}
+        assert {"read_file", "run_command", "apply_workspace_edit"} <= {tool.name for tool in request.tools}
+        assert "freeze_candidate" not in {tool.name for tool in request.tools}
+        assert "apply_text_patch" not in {tool.name for tool in request.tools}
         assert all(not hasattr(tool, "handler") for tool in request.tools)
         actions = [
             ("read_file", {"path": "sort_utils.py"}),
-            ("run_check", {"kind": "pytest", "targets": ["test_sort_utils.py"], "timeout_seconds": 30}),
-            ("apply_text_patch", {"path": "sort_utils.py", "old_text": "sorted(values, reverse=True)", "new_text": "sorted(values)"}),
-            ("run_check", {"kind": "pytest", "targets": ["test_sort_utils.py"], "timeout_seconds": 30}),
-            ("freeze_candidate", {}),
+            ("run_command", {"command": "python3 -m pytest -p no:cacheprovider test_sort_utils.py", "purpose": "validation", "timeout_seconds": 30}),
+            ("apply_workspace_edit", {"operations": [{
+                "op": "replace_text", "path": "sort_utils.py", "expected_sha256": self.expected_sha256,
+                "old_text": "sorted(values, reverse=True)", "new_text": "sorted(values)",
+            }]}),
+            ("run_command", {"command": "python3 -m pytest -p no:cacheprovider test_sort_utils.py", "purpose": "validation", "timeout_seconds": 30}),
         ]
         if self.step >= len(actions):
-            return LLMResponse(text="candidate ready")
+            return LLMResponse(text="changes ready")
         name, arguments = actions[self.step]
         self.step += 1
         return LLMResponse(tool_calls=[LLMToolCall(call_id=f"loop-{self.step}", name=name, arguments=arguments)])
@@ -138,20 +156,20 @@ def test_deterministic_model_completes_read_edit_test_freeze_loop(tmp_path):
         registry.register(tool)
     runner = AgentRunner(
         store,
-        CandidateLoopModel(),
+        CandidateLoopModel(hashlib.sha256((context.active_root / "sort_utils.py").read_bytes()).hexdigest()),
         registry,
         AutoApprovalGate(allow=True),
         workspace_context=context,
-        command_executor=LocalCommandExecutor(),
+        command_executor=SandboxedCommandExecutor(HostFixtureBackend()),
         command_artifact_store=CommandArtifactStore(store),
     )
-    output = runner.run_turn("修复排序 bug 并交付 candidate")
-    assert output.final_text == "candidate ready"
+    output = runner.run_turn("修复排序 bug")
+    assert output.final_text == "changes ready"
     assert [step["tool"] for step in output.steps] == [
-        "read_file", "run_check", "apply_text_patch", "run_check", "freeze_candidate"
+        "read_file", "run_command", "apply_workspace_edit", "run_command"
     ]
-    manifest, _ = CandidateService(context, store).load()
-    assert manifest["changed_files"] == ["sort_utils.py"]
+    assert not (store.session_dir / "current" / "frozen.patch").exists()
+    assert "sorted(values)" in (context.active_root / "sort_utils.py").read_text(encoding="utf-8")
     assert "reverse=True" in (repo / "sort_utils.py").read_text(encoding="utf-8")
 
 
@@ -245,11 +263,9 @@ def test_command_audit_distinguishes_changes_to_already_dirty_candidate_file(tmp
         {"kind": "pytest", "targets": ["test_side_effect.py"], "timeout_seconds": 30}
     )
     assert result.ok
-    receipt = [event.payload for event in store.read_events() if event.type == "command_receipt"][-1]
-    audit = receipt["result"]
-    assert audit["preexisting_changed_files"] == ["sort_utils.py"]
-    assert audit["command_introduced_changes"] == ["sort_utils.py"]
-    assert audit["git_fingerprints_before"]["sort_utils.py"] != audit["git_fingerprints_after"]["sort_utils.py"]
+    assert store.workspace_state().value == "changes_active"
+    completed = [event.payload for event in store.read_events() if event.type == "command_completed"][-1]
+    assert {item["path"] for item in completed["changed_paths"]} == {"sort_utils.py"}
 
 
 def test_candidate_is_frozen_against_later_worktree_changes(tmp_path):
@@ -265,7 +281,7 @@ def test_candidate_is_frozen_against_later_worktree_changes(tmp_path):
 
 def test_candidate_patch_artifact_tampering_is_rejected(tmp_path):
     _, store, context, manifest = create_passing_candidate(tmp_path)
-    patch_path = store.session_dir / "artifacts" / "candidates" / manifest["candidate_id"] / "candidate.patch"
+    patch_path = store.session_dir / "current" / "frozen.patch"
     patch_path.write_bytes(patch_path.read_bytes() + b"# tampered\n")
     with pytest.raises(CandidateError, match="hash"):
         CandidateService(context, store).load(manifest["candidate_id"])
@@ -308,7 +324,7 @@ def test_apply_rejects_dirty_source_and_changed_head(tmp_path):
     source_file = repo / "sort_utils.py"
     source_file.write_text(source_file.read_text(encoding="utf-8") + "# user\n", encoding="utf-8")
     dirty = CandidateService(context, store).apply(manifest["candidate_id"], lambda *_: True)
-    assert dirty["status"] == ApplyStatus.SOURCE_DIRTY.value
+    assert dirty["status"] == ApplyStatus.SOURCE_CHANGED.value
     git(repo, "restore", "sort_utils.py")
     (repo / "other.txt").write_text("new head\n", encoding="utf-8")
     git(repo, "add", "other.txt")
@@ -327,7 +343,7 @@ def test_apply_rechecks_source_after_approval(tmp_path):
         return True
 
     receipt = CandidateService(context, store).apply(manifest["candidate_id"], mutate_during_approval)
-    assert receipt["status"] == ApplyStatus.SOURCE_DIRTY.value
+    assert receipt["status"] == ApplyStatus.SOURCE_CHANGED.value
     assert "sorted(values, reverse=True)" in source_file.read_text(encoding="utf-8")
     assert "concurrent user edit" in source_file.read_text(encoding="utf-8")
 
@@ -339,7 +355,7 @@ def test_candidate_requires_successful_test_after_latest_edit(tmp_path):
     TextPatchService(context, store).apply(
         path="sort_utils.py", old_text="reverse=True", new_text="reverse=False"
     )
-    with pytest.raises(CandidateError, match="编辑后没有成功"):
+    with pytest.raises(CandidateError, match="没有仍有效"):
         CandidateService(context, store).freeze()
 
 
@@ -382,15 +398,14 @@ def test_default_step_budget_allows_eight_tool_steps_plus_final_response(tmp_pat
     assert len(output.steps) == 8
 
 
-def test_candidate_cli_shows_diff_and_noninteractive_apply_denies(tmp_path):
+def test_current_changes_cli_shows_diff_and_noninteractive_accept_denies(tmp_path):
     repo, store, _, manifest = create_passing_candidate(tmp_path)
     runner = CliRunner()
-    shown = runner.invoke(app, ["show-candidate", manifest["candidate_id"], "--session-root", str(store.session_root)])
+    shown = runner.invoke(app, ["show-changes", store.session_id, "--session-root", str(store.session_root)])
     assert shown.exit_code == 0
-    assert manifest["patch_sha256"] in shown.output
     assert "sort_utils.py" in shown.output
     before = (repo / "sort_utils.py").read_bytes()
-    denied = runner.invoke(app, ["apply-candidate", manifest["candidate_id"], "--session-root", str(store.session_root)])
+    denied = runner.invoke(app, ["accept-changes", store.session_id, "--session-root", str(store.session_root)])
     assert denied.exit_code == 1
     assert '"status": "rejected"' in denied.output
     assert (repo / "sort_utils.py").read_bytes() == before
@@ -406,4 +421,4 @@ def test_resume_allows_journaled_candidate_changes(tmp_path):
     )
     assert result.exit_code == 0
     assert "run_check disabled" not in result.output
-    assert store.read_meta()["workspace_state"] == WorkspaceState.CANDIDATE_CHANGES.value
+    assert store.read_meta()["workspace_state"] == "changes_active"

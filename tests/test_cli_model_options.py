@@ -12,7 +12,7 @@ def test_ask_records_fake_provider_model_and_title_outside_workspace(tmp_path):
     result = CliRunner().invoke(app, ["ask", str(workspace), "看看项目", "--session-root", str(session_root)])
 
     assert result.exit_code == 0
-    meta_files = list(session_root.glob("*/*/meta.json"))
+    meta_files = list(session_root.glob("*/*/session.json"))
     assert meta_files
     meta_text = meta_files[0].read_text(encoding="utf-8")
     assert '"provider": "fake"' in meta_text

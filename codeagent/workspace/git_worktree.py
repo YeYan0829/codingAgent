@@ -13,6 +13,7 @@ class GitWorktreeError(RuntimeError):
 
 
 class WorkspaceState(StrEnum):
+    RECOVERY_REQUIRED = "recovery_required"
     READY = "ready"
     SOURCE_DIRTY = "source_dirty"
     STALE = "stale"
@@ -43,7 +44,7 @@ class GitWorktreeManager:
         self.session_root = Path(session_root).expanduser().resolve()
         self.worktrees_root = self.session_root / "worktrees"
 
-    def create(self, source_root: str | Path, task_workspace_id: str) -> WorkspaceContext:
+    def create(self, source_root: str | Path, session_id: str, workspace_revision: int = 1) -> WorkspaceContext:
         source = Path(source_root).expanduser().resolve()
         repo_root = self._git(source, "rev-parse", "--show-toplevel", error="不是 Git 仓库")
         if Path(repo_root).resolve() != source:
@@ -52,9 +53,10 @@ class GitWorktreeManager:
         if dirty:
             raise GitWorktreeError("原始 Git 工作区不干净（存在 tracked 修改或 untracked 文件），拒绝创建 worktree")
         base_commit = self._git(source, "rev-parse", "HEAD")
-        active = (self.worktrees_root / task_workspace_id).resolve()
+        workspace_id = f"{session_id}-r{workspace_revision}"
+        active = (self.worktrees_root / workspace_id).resolve()
         if active.exists():
-            return self.recover(source, active, task_workspace_id, base_commit)
+            return self.recover(source, active, workspace_revision, base_commit)
         active.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._git(source, "worktree", "add", "--detach", str(active), base_commit, error="创建 detached worktree 失败")
@@ -65,13 +67,13 @@ class GitWorktreeManager:
             except GitWorktreeError as rollback_exc:
                 raise GitWorktreeError(f"{exc}; partial worktree 保留在 {active}: {rollback_exc}") from exc
             raise
-        return WorkspaceContext(source, active, "git_worktree", base_commit, task_workspace_id)
+        return WorkspaceContext(source, active, "git_worktree", base_commit, workspace_revision)
 
     def recover(
         self,
         source_root: str | Path,
         active_root: str | Path,
-        task_workspace_id: str,
+        workspace_revision: int,
         base_commit: str | None = None,
     ) -> WorkspaceContext:
         source = Path(source_root).expanduser().resolve()
@@ -82,9 +84,21 @@ class GitWorktreeManager:
         actual_commit = self._git(active, "rev-parse", "HEAD", error="已有目录不是有效 Git worktree")
         if base_commit and actual_commit != base_commit:
             raise GitWorktreeError("worktree HEAD 与 session 记录的 base commit 不一致")
-        return WorkspaceContext(source, active, "git_worktree", base_commit or actual_commit, task_workspace_id)
+        return WorkspaceContext(source, active, "git_worktree", base_commit or actual_commit, workspace_revision)
 
-    def inspect(self, context: WorkspaceContext, *, candidate_changes: bool = False) -> WorkspaceStateReport:
+    def inspect(
+        self,
+        context: WorkspaceContext,
+        *,
+        candidate_changes: bool = False,
+        recovery_required: bool = False,
+        allow_source_changes: bool = False,
+    ) -> WorkspaceStateReport:
+        if recovery_required:
+            return WorkspaceStateReport(
+                WorkspaceState.RECOVERY_REQUIRED,
+                reason="atomic edit transaction 无法确认恢复完整，受保护能力已关闭",
+            )
         if context.workspace_kind != "git_worktree" or not context.source_root.is_dir() or not context.active_root.is_dir():
             return WorkspaceStateReport(WorkspaceState.MISSING, reason="source 或 active worktree 不存在")
         try:
@@ -101,19 +115,19 @@ class GitWorktreeManager:
         except GitWorktreeError as exc:
             return WorkspaceStateReport(WorkspaceState.MISSING, reason=str(exc))
         common = dict(source_head=source_head, worktree_head=worktree_head, source_dirty=source_dirty, worktree_dirty=worktree_dirty, registered=True)
-        if source_dirty:
+        if source_dirty and not allow_source_changes:
             return WorkspaceStateReport(WorkspaceState.SOURCE_DIRTY, reason="source workspace 存在未提交变化", **common)
-        if source_head != context.base_commit or worktree_head != context.base_commit:
+        if worktree_head != context.base_commit or (source_head != context.base_commit and not allow_source_changes):
             return WorkspaceStateReport(WorkspaceState.STALE, reason="HEAD 与 base_commit 不一致", **common)
         if worktree_dirty:
             if not candidate_changes:
-                return WorkspaceStateReport(WorkspaceState.WORKTREE_DIRTY, reason="task worktree 存在未归因变化", **common)
+                return WorkspaceStateReport(WorkspaceState.WORKTREE_DIRTY, reason="Agent worktree 存在未归因变化", **common)
             return WorkspaceStateReport(
                 WorkspaceState.CANDIDATE_CHANGES,
-                reason="task worktree 包含候选修改，可继续编辑和运行检查",
+                reason="Agent worktree 包含当前修改，可继续编辑和运行检查",
                 **common,
             )
-        return WorkspaceStateReport(WorkspaceState.READY, reason="execution workspace ready", **common)
+        return WorkspaceStateReport(WorkspaceState.READY, reason="Agent workspace ready", **common)
 
     @staticmethod
     def _registered_worktrees(source: Path) -> set[Path]:
@@ -126,6 +140,15 @@ class GitWorktreeManager:
         self._ensure_managed(context.active_root)
         # Git 拒绝移除 dirty worktree；这里不使用 --force，避免丢失未来阶段产生的内容。
         self._git(context.source_root, "worktree", "remove", str(context.active_root), error="worktree 非干净状态或清理失败")
+        if context.active_root.exists():
+            raise GitWorktreeError(f"Git 未能完整清理 worktree: {context.active_root}")
+
+    def discard(self, context: WorkspaceContext) -> None:
+        """用户明确采纳/丢弃后，移除已验证的受管 dirty worktree。"""
+        if context.workspace_kind != "git_worktree":
+            raise GitWorktreeError("当前没有 Agent worktree")
+        self._ensure_managed(context.active_root)
+        self._git(context.source_root, "worktree", "remove", "--force", str(context.active_root), error="清理 Agent worktree 失败")
         if context.active_root.exists():
             raise GitWorktreeError(f"Git 未能完整清理 worktree: {context.active_root}")
 

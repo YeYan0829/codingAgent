@@ -1,57 +1,107 @@
 # CodeAgent Runtime
 
-CodeAgent Runtime 是一个本地运行、以不覆盖用户代码为首要约束的最小 Coding Agent Runtime。v0.4.0 已实现完整候选修改闭环：
+CodeAgent Runtime 是一个本地运行、以不覆盖用户代码为首要约束的最小 Coding Agent Runtime。当前用户流程是：
 
 ```text
-描述任务 → 读取代码 → pytest 基线 → 在隔离工作区编辑 → 再次验证
-→ 冻结 Candidate → 用户审查 diff → 拒绝或批准进入 source
+创建 Session → 读取 source → 首次受保护操作时审批并创建 Agent worktree
+→ 搜索 / 编辑 / 受控验证 → 查看当前修改 → 采纳或丢弃
+→ 保留同一 worktree，在同一 Session 中继续
 ```
 
-当前仍是功能分支上的 L2 任务闭环实现，尚未合并到 `master`，也没有创建 release/tag。它适用于用户信任的本地 Git 仓库；Git worktree 保护代码状态，但不是主机安全沙箱。
+当前支持 Linux/WSL2 和本地 Git 仓库。Git worktree 隔离当前修改，Bubblewrap 对每条命令强制主机资源边界。
 
-原 Repository Understanding、Project Model 和 Shared Project View 方案已停止推进并归档。当前保留 v0.4 Runtime 作为已实现底座，下一实践方向等待重新调研和规划；简单绘图 MCP 服务或插件目前只是待验证假设。
+第一次接管项目，请先读 [System Vision](docs/系统目标.md) 和[当前设计上下文](docs/PROJECT_GUIDE.md)。
 
-第一次接管项目，请先读 [System Vision](docs/系统目标.md) 和[当前设计上下文](docs/PROJECT_GUIDE.md)。如果要运行或排查现有 v0.4 Runtime，再查阅当前实现和测试文档；历史目标架构和未实现设计统一保存在 `docs/archive/`。
+## 当前能力
 
-## v0.4 用户能力
-
-- 使用 Fake 或 DeepSeek provider 探索本地代码。
-- 在独立 task worktree 中运行受控 pytest，不接受任意 shell。
-- 使用唯一的受控文本 patch 工具修改 UTF-8 文件，不能直接写 source。
-- 测试通过后冻结包含固定 diff、hash、changed files 和测试结果的 Candidate。
-- 用户可以查看、拒绝或批准 Candidate。
-- Apply 前后检查 source HEAD 和 clean 状态；source 变化时拒绝，不自动 merge/rebase。
-- 退出后可以恢复包含候选修改的 worktree；dirty worktree 不会被 cleanup 静默删除。
+- 使用 Fake 或 DeepSeek provider 探索本地代码；
+- 使用遵守 repository ignore 的 ripgrep literal/regex 搜索和文件查找，可显式包含非敏感 hidden 文件；
+- 严格读取 UTF-8 文本，并通过固定只读 Git 工具查看 status、diff stat 和实际 diff；
+- 首次需要编辑或受控验证时，经批准按需创建 Session 专属 detached worktree；
+- 使用唯一的 `apply_workspace_edit` 原子创建、修改、删除和移动多个 UTF-8 文本文件；
+- 通过单一 `run_command` 在 Bubblewrap 中执行 pipeline、redirect、命令链和项目自定义工具；
+- 额外文件写入与 WSL host network 由 Agent 显式申请，Policy 决定允许、询问或拒绝；
+- 验证结果绑定 exact command、Candidate revision、Git tree 和 Sandbox Policy，后续编辑或命令会使旧证据失效；
+- 查看、采纳或丢弃当前 pending changes；
+- accept 时使用 accepted baseline、Agent worktree 和当前 source 做 Git 三方合并；
+- 非冲突 source 并发修改可以合并，真实冲突保留双方现场并拒绝写 source；
+- accept 后 worktree HEAD 前移为内部 checkpoint，用户 source branch 不会被自动 commit；
+- Atomic Edit 与沙盒命令产生的变化都是合法当前修改；只有命令结束后无法建立可信 workspace 边界才进入 `workspace_tainted`；
+- resume 时恢复 source-only、active 或 tainted workspace，`recovery_required` 始终 fail closed。
 
 ## 快速使用
 
-安装开发版本：
+### 1. WSL2 系统依赖与项目安装
+
+Ubuntu/WSL2：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y bubblewrap ripgrep python3-venv
+```
+
+确认 `bwrap` 的 namespace smoke test 能通过；版本字符串存在并不等于当前 WSL/kernel 允许 namespace：
+
+```bash
+bwrap --ro-bind / / --unshare-user --unshare-pid --unshare-net \
+  --new-session --die-with-parent --proc /proc --dev /dev -- /bin/true
+```
+
+安装 CodeAgent 开发版本：
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-只读探索：
+搜索工具要求 `rg`；命令工具要求 `bwrap`。缺失或 probe 失败时命令 fail closed，不会裸执行。
+
+### 2. 配置 DeepSeek API
+
+Runtime 当前读取环境变量 `DEEPSEEK_API_KEY`，不会读取仓库 `.env`，也不要把 Key 写入 Git、任务 prompt 或 Agent command。当前默认模型是 `deepseek-v4-flash`，API endpoint 是 `https://api.deepseek.com`；模型名应以 [DeepSeek 官方 Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/) 为准。
+
+只在当前 WSL shell 临时配置：
+
+```bash
+read -rsp "DeepSeek API Key: " DEEPSEEK_API_KEY
+echo
+export DEEPSEEK_API_KEY
+test -n "$DEEPSEEK_API_KEY" && echo "DEEPSEEK_API_KEY is set"
+```
+
+关闭该 shell 后变量消失。若使用 shell profile、密码管理器或 `direnv` 持久配置，请确保密钥文件不在 repository 内、权限至少为 `0600`。不要在 issue、日志或截图中打印变量值。
+
+模型 API 请求由 Runtime 宿主进程发起，不属于 Candidate 内的 `run_command`，因此不需要 Agent 申请 sandbox NETWORK。Candidate 命令仍默认断网。当前 DeepSeek adapter 明确关闭 thinking mode，以避免尚未持久化 `reasoning_content` 的多轮 tool-call 协议；本轮人工测试评估的是现有 non-thinking adapter。
+
+可先做一次只读 API smoke test：
+
+```bash
+codeagent ask . "只读取 README，并用三句话概括项目，不要编辑或执行命令" \
+  --provider deepseek \
+  --model deepseek-v4-flash \
+  --session-root ~/.codeagent/smoke-sessions
+```
+
+这会产生真实 API 费用。先用小任务观察 token 消耗，并在 DeepSeek 控制台设置合理余额；价格可能变化，请查看上述官方页面。
+
+### 3. 创建交互 Session
+
+创建 Session：
 
 ```bash
 codeagent start . --provider deepseek --model deepseek-v4-flash
 ```
 
-执行完整 Coding Agent 任务：
+不再需要 `--mode readonly/execution`。Agent 初始直接读取 source，首次调用编辑或受控命令时 Runtime 才请求权限并创建 worktree。
+
+查看和处理当前修改：
 
 ```bash
-codeagent start . --mode execution --provider deepseek --model deepseek-v4-flash
+codeagent show-changes <session-id>
+codeagent accept-changes <session-id>
+codeagent discard-changes <session-id>
 ```
 
-Candidate 审查与处理：
-
-```bash
-codeagent show-candidate <session-id-or-candidate-id>
-codeagent apply-candidate <session-id-or-candidate-id>
-codeagent reject-candidate <session-id-or-candidate-id>
-```
-
-Session 恢复和保守清理：
+Session 与诊断数据：
 
 ```bash
 codeagent list-sessions
@@ -59,52 +109,70 @@ codeagent resume <session-id>
 codeagent cleanup <session-id>
 ```
 
-如果创建 session 时使用了 `--session-root`，后续命令目前也必须传入同一个值。也可以统一设置：
+如果创建 Session 时使用了 `--session-root`，后续命令也需要传入相同值，或统一设置 `CODEAGENT_SESSION_ROOT`。
 
-```powershell
-$env:CODEAGENT_SESSION_ROOT="D:\codeagent-sessions"
+### 4. 真实仓库人工任务
+
+`examples/eval-repos` 是没有嵌套 `.git` 的上游快照，不能直接作为 execution workspace。已经准备了三个可重复任务、环境脚本和 workspace 外 oracle：
+
+```bash
+examples/eval-tasks/prepare.sh itsdangerous-strict-base64
+sed -n '1,200p' examples/eval-tasks/tasks/itsdangerous-strict-base64.md
+
+codeagent start ~/codeagent-evals/workspaces/itsdangerous-strict-base64 \
+  --provider deepseek \
+  --model deepseek-v4-flash \
+  --session-root ~/.codeagent/eval-sessions
 ```
 
-## 为什么现在需要 readonly / execution
+完成后运行独立验收：
 
-这是当前实现的能力边界，不是理想产品交互：
+```bash
+examples/eval-tasks/verify.sh itsdangerous-strict-base64 \
+  <session-id> ~/.codeagent/eval-sessions
+```
 
-- `readonly` 直接读取 source，不创建 worktree，也不注册测试和编辑工具。
-- `execution` 要求 clean Git source，预先创建 detached worktree，再注册 pytest、编辑和 Candidate 工具。
+任务列表、推荐顺序和人工记录项见 [真实 LLM 人工评估任务](examples/eval-tasks/README.md)。
 
-这样做让 v0.4 的权限边界容易验证，但迫使用户在任务开始前理解内部 mode。成熟体验应该只有“开始一个任务”：Agent 先读取；真正需要测试或编辑时，Runtime 再申请权限并创建隔离工作区。`readonly` / `execution` 应逐步退回内部 capability，而不是长期作为用户必须选择的产品概念。
+## Session、worktree 与当前修改
 
-## 为什么保存这么多 artifacts
+- Session 固定绑定用户 source workspace，不建立额外 Task 实体；
+- Session 初始为 `source_only`，不创建 worktree；
+- worktree 创建后，读取、搜索、编辑和验证都切换到该 active workspace；
+- worktree HEAD 表示最近 accepted baseline；`git diff HEAD` 表示当前 pending changes；
+- accept 只同步 pending changes到 source，不结束 Session 或 worktree；
+- discard 只把 pending changes恢复到 baseline，不修改 source；
+- frozen patch 只在一次 accept 审查窗口临时存在。
 
-真实 Coding Agent 通常也会保存部分对话、tool trace、diff、测试结果和审批记录，企业环境往往保存得更多；区别是这些内容通常被折叠在任务时间线或诊断页面中，而不是要求用户直接理解目录和 receipt。
+## 持久化
 
-v0.4 采用 audit-first 实现，为验证安全不变量，当前会保留每次命令的 request/result、stdout/stderr、workspace diff，每次编辑的 journal，以及 Candidate/apply receipt。它们默认位于用户级 session root，不写入项目 source，但目前没有自动 retention，因此确实比正常个人 Coding Agent 体验更重。
+正常 Session 主要保存：
 
-长期应分成三层：
+```text
+session.json       当前 Session/workspace 状态
+events.jsonl       对话、审批和关键结果摘要
+Git worktree       当前代码和 accepted baseline
+```
 
-| 层级 | 内容 | 目标生命周期 |
-| --- | --- | --- |
-| 交付证据 | Candidate patch/hash、changed files、最终测试摘要、apply receipt | 长期保留，用户可见 |
-| 任务历史 | 对话、关键 tool timeline、失败原因 | 随 session 保留，可删除或导出 |
-| 诊断副产物 | 完整 stdout/stderr、逐次 edit journal、runtime HOME/TEMP、命令中间 diff | 默认隐藏，按容量/时间自动清理 |
-
-当前实现完成了证据采集，但尚未完成分层展示、压缩和 retention。这是明确的 UX/生命周期待办，不应被描述为最终用户必须承担的操作方式。
+成功 Atomic Edit 不永久保存 request、plan、patch 和 rollback backup。成功且没有 workspace side effect 的命令会清理完整 stdout/stderr 和 runtime HOME/TMP。失败、timeout、workspace side effect、未完成事务或 `recovery_required` 才在 `diagnostics/` 保留必要材料。项目不再同时维护 transcript/events 或 worktree/current.patch 两份权威事实。
 
 ## 安全与功能边界
 
-- 只支持 pytest，不支持 npm、pnpm、ruff、mypy、依赖安装或任意 shell。
-- 文本 patch 不支持删除、移动/重命名、非 UTF-8、二进制、symlink、敏感路径、超大文件或自动建目录。
-- 不支持 dirty source snapshot、自动 merge/rebase 或冲突解决。
-- 不自动发现项目 `.venv`，pytest 使用运行 CodeAgent 的 Python。
-- 没有网络、CPU、内存、磁盘、进程数量或系统调用 sandbox。
-- pytest 仍以当前用户权限运行，只应对可信仓库启用 execution capability。
+- `run_command` 接受任意 shell string，但默认无网络、host root 只读，额外资源必须显式申请；
+- 原子编辑不支持非 UTF-8、二进制、symlink、敏感路径、mode 变更、copy、case-only rename 或目录删除；
+- Git 三方合并冲突不会由 Agent 自动解决；
+- Runtime 不判断 validation command 是否充分；`purpose=validation` 且成功只形成“存在当前验证证据”；
+- 当前没有 cgroup CPU/内存/进程数限制、domain/port 网络 ACL 或通用 secret 文件名扫描；
+- bind mask 只能遮罩 sandbox 构造时已经存在的确定敏感路径，不能保证未来才出现的同名路径。
 
 ## 文档职责
 
-- [System Vision](docs/系统目标.md)：项目为什么存在、目标、原则、非目标和成功标准。
-- [当前设计上下文](docs/PROJECT_GUIDE.md)：当前有效边界、已暂停方向和下一轮待调研问题。
-- [当前 Runtime 实现](docs/ARCHITECTURE.md)：v0.4 已实现模块、状态和运行边界，主要用于开发与排障。
-- [测试说明](docs/TESTING.md)：自动化覆盖与不能证明的边界。
-- [人工验收](docs/MANUAL_TEST.md)：当前版本唯一的真实终端验收清单。
+- [System Vision](docs/系统目标.md)：长期目标、原则和非目标；
+- [当前设计上下文](docs/PROJECT_GUIDE.md)：当前状态、下一步和文档导航；
+- [近期实践计划](docs/NEXT_PHASE_PLAN.md)：实施顺序和验收层次；
+- [当前 Runtime 实现](docs/ARCHITECTURE.md)：已经实现的数据流和安全边界；
+- [当前有效决策](docs/DECISIONS.md)：跨阶段产品级约束；
+- [Session/Workspace/Persistence Technical Design](docs/SESSION_WORKSPACE_PERSISTENCE_TECHNICAL_DESIGN.md)：本轮生命周期与持久化契约；
+- [测试说明](docs/TESTING.md) 与 [CLI Dogfood](docs/MANUAL_TEST.md)：自动化和正式 CLI 验收。
 
-旧 v0.3、原 v0.5 VS Code 路线、已暂停的 Target Architecture、Repository Understanding 方案、阶段性 Roadmap、历史决策和原始产品思考保存在 `docs/archive/`，不再作为当前实现或规划入口。
+历史路线和已归档调研位于 `docs/archive/`，不作为当前实现依据。

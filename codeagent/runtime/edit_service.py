@@ -52,7 +52,7 @@ class TextPatchService:
 
     def apply(self, *, path: str, old_text: str, new_text: str) -> dict[str, Any]:
         if self.context.workspace_kind != "git_worktree" or self.context.active_root == self.context.source_root:
-            raise EditError("写工具只允许操作独立 execution worktree，不能直接写 source")
+            raise EditError("写工具只允许操作 Session 的 Agent worktree，不能直接写 source")
         if not isinstance(path, str) or not isinstance(old_text, str) or not isinstance(new_text, str):
             raise TypeError("path、old_text 和 new_text 必须是字符串")
         if not path or "\x00" in path:
@@ -130,6 +130,7 @@ class TextPatchService:
                 target.unlink(missing_ok=True)
             raise
         self.session_store.append_event("edit_receipt", entry)
+        entry["candidate_revision"] = self.session_store.next_candidate_revision()
         return entry
 
     def _resolve_non_symlink(self, relative: Path) -> Path:

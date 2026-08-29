@@ -75,6 +75,21 @@ def test_deepseek_tool_calls_to_llm_response():
     assert response.tool_calls[0].arguments == {"path": "README.md"}
 
 
+def test_deepseek_preserves_explanation_before_tool_calls():
+    tool_call = SimpleNamespace(
+        id="call_1",
+        function=SimpleNamespace(name="read_file", arguments='{"path": "README.md"}'),
+    )
+    client = FakeClient(response_with_message(SimpleNamespace(content="我先阅读项目说明。", tool_calls=[tool_call])))
+
+    response = DeepSeekClient(api_key="key", client=client).complete(
+        ModelRequest(messages=[{"role": "user", "content": "inspect"}])
+    )
+
+    assert response.text == "我先阅读项目说明。"
+    assert response.tool_calls[0].name == "read_file"
+
+
 def test_deepseek_malformed_tool_arguments_return_clear_text():
     tool_call = SimpleNamespace(
         id="call_1",

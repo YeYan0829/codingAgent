@@ -37,7 +37,13 @@ class ContextBuilder:
                             },
                         }
                     )
-                messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": event.payload.get("message") or None,
+                        "tool_calls": tool_calls,
+                    }
+                )
             elif event.type == "tool_result":
                 call_id = event.payload.get("call_id", "")
                 if call_id not in known_tool_call_ids:

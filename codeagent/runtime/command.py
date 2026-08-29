@@ -5,35 +5,49 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
+from codeagent.runtime.permissions import EffectiveSandboxPolicy, PermissionRequest
 from codeagent.workspace.workspace import WorkspaceContext
 
 
-class ApprovalDecision(StrEnum):
-    APPROVE_ONCE = "approve_once"
-    DENY = "deny"
-
-
 class CommandExecutionStatus(StrEnum):
-    POLICY_DENIED = "policy_denied"
-    APPROVAL_DENIED = "approval_denied"
     COMPLETED = "completed"
-    TIMED_OUT = "timed_out"
+    TIMED_OUT = "execution_timed_out"
     SPAWN_FAILED = "spawn_failed"
     EXECUTOR_REJECTED = "executor_rejected"
+    SANDBOX_UNAVAILABLE = "sandbox_unavailable"
+    SANDBOX_SETUP_FAILED = "sandbox_setup_failed"
+    WORKSPACE_AUDIT_UNAVAILABLE = "workspace_audit_unavailable"
 
 
 @dataclass(frozen=True)
-class CommandSpec:
-    command_id: str
-    command_kind: str
-    argv: tuple[str, ...]
+class CommandRequest:
+    execution_id: str
+    command: str
     cwd: str
     timeout_seconds: int
+    purpose: str
+    permissions: tuple[PermissionRequest, ...] = ()
+    workspace_revision: int = 0
+    base_commit: str | None = None
+    before_candidate_revision: int = 0
+    before_subject_tree: str | None = None
+    command_sha256: str = ""
 
     def to_dict(self) -> dict:
-        data = asdict(self)
-        data["argv"] = list(self.argv)
-        return data
+        return {
+            "execution_id": self.execution_id, "command": self.command, "cwd": self.cwd,
+            "timeout_seconds": self.timeout_seconds, "purpose": self.purpose,
+            "permissions": [item.to_dict() for item in self.permissions],
+            "workspace_revision": self.workspace_revision, "base_commit": self.base_commit,
+            "before_candidate_revision": self.before_candidate_revision,
+            "before_subject_tree": self.before_subject_tree, "command_sha256": self.command_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class SandboxExecutionRequest:
+    command: CommandRequest
+    policy: EffectiveSandboxPolicy
 
 
 @dataclass(frozen=True)
@@ -64,79 +78,23 @@ class CommandResult:
     stdout_artifact: str | None = None
     stderr_artifact: str | None = None
     environment_names: tuple[str, ...] = ()
-    workspace_changed: bool | None = None
-    changed_files: tuple[str, ...] = ()
-    preexisting_changed_files: tuple[str, ...] = ()
-    command_introduced_changes: tuple[str, ...] = ()
-    workspace_change_artifact: str | None = None
-    workspace_audit_error: str | None = None
-    git_status_before: str | None = None
-    git_status_after: str | None = None
-    git_fingerprints_before: dict[str, str] | None = None
-    git_fingerprints_after: dict[str, str] | None = None
+    payload_started: bool = False
+    process_tree_stopped: bool = True
+    before_candidate_revision: int | None = None
+    after_candidate_revision: int | None = None
+    before_subject_tree: str | None = None
+    after_subject_tree: str | None = None
+    command_induced_changes: tuple[dict[str, str], ...] = ()
+    effective_policy: dict | None = None
 
     def to_dict(self) -> dict:
         data = asdict(self)
         data["status"] = self.status.value
         data["environment_names"] = list(self.environment_names)
-        data["changed_files"] = list(self.changed_files)
-        data["preexisting_changed_files"] = list(self.preexisting_changed_files)
-        data["command_introduced_changes"] = list(self.command_introduced_changes)
+        data["command_induced_changes"] = list(self.command_induced_changes)
         return data
 
 
-@dataclass(frozen=True)
-class CommandReceipt:
-    command_spec: CommandSpec
-    status: CommandExecutionStatus
-    policy_decision: str
-    policy_reason: str
-    approval_decision: ApprovalDecision | None
-    result: CommandResult | None
-
-    def to_dict(self) -> dict:
-        return {
-            "command_spec": self.command_spec.to_dict(),
-            "status": self.status.value,
-            "policy_decision": self.policy_decision,
-            "policy_reason": self.policy_reason,
-            "approval_decision": self.approval_decision.value if self.approval_decision else None,
-            "result": self.result.to_dict() if self.result else None,
-        }
-
-
-class CommandArtifactStoreProtocol(Protocol):
-    def prepare(self, spec: CommandSpec) -> CommandArtifactPaths:
-        ...
-
-    def finalize(self, receipt: CommandReceipt) -> None:
-        ...
-
-
 class CommandExecutor(Protocol):
-    def execute(
-        self,
-        spec: CommandSpec,
-        workspace_context: WorkspaceContext,
-        artifacts: CommandArtifactPaths | None,
-    ) -> CommandResult:
-        ...
-
-
-class FakeCommandExecutor:
-    """只返回预配置结果，绝不启动进程。"""
-
-    def __init__(self, result: CommandResult | None = None) -> None:
-        self.result = result or CommandResult(exit_code=0, stdout="1 passed")
-        self.calls: list[CommandSpec] = []
-        self.contexts: list[WorkspaceContext] = []
-
-    def execute(
-        self,
-        spec: CommandSpec,
-        workspace_context: WorkspaceContext,
-        artifacts: CommandArtifactPaths | None,
-    ) -> CommandResult:
-        self.calls.append(spec)
-        self.contexts.append(workspace_context)
-        return self.result
+    def execute(self, request: SandboxExecutionRequest, context: WorkspaceContext,
+                artifacts: CommandArtifactPaths | None) -> CommandResult: ...

@@ -47,7 +47,7 @@ class DeepSeekClient(BaseModelClient):
         if isinstance(tool_calls, LLMResponse):
             return tool_calls
         if tool_calls:
-            return LLMResponse(tool_calls=tool_calls)
+            return LLMResponse(text=getattr(message, "content", None) or None, tool_calls=tool_calls)
         return LLMResponse(text=getattr(message, "content", None) or "")
 
     def _parse_tool_calls(self, raw_tool_calls: Any) -> list[LLMToolCall] | LLMResponse:

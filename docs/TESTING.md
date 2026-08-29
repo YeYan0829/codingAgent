@@ -1,81 +1,37 @@
 # 测试说明
 
-## 自动化测试
+## 运行方式
 
 ```bash
-pytest -q
+.venv/bin/pytest -q
+.venv/bin/python -m compileall -q codeagent tests
+git diff --check
 ```
 
-v0.3 冻结基线：
-
-```text
-92 passed, 1 skipped
-```
-
-该数字是 v0.3 的历史记录，不等同于当前 v0.4 工作区结果；v0.4 的最终数字以本次全量 `pytest -q` 为准。
-
-2026-08-11 v0.4 功能分支全量结果（Python 3.11 / Windows）：
-
-```text
-112 passed, 2 skipped in 76.95s
-```
-
-两个 skip 都是当前 Windows 测试环境不能创建 symlink；对应拒绝逻辑仍由可创建 symlink 的平台用例覆盖，不是功能执行失败。
-
-测试覆盖：
-
-- Session store、用户级 session root、旧 session fallback、metadata、事件和 transcript。
-- CLI provider/model/session-root、readonly/execution mode、list、resume 和 cleanup。
-- `WorkspaceContext`、Git detached worktree、双 session 隔离和保守 cleanup。
-- `ready`、`source_dirty`、`stale`、`worktree_dirty` 和 `missing` 状态检查。
-- Workspace path guard、敏感文件拒绝、文件与 Git 只读工具。
-- `ToolSpec -> ModelTool` 与 provider adapter schema。
-- `CommandSpec`、`CommandPolicy`、Approval deny/approve-once 和 receipt。
-- `FakeCommandExecutor` 与真实 `LocalCommandExecutor`。
-- 真实 pytest 成功、失败、spawn failure、timeout 和 cwd 二次检查。
-- `shell=False`、不可交互 stdin、minimal environment 和敏感环境变量过滤。
-- stdout/stderr、request/result、workspace patch artifacts。
-- 命令前后 tracked/untracked workspace side-effect audit。
-- Windows 可信绝对 `taskkill.exe` 路径。
-- FakeLLM、DeepSeekClient mock、tool call history 和 readonly 回归。
-- `apply_text_patch` 对 active/source 边界、越界、symlink、敏感路径、二进制、UTF-8、大小和上下文匹配的检查。
-- Windows CRLF 文件可以使用 `read_file` 返回的 LF 上下文编辑，并保持 CRLF；混合行尾不被隐式重写。
-- edit journal 的前后 hash、diff 和 session/workspace identity。
-- 确定性模型执行读取、pytest 失败、编辑、pytest 通过、冻结 Candidate 的完整 tool loop。
-- Candidate patch/hash 冻结、UTF-8 新文件、测试 receipt 引用和 workspace side effects。
-- apply 拒绝、source dirty、HEAD 改变、批准期间并发变化、固定 hash 应用与 apply receipt。
-- journaled candidate dirty resume 与普通未知 dirty worktree 的能力分流。
-- 八个工具步骤之后仍保留最终模型总结额度；Candidate status 路径解析保留 Git porcelain 前导状态列。
-
-`tests/conftest.py` 会把 `CODEAGENT_SESSION_ROOT` 指向临时目录，集成测试也使用临时 Git 仓库和 detached worktree，不依赖用户真实项目。
-
-## Readonly smoke test
+真实 Bubblewrap integration 默认跳过；指定可信测试 executable 后运行：
 
 ```bash
-codeagent ask . "帮我看看这个项目结构" --session-root .tmp-sessions
+CODEAGENT_TEST_BWRAP=/usr/bin/bwrap .venv/bin/pytest -q tests/test_bubblewrap_integration.py
 ```
 
-预期：FakeLLM 完成只读工具循环，不创建 worktree，也不注册 `run_check`。
+## 覆盖范围
 
-## DeepSeek readonly smoke test
+- Search/Read schema、ignore/hidden、SensitivePath、PathGuard、symlink、UTF-8、截断和 Git fixed argv；
+- Atomic Edit 四种 operation、SHA conflict、目录副作用、rollback、rollback failure 和 resume recovery gate；
+- `run_command` 闭合 schema、cwd/limits、fixed inner bash、host `shell=False`、pipeline/redirect/quoting/chaining；
+- output cap、timeout、process-group TERM/KILL、setup/payload 失败分类和 bwrap unavailable fail-closed；
+- Permission 的 READ/WRITE/NETWORK、ONCE/SESSION、canonical symlink、文件/目录语义、WRITE parent expansion、hard deny 和 identity 复检；
+- deterministic MountPlan、root/Candidate/source/Git/runtime/sensitive `/tmp` 与 OFF/HOST network 翻译；
+- command create/update/delete/rename provenance、失败/timeout 修改仍为合法 Candidate、after audit failure 才 taint、进程树不确定才 recovery；
+- Candidate revision、validation stale、evidence-exists accept gate、统一 patch、source 三方合并、discard/resume；
+- Fake Model 经正式 ToolRegistry/AgentRunner 完成 read → command/edit；不接真实 LLM。
 
-PowerShell：
+真实 Bubblewrap 测试额外验证 Candidate 写成功、source/Git metadata 写失败、默认 network namespace 无法访问 host localhost、批准 NETWORK 后可访问，以及 Python/pytest 与 Make 两类已有工具链。
 
-```powershell
-$env:DEEPSEEK_API_KEY="你的 key"
-codeagent ask examples\buggy-repos\tiny-sort-bug "请只读分析测试为什么失败，不要修改文件" --provider deepseek --model deepseek-v4-flash
-```
+## 测试不证明
 
-预期：真实模型请求只读工具，Runtime 记录 tool calls，不运行 pytest，也不写文件。
-
-## 真实终端验收
-
-当前唯一清单见 [MANUAL_TEST.md](MANUAL_TEST.md)，合并覆盖历史 v0.3 readonly/controlled pytest 基线和 v0.4 edit/Candidate/apply 闭环。真实 DeepSeek 验收需要 API key、网络和真实 TTY，只能使用 disposable fixture。
-
-人工清单关注用户可观察行为和最终交付证据；内部 schema、逐个 artifact 文件、异常分支组合和平台差异主要由自动化测试覆盖。
-
-## 当前测试不能证明什么
-
-自动化测试验证协议、路径、审计和生命周期行为，但不能证明 pytest 受到主机级安全隔离。当前没有网络、CPU、内存、磁盘、进程数量或系统调用 sandbox；只应在可信本地仓库中使用 execution mode。
-
-自动化测试也不证明真实 DeepSeek 在所有任务上都会主动选择正确的编辑上下文或完成多轮自我修正。真实 provider 的 TTY 验收步骤见 [MANUAL_TEST.md](MANUAL_TEST.md)，需要用户显式提供 API Key 和网络授权。
+- 模型是否会聪明选择工具、权限或验证命令；
+- validation 是否充分；
+- domain/port 网络隔离、cgroup 资源配额或通用 syscall policy；
+- repo-local secret 文件自动识别；
+- 所有 Linux distribution、WSL/kernel 或 nested-container 组合。

@@ -2,7 +2,7 @@
 
 本目录保存三个来自 GitHub 的固定仓库快照，用于设计和验证比算法题更接近真实开发的 Coding Agent 任务。
 
-这些目录目前只是 **repository fixtures**，不是已经定义完成的 benchmark task。后续还需要为每个任务单独固定用户请求、初始状态、允许操作、依赖环境、hidden tests 和成功条件。
+这些目录本身只是 **repository fixtures**。首轮人工任务、准备脚本和 workspace 外 oracle 已放在 [`../eval-tasks/`](../eval-tasks/README.md)；它们是 dogfood fixtures，不等同于正式 benchmark 数据集。
 
 ## 快照来源
 
@@ -28,7 +28,7 @@
 
 ## 命令与网络边界
 
-“命令执行”应该进入评估范围，但第一步评估的是**受控项目命令**，不是向 Agent 开放任意 shell。三个仓库提供了不同的验证入口：
+“命令执行”已经通过 `run_command + Bubblewrap` 进入评估范围。Agent 可以提交任意 shell string，但实际文件系统、网络和进程副作用仍由 Runtime Policy 与 sandbox 强制限制。三个仓库提供了不同的验证入口：
 
 - `itsdangerous`：pytest、ruff/pre-commit、mypy、pyright 和文档构建；
 - `click`：pytest、ruff/pre-commit、mypy、pyright、文档构建；
@@ -63,9 +63,9 @@
 
 不要让 benchmark adapter 直接替 Agent 修改源码，也不要向 Agent 暴露 hidden tests。
 
-## 下一步尚未完成
+## 后续正式 benchmark 工作
 
-导入仓库不等于 benchmark 已经可用。下一步需要：
+人工任务已经可运行，但导入仓库仍不等于正式 benchmark 已经可用。后续需要：
 
 - 从每个仓库选择少量、可重复、规模适中的具体任务；
 - 确认任务能在固定 Python 和依赖版本下离线运行；

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any
 
 from codeagent.config import default_session_root
 from codeagent.session.events import SessionEvent
-from codeagent.workspace.workspace import WorkspaceContext
+from codeagent.workspace.workspace import SessionWorkspaceState, WorkspaceContext
 
 
 class SessionStoreError(RuntimeError):
@@ -18,96 +19,209 @@ class SessionStoreError(RuntimeError):
 
 
 class SessionStore:
+    """Session 的唯一业务状态与 append-only 关键历史。"""
+
     UNTITLED = "Untitled session"
+    SCHEMA_VERSION = 2
 
     def __init__(self, workspace_root: Path | str, session_id: str | None = None, session_root: Path | str | None = None) -> None:
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.session_root = Path(session_root).expanduser().resolve() if session_root is not None else default_session_root().expanduser().resolve()
         self.base_dir = self.session_root / self.workspace_key(self.workspace_root)
-        self.legacy_base_dir = self.workspace_root / ".codeagent" / "sessions"
         self.session_id = session_id or uuid.uuid4().hex[:12]
         self.session_dir = self.base_dir / self.session_id
-        self.meta_path = self.session_dir / "meta.json"
+        self.meta_path = self.session_dir / "session.json"
         self.events_path = self.session_dir / "events.jsonl"
-        self.transcript_path = self.session_dir / "transcript.md"
+        self.diagnostics_dir = self.session_dir / "diagnostics"
 
-    def create(self, *, mode: str = "readonly", provider: str = "fake", model: str = "fake", title: str | None = None, workspace_context: WorkspaceContext | None = None) -> "SessionStore":
-        now = datetime.now(timezone.utc).isoformat()
+    def create(self, *, provider: str = "fake", model: str = "fake", title: str | None = None) -> "SessionStore":
+        now = _now()
         self.session_dir.mkdir(parents=True, exist_ok=False)
-        session_title = title or self.UNTITLED
-        context = workspace_context or WorkspaceContext.source(self.workspace_root)
-        if context.source_root != self.workspace_root:
-            raise SessionStoreError("workspace context 的 source_root 与 session workspace 不一致")
-        meta = {
+        context = WorkspaceContext.source(self.workspace_root)
+        state = {
+            "schema_version": self.SCHEMA_VERSION,
             "session_id": self.session_id,
-            "title": session_title,
+            "title": title or self.UNTITLED,
             "workspace": str(self.workspace_root),
             "session_root": str(self.session_root),
             "workspace_key": self.workspace_key(self.workspace_root),
             "created_at": now,
             "last_active_at": now,
-            "mode": mode,
             "provider": provider,
             "model": model,
+            "workspace_state": SessionWorkspaceState.SOURCE_ONLY.value,
+            "workspace_state_reason": "",
+            "candidate_revision": 0,
+            "accepted_candidate_revision": 0,
             **context.to_metadata(),
-            "worktree_lifecycle_state": "active" if context.workspace_kind == "git_worktree" else "not_applicable",
         }
-        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_state(state)
         self.events_path.touch()
-        self.transcript_path.write_text(f"# {session_title}\n\nSession: {self.session_id}\nWorkspace: {self.workspace_root}\n\n", encoding="utf-8")
-        self.append_event("session_created", {"session_id": self.session_id, "title": session_title, "workspace": str(self.workspace_root)})
+        self.append_event("session_created", {"session_id": self.session_id, "title": state["title"], "workspace": str(self.workspace_root)})
         return self
 
-    def workspace_context(self) -> WorkspaceContext:
-        """从新 metadata 恢复 context；旧 session 自动退化为 source context。"""
-        return WorkspaceContext.from_metadata(self.read_meta())
-
-    def update_workspace_context(self, context: WorkspaceContext, lifecycle_state: str = "active") -> None:
-        if context.source_root != self.workspace_root:
-            raise SessionStoreError("workspace context 的 source_root 与 session workspace 不一致")
-        meta = self.read_meta()
-        meta.update(context.to_metadata())
-        meta["worktree_lifecycle_state"] = lifecycle_state
-        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    def update_worktree_lifecycle(self, lifecycle_state: str) -> None:
-        meta = self.read_meta()
-        meta["worktree_lifecycle_state"] = lifecycle_state
-        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    def update_workspace_state(self, state: str, reason: str = "") -> None:
-        meta = self.read_meta()
-        meta["workspace_state"] = state
-        meta["workspace_state_reason"] = reason
-        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
     def load(self) -> "SessionStore":
-        if not self.meta_path.exists() and (self.legacy_base_dir / self.session_id / "meta.json").exists():
-            self.session_dir = self.legacy_base_dir / self.session_id
-            self.meta_path = self.session_dir / "meta.json"
-            self.events_path = self.session_dir / "events.jsonl"
-            self.transcript_path = self.session_dir / "transcript.md"
         if not self.meta_path.exists() or not self.events_path.exists():
             raise SessionStoreError(f"session not found: {self.session_id}")
         self.read_meta()
         self.read_events()
         return self
 
+    def workspace_context(self) -> WorkspaceContext:
+        return WorkspaceContext.from_metadata(self.read_meta())
+
+    def workspace_state(self) -> SessionWorkspaceState:
+        try:
+            return SessionWorkspaceState(self.read_meta()["workspace_state"])
+        except (KeyError, ValueError) as exc:
+            raise SessionStoreError("session workspace_state 无效") from exc
+
+    def begin_workspace_upgrade(self, revision: int) -> None:
+        meta = self.read_meta()
+        if meta.get("workspace_state") != SessionWorkspaceState.SOURCE_ONLY.value:
+            raise SessionStoreError("只有 source_only Session 可以创建 Agent worktree")
+        meta["workspace_state"] = SessionWorkspaceState.PREPARING_WORKSPACE.value
+        meta["pending_workspace_revision"] = revision
+        meta["workspace_state_reason"] = "正在创建 Agent worktree"
+        self._write_state(meta)
+        self.append_event("workspace_preparing", {"workspace_revision": revision})
+
+    def activate_workspace(self, context: WorkspaceContext) -> None:
+        if context.source_root != self.workspace_root or context.workspace_kind != "git_worktree":
+            raise SessionStoreError("active workspace identity 无效")
+        meta = self.read_meta()
+        if meta.get("workspace_state") != SessionWorkspaceState.PREPARING_WORKSPACE.value:
+            raise SessionStoreError("Session 不在 preparing_workspace")
+        meta.update(context.to_metadata())
+        meta.pop("pending_workspace_revision", None)
+        meta["workspace_state"] = SessionWorkspaceState.CHANGES_ACTIVE.value
+        meta["workspace_state_reason"] = ""
+        self._write_state(meta)
+        self.append_event("workspace_activated", {"workspace_revision": context.workspace_revision, "base_commit": context.base_commit})
+
+    def cancel_workspace_upgrade(self, reason: str) -> None:
+        meta = self.read_meta()
+        meta.update(WorkspaceContext.source(self.workspace_root).to_metadata())
+        meta.pop("pending_workspace_revision", None)
+        meta["workspace_state"] = SessionWorkspaceState.SOURCE_ONLY.value
+        meta["workspace_state_reason"] = reason
+        self._write_state(meta)
+        self.append_event("workspace_upgrade_failed", {"reason": reason})
+
+    def begin_resolution(self, state: SessionWorkspaceState) -> None:
+        if state not in {SessionWorkspaceState.ACCEPTING, SessionWorkspaceState.DISCARDING}:
+            raise SessionStoreError("无效的修改处理状态")
+        meta = self.read_meta()
+        allowed = {SessionWorkspaceState.CHANGES_ACTIVE.value}
+        if state == SessionWorkspaceState.DISCARDING:
+            allowed.add(SessionWorkspaceState.WORKSPACE_TAINTED.value)
+        if meta.get("workspace_state") not in allowed:
+            raise SessionStoreError("当前没有可处理的修改")
+        meta["workspace_state"] = state.value
+        self._write_state(meta)
+
+    def finish_resolution(self, result: str, summary: dict[str, Any]) -> None:
+        meta = self.read_meta()
+        revision = int(meta.get("workspace_revision", 0))
+        meta.update(WorkspaceContext.source(self.workspace_root).to_metadata())
+        meta["workspace_revision"] = revision
+        meta["workspace_state"] = SessionWorkspaceState.SOURCE_ONLY.value
+        meta["workspace_state_reason"] = ""
+        self._write_state(meta)
+        self.append_event(f"changes_{result}", {"workspace_revision": revision, **summary})
+
+    def next_candidate_revision(self) -> int:
+        meta = self.read_meta()
+        revision = int(meta.get("candidate_revision", 0)) + 1
+        meta["candidate_revision"] = revision
+        self._write_state(meta)
+        return revision
+
+    def permission_grants(self):
+        from codeagent.runtime.permissions import PermissionGrant
+        return tuple(PermissionGrant.from_dict(item) for item in self.read_meta().get("permission_grants", []))
+
+    def add_permission_grants(self, grants) -> None:
+        meta = self.read_meta()
+        existing = list(meta.get("permission_grants", []))
+        existing.extend(grant.to_dict() for grant in grants)
+        meta["permission_grants"] = existing
+        self._write_state(meta)
+
+    def finish_accept(self, context: WorkspaceContext, *, candidate_revision: int, patch_sha256: str, changed_files: list[str]) -> None:
+        meta = self.read_meta()
+        meta.update(context.to_metadata())
+        meta["accepted_candidate_revision"] = candidate_revision
+        meta["workspace_state"] = SessionWorkspaceState.CHANGES_ACTIVE.value
+        meta["workspace_state_reason"] = ""
+        self._write_state(meta)
+        self.append_event("changes_accepted", {
+            "workspace_revision": context.workspace_revision,
+            "candidate_revision": candidate_revision,
+            "baseline_commit": context.base_commit,
+            "patch_sha256": patch_sha256,
+            "changed_files": changed_files,
+        })
+
+    def finish_discard(self, *, candidate_revision: int) -> None:
+        meta = self.read_meta()
+        meta["accepted_candidate_revision"] = candidate_revision
+        meta["workspace_state"] = SessionWorkspaceState.CHANGES_ACTIVE.value
+        meta["workspace_state_reason"] = ""
+        self._write_state(meta)
+        self.append_event("changes_discarded", {
+            "workspace_revision": int(meta.get("workspace_revision", 0)),
+            "candidate_revision": candidate_revision,
+        })
+
+    def restore_changes_active(self, reason: str = "") -> None:
+        meta = self.read_meta()
+        meta["workspace_state"] = SessionWorkspaceState.CHANGES_ACTIVE.value
+        meta["workspace_state_reason"] = reason
+        self._write_state(meta)
+
+    def mark_workspace_tainted(self, reason: str, changed_files: list[str]) -> None:
+        meta = self.read_meta()
+        meta["workspace_state"] = SessionWorkspaceState.WORKSPACE_TAINTED.value
+        meta["workspace_state_reason"] = reason
+        self._write_state(meta)
+        self.append_event("workspace_tainted", {"reason": reason, "changed_files": changed_files[:100]})
+
+    def mark_recovery_required(self, reason: str) -> None:
+        meta = self.read_meta()
+        meta["workspace_state"] = SessionWorkspaceState.RECOVERY_REQUIRED.value
+        meta["workspace_state_reason"] = reason
+        self._write_state(meta)
+        self.append_event("recovery_required", {"reason": reason})
+
+    def update_workspace_state(self, state: str, reason: str = "") -> None:
+        if state == SessionWorkspaceState.RECOVERY_REQUIRED.value:
+            self.mark_recovery_required(reason)
+            return
+        meta = self.read_meta()
+        meta["workspace_state"] = state
+        meta["workspace_state_reason"] = reason
+        self._write_state(meta)
+
     def append_event(self, event_type: str, payload: dict[str, Any] | None = None) -> SessionEvent:
         event = SessionEvent(type=event_type, payload=payload or {})
         if event.type == "user_message":
-            self._maybe_set_title(event.payload.get("message", ""))
+            self._maybe_set_title(str(event.payload.get("message", "")))
         with self.events_path.open("a", encoding="utf-8") as fh:
             fh.write(event.model_dump_json() + "\n")
-        self._append_transcript(event)
-        self._touch_meta(event.ts)
+        meta = self.read_meta()
+        meta["last_active_at"] = event.ts
+        self._write_state(meta)
         return event
 
     def read_meta(self) -> dict[str, Any]:
         try:
-            return json.loads(self.meta_path.read_text(encoding="utf-8"))
+            value = json.loads(self.meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise SessionStoreError(f"meta.json is corrupted: {exc}") from exc
+            raise SessionStoreError(f"session.json is corrupted: {exc}") from exc
+        if value.get("schema_version") != self.SCHEMA_VERSION:
+            raise SessionStoreError("unsupported session schema")
+        return value
 
     def read_events(self) -> list[SessionEvent]:
         events: list[SessionEvent] = []
@@ -121,44 +235,26 @@ class SessionStore:
         return events
 
     @classmethod
-    def list_sessions(cls, workspace_root: Path | str, session_root: Path | str | None = None, *, include_legacy: bool = True) -> list[dict[str, Any]]:
+    def list_sessions(cls, workspace_root: Path | str, session_root: Path | str | None = None, **_: Any) -> list[dict[str, Any]]:
         workspace = Path(workspace_root).expanduser().resolve()
         root = Path(session_root).expanduser().resolve() if session_root is not None else default_session_root().expanduser().resolve()
-        bases = [root / cls.workspace_key(workspace)]
-        legacy = workspace / ".codeagent" / "sessions"
-        if include_legacy and legacy not in bases:
-            bases.append(legacy)
-        sessions = []
-        for base in bases:
-            if not base.exists():
-                continue
-            sessions.extend(cls._read_session_metas(base))
-        sessions.sort(key=lambda meta: meta.get("last_active_at", ""), reverse=True)
-        return sessions
+        return cls._read_session_states(root / cls.workspace_key(workspace))
 
     @classmethod
     def list_all_sessions(cls, session_root: Path | str | None = None) -> list[dict[str, Any]]:
         root = Path(session_root).expanduser().resolve() if session_root is not None else default_session_root().expanduser().resolve()
-        if not root.exists():
-            return []
-        sessions = []
-        for meta_path in sorted(root.glob("*/*/meta.json")):
+        states = []
+        for path in sorted(root.glob("*/*/session.json")) if root.exists() else []:
             try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                meta.setdefault("session_root", str(root))
-                meta.setdefault("workspace_key", meta_path.parent.parent.name)
-                sessions.append(meta)
+                states.append(json.loads(path.read_text(encoding="utf-8")))
             except json.JSONDecodeError:
-                sessions.append({"session_id": meta_path.parent.name, "error": "corrupted meta.json"})
-        sessions.sort(key=lambda meta: meta.get("last_active_at", ""), reverse=True)
-        return sessions
+                states.append({"session_id": path.parent.name, "error": "corrupted session.json"})
+        states.sort(key=lambda item: item.get("last_active_at", ""), reverse=True)
+        return states
 
     @classmethod
     def find_session(cls, session_id: str, session_root: Path | str | None = None) -> dict[str, Any] | None:
-        for meta in cls.list_all_sessions(session_root=session_root):
-            if meta.get("session_id") == session_id:
-                return meta
-        return None
+        return next((item for item in cls.list_all_sessions(session_root) if item.get("session_id") == session_id), None)
 
     @staticmethod
     def workspace_key(workspace_root: Path | str) -> str:
@@ -169,68 +265,38 @@ class SessionStore:
 
     @classmethod
     def title_from_message(cls, message: str, limit: int = 48) -> str:
-        title = " ".join(str(message).split())
-        title = re.sub(r"^请[你 ]*", "", title)
+        title = re.sub(r"^请[你 ]*", "", " ".join(str(message).split()))
         if not title:
             return cls.UNTITLED
-        if len(title) > limit:
-            title = title[: limit - 3].rstrip() + "..."
-        return title
+        return title if len(title) <= limit else title[: limit - 3].rstrip() + "..."
 
     @staticmethod
-    def _read_session_metas(base: Path) -> list[dict[str, Any]]:
-        sessions = []
-        for meta_path in sorted(base.glob("*/meta.json")):
-            try:
-                sessions.append(json.loads(meta_path.read_text(encoding="utf-8")))
-            except json.JSONDecodeError:
-                sessions.append({"session_id": meta_path.parent.name, "error": "corrupted meta.json"})
-        return sessions
+    def _read_session_states(base: Path) -> list[dict[str, Any]]:
+        states = []
+        if base.exists():
+            for path in sorted(base.glob("*/session.json")):
+                try:
+                    states.append(json.loads(path.read_text(encoding="utf-8")))
+                except json.JSONDecodeError:
+                    states.append({"session_id": path.parent.name, "error": "corrupted session.json"})
+        states.sort(key=lambda item: item.get("last_active_at", ""), reverse=True)
+        return states
 
     def _maybe_set_title(self, message: str) -> None:
-        if not self.meta_path.exists():
-            return
         meta = self.read_meta()
-        if meta.get("title") and meta.get("title") != self.UNTITLED:
+        if meta.get("title") != self.UNTITLED:
             return
         title = self.title_from_message(message)
-        if title == self.UNTITLED:
-            return
-        meta["title"] = title
-        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        self._rewrite_transcript_title(title)
+        if title != self.UNTITLED:
+            meta["title"] = title
+            self._write_state(meta)
 
-    def _rewrite_transcript_title(self, title: str) -> None:
-        if not self.transcript_path.exists():
-            return
-        lines = self.transcript_path.read_text(encoding="utf-8").splitlines()
-        if lines and lines[0].startswith("# "):
-            lines[0] = f"# {title}"
-            self.transcript_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    def _write_state(self, value: dict[str, Any]) -> None:
+        self.meta_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = self.meta_path.with_suffix(".json.tmp")
+        temp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temp, self.meta_path)
 
-    def _touch_meta(self, ts: str) -> None:
-        if not self.meta_path.exists():
-            return
-        meta = self.read_meta()
-        meta["last_active_at"] = ts
-        self.meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def _append_transcript(self, event: SessionEvent) -> None:
-        labels = {
-            "user_message": "User",
-            "assistant_message": "Assistant",
-            "tool_requested": "Tool Requested",
-            "tool_result": "Tool Result",
-            "tool_denied": "Tool Denied",
-            "approval_requested": "Approval Requested",
-            "approval_decision": "Approval Decision",
-            "assistant_tool_calls": "Assistant Tool Calls",
-            "cli_command": "CLI Command",
-            "error": "Error",
-        }
-        label = labels.get(event.type)
-        if not label:
-            return
-        content = event.payload.get("message") or event.payload.get("command") or event.payload.get("content") or json.dumps(event.payload, ensure_ascii=False)
-        with self.transcript_path.open("a", encoding="utf-8") as fh:
-            fh.write(f"## {label}\n\n{content}\n\n")
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()

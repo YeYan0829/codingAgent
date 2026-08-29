@@ -109,25 +109,59 @@ def test_search_text_skips_sensitive_file_content(tmp_path):
 def test_find_files(tmp_path):
     (tmp_path / "main.py").write_text("print(1)", encoding="utf-8")
 
-    result = registry(tmp_path).call("find_files", {"pattern": "*.py", "path": "."})
+    result = registry(tmp_path).call("find_files", {"include": ["*.py"], "path": "."})
 
     assert result.ok
     assert "main.py" in result.content
 
 
-def test_find_files_marks_sensitive_names_by_default(tmp_path):
+def test_find_files_never_exposes_sensitive_names(tmp_path):
     (tmp_path / ".env").write_text("TOKEN=x", encoding="utf-8")
 
-    result = registry(tmp_path).call("find_files", {"pattern": ".env", "path": "."})
+    result = registry(tmp_path).call("find_files", {"include": [".env"], "include_hidden": True, "path": "."})
 
     assert result.ok
-    assert ".env [sensitive, content blocked]" in result.content
+    assert result.content == ""
 
 
 def test_large_file_truncates(tmp_path):
-    (tmp_path / "large.txt").write_text("x" * 25000, encoding="utf-8")
+    (tmp_path / "large.txt").write_text("x" * 70000, encoding="utf-8")
 
     result = registry(tmp_path).call("read_file", {"path": "large.txt"})
 
     assert result.ok
     assert result.truncated
+
+
+def test_read_file_rejects_invalid_utf8(tmp_path):
+    (tmp_path / "invalid.txt").write_bytes(b"ok\xff")
+
+    result = registry(tmp_path).call("read_file", {"path": "invalid.txt"})
+
+    assert not result.ok
+    assert result.error_code == "unsupported_text_encoding"
+
+
+def test_search_regex_hidden_and_ignore(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+    (tmp_path / "visible.py").write_text("Alpha42\n", encoding="utf-8")
+    (tmp_path / "ignored.py").write_text("Alpha43\n", encoding="utf-8")
+    (tmp_path / ".hidden.py").write_text("Alpha44\n", encoding="utf-8")
+    reg = registry(tmp_path)
+
+    default = reg.call("search_text", {"query": "Alpha[0-9]+", "mode": "regex"})
+    hidden = reg.call("search_text", {"query": "Alpha[0-9]+", "mode": "regex", "include_hidden": True})
+
+    assert default.ok and "visible.py" in default.content
+    assert "ignored.py" not in default.content and ".hidden.py" not in default.content
+    assert hidden.ok and ".hidden.py" in hidden.content
+
+
+def test_search_invalid_regex_has_stable_error(tmp_path):
+    (tmp_path / "a.py").write_text("ok\n", encoding="utf-8")
+
+    result = registry(tmp_path).call("search_text", {"query": "(", "mode": "regex"})
+
+    assert not result.ok
+    assert result.error_code == "invalid_arguments"
