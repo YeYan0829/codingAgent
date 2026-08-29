@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.prompt import Confirm
+from prompt_toolkit import PromptSession
 
 from codeagent import __version__
 from codeagent.config import ModelConfig
@@ -317,9 +318,10 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
         execution_allowed=execution_allowed,
         progress_callback=show_progress,
     )
+    input_session = _build_input_session() if sys.stdin.isatty() else None
     while True:
         try:
-            raw = console.input("[bold]> [/bold]").strip()
+            raw = (input_session.prompt() if input_session is not None else console.input("[bold]> [/bold]")).strip()
         except (EOFError, KeyboardInterrupt):
             console.print("\n退出。")
             return
@@ -341,6 +343,11 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
             continue
         output = runner.run_turn(raw)
         console.print(Panel(Text(output.final_text), title="Assistant"))
+
+
+def _build_input_session(**kwargs) -> PromptSession[str]:
+    """创建支持 bracketed paste 的单消息编辑缓冲区。"""
+    return PromptSession(message="> ", multiline=False, **kwargs)
 
 
 def _load_session_list(workspace_filter: Path | None, session_root: Path | None) -> list[dict]:

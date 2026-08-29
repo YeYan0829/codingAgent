@@ -227,3 +227,12 @@ Agent 不获得 Git 写工具。checkpoint、临时 index/tree/commit 和 merge-
 - Runtime 不建立“当前目标/仍有效约束”的权威语义对象，也不新增对应 artifact。
 - Resume 的当前修改来自 active worktree 的 Git 状态；验证是否对应当前内容以 workspace tree identity 判断，不评价验证质量。
 - 没有改变 workspace 内容的命令不推进 Candidate revision，也不使已有验证证据失效。
+
+## D-2026-08-29-03：交互输入以编辑缓冲区提交完整消息
+
+状态：Accepted and Implemented  
+范围：交互 CLI 输入
+
+- TTY 交互使用支持 bracketed paste 的 `PromptSession`：一次多行粘贴进入同一可编辑缓冲区，粘贴后可继续输入，只有用户随后按 Enter 才形成单个 `user_message`。
+- 粘贴中的换行和代码块原样保留；提交后缓冲区清空，残留文本不得被后续审批读取。
+- 不新增 `/paste` 产品接口。非 TTY 输入继续使用简单逐行路径，保持脚本和 CLI 测试兼容。
