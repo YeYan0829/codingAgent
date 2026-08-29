@@ -36,3 +36,13 @@ class BaseModelClient(ABC):
     @abstractmethod
     def complete(self, request: ModelRequest) -> LLMResponse:
         """根据上下文和工具定义返回文本或工具请求。"""
+
+
+class MalformedToolArgumentsError(ValueError):
+    def __init__(self, tool_name: str, message: str, line: int, column: int, raw_arguments: str) -> None:
+        super().__init__(message)
+        self.tool_name = tool_name
+        self.message = message
+        self.line = line
+        self.column = column
+        self.raw_arguments = raw_arguments

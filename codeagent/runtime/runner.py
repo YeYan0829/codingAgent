@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.context.builder import ContextBuilder
-from codeagent.model_gateway.base import BaseModelClient, LLMToolCall, ModelRequest
+from codeagent.model_gateway.base import BaseModelClient, LLMToolCall, MalformedToolArgumentsError, ModelRequest
 from codeagent.runtime.approval import ApprovalGate
 from codeagent.runtime.policy import DefaultPolicy, PolicyDecision
 from codeagent.session.store import SessionStore
@@ -81,16 +81,40 @@ class AgentRunner:
         self.session_store.append_event("user_message", {"message": message})
         steps: list[dict] = []
         self._workspace_upgrade_denied_this_turn = False
+        repair_messages: list[dict] = []
+        protocol_failures = 0
+        previous_failure: tuple[str, str] | None = None
 
         for _ in range(self.config.max_steps_per_turn):
             request = ModelRequest(
-                messages=ContextBuilder(self.session_store).build(),
+                messages=ContextBuilder(self.session_store).build() + repair_messages,
                 tools=self.tools.as_model_tools(),
                 model=self.model_config.resolved_model,
                 temperature=self.model_config.temperature,
                 max_tokens=self.model_config.max_tokens,
             )
-            response = self.model.complete(request)
+            try:
+                response = self.model.complete(request)
+            except MalformedToolArgumentsError as exc:
+                protocol_failures += 1
+                fingerprint = (exc.tool_name, exc.raw_arguments)
+                self.session_store.append_event("model_protocol_error", {
+                    "tool": exc.tool_name, "message": exc.message, "line": exc.line,
+                    "column": exc.column, "attempt": protocol_failures,
+                })
+                if protocol_failures > 3 or fingerprint == previous_failure:
+                    final = (
+                        f"模型连续返回无法解析的 {exc.tool_name} 参数；工具未执行，workspace 未修改。"
+                    )
+                    self.session_store.append_event("assistant_message", {"message": final})
+                    return RunnerOutput(final_text=final, steps=steps)
+                previous_failure = fingerprint
+                repair_messages.append({"role": "system", "content": (
+                    f"上一响应中 {exc.tool_name} 的 arguments 不是合法 JSON：{exc.message} "
+                    f"(line {exc.line}, column {exc.column})。工具尚未执行，workspace 未发生变化。"
+                    "请依据工具 schema 重新生成完整工具调用，并确保所有字符串使用合法 JSON 转义。"
+                )})
+                continue
             if not response.tool_calls:
                 final = response.text or ""
                 self.session_store.append_event("assistant_message", {"message": final})

@@ -511,13 +511,13 @@ def _summarize_event(event: SessionEvent) -> str:
     if event.type == "assistant_message":
         return f"assistant: {_one_line(payload.get('message', ''))}"
     if event.type == "assistant_tool_calls":
-        calls = [f"{call.get('name')} {call.get('arguments', {})}" for call in payload.get("tool_calls", [])]
+        calls = [f"{call.get('name')} {_summarize_tool_arguments(call.get('name', ''), call.get('arguments', {}))}" for call in payload.get("tool_calls", [])]
         return f"assistant tool calls: {'; '.join(calls)}"
     if event.type == "tool_requested":
-        return f"tool requested: {payload.get('name')} {payload.get('arguments', {})}"
+        return f"tool requested: {payload.get('name')} {_summarize_tool_arguments(payload.get('name', ''), payload.get('arguments', {}))}"
     if event.type == "tool_result":
         result = payload.get("result", {})
-        return f"tool result: {payload.get('name')} {payload.get('arguments', {})} ok={result.get('ok')}"
+        return f"tool result: {payload.get('name')} {_summarize_tool_arguments(payload.get('name', ''), payload.get('arguments', {}))} ok={result.get('ok')}"
     if event.type == "tool_denied":
         return f"tool denied: {payload.get('name')} {payload.get('reason') or payload.get('error', '')}"
     if event.type == "approval_requested":
@@ -527,6 +527,23 @@ def _summarize_event(event: SessionEvent) -> str:
     if event.type == "cli_command":
         return f"cli: {_one_line(payload.get('command', ''))}"
     return f"{event.type}: {_one_line(str(payload))}"
+
+
+def _summarize_tool_arguments(name: str, arguments: dict) -> str:
+    if name == "apply_workspace_edit":
+        operations = arguments.get("operations", [])
+        targets = []
+        for item in operations[:10]:
+            target = item.get("path") or f"{item.get('source')} -> {item.get('destination')}"
+            targets.append(f"{item.get('op')}:{target}")
+        return f"operations={len(operations)} [{', '.join(targets)}]"
+    if name == "run_command":
+        return f"purpose={arguments.get('purpose', 'utility')} command={_one_line(arguments.get('command', ''), 100)}"
+    if "path" in arguments:
+        return f"path={arguments['path']}"
+    if "query" in arguments:
+        return f"query={_one_line(arguments['query'], 80)}"
+    return _one_line(str(arguments), 120)
 
 
 def _one_line(value: str, limit: int = 120) -> str:

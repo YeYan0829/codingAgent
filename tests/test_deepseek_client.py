@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
+import pytest
+
 from codeagent.model_gateway.base import ModelRequest, ModelTool
+from codeagent.model_gateway.base import MalformedToolArgumentsError
 from codeagent.model_gateway.deepseek_client import DeepSeekClient
 
 
@@ -98,10 +101,9 @@ def test_deepseek_malformed_tool_arguments_return_clear_text():
     client = FakeClient(response_with_message(SimpleNamespace(content=None, tool_calls=[tool_call])))
     deepseek = DeepSeekClient(api_key="key", client=client)
 
-    response = deepseek.complete(ModelRequest(messages=[{"role": "user", "content": "hi"}]))
-
-    assert "malformed tool arguments" in response.text
-    assert response.tool_calls == []
+    with pytest.raises(MalformedToolArgumentsError) as caught:
+        deepseek.complete(ModelRequest(messages=[{"role": "user", "content": "hi"}]))
+    assert caught.value.tool_name == "read_file"
 
 
 def test_deepseek_retries_without_extra_body_when_sdk_rejects_it():

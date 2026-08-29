@@ -6,7 +6,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest, ModelTool
+from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, MalformedToolArgumentsError, ModelRequest, ModelTool
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_API_KEY_ENV = "DEEPSEEK_API_KEY"
@@ -62,7 +62,7 @@ class DeepSeekClient(BaseModelClient):
             try:
                 arguments = json.loads(raw_arguments)
             except json.JSONDecodeError as exc:
-                return LLMResponse(text=f"DeepSeek returned malformed tool arguments for {name}: {exc}")
+                raise MalformedToolArgumentsError(name, exc.msg, exc.lineno, exc.colno, raw_arguments) from exc
             if not isinstance(arguments, dict):
                 return LLMResponse(text=f"DeepSeek returned non-object tool arguments for {name}")
             parsed.append(LLMToolCall(call_id=call_id, name=name, arguments=arguments))
