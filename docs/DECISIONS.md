@@ -216,3 +216,14 @@ Agent 不获得 Git 写工具。checkpoint、临时 index/tree/commit 和 merge-
 - 首次受保护操作的确认面向用户表达为“创建 Session 专属隔离工作区”，并展示触发它的命令或文件操作摘要；不直接以 `CANDIDATE_WRITE` 等内部权限枚举代替操作说明。
 - 同一用户消息形成的模型轮次内，工作区升级最多询问一次。用户拒绝后，剩余受保护调用返回本轮未授权，但不得再次弹窗；下一条用户消息可以重新申请。
 - 只读工具继续无需批准。worktree 建立后的额外宿主文件或网络能力仍使用独立、资源明确的 Permission Request。
+
+## D-2026-08-29-02：对话轮次与执行事件分离
+
+状态：Accepted and Implemented  
+范围：模型上下文、Resume 摘要、验证有效性
+
+- `events.jsonl` 继续保存审计与恢复所需事件，但模型上下文不得按最后若干原始事件直接截断。
+- 上下文以 `user_message` 划分对话轮次：最近用户原话优先保留；已结束旧轮次省略重复工具生命周期，当前轮次保留完整 tool-call/tool-result 配对。
+- Runtime 不建立“当前目标/仍有效约束”的权威语义对象，也不新增对应 artifact。
+- Resume 的当前修改来自 active worktree 的 Git 状态；验证是否对应当前内容以 workspace tree identity 判断，不评价验证质量。
+- 没有改变 workspace 内容的命令不推进 Candidate revision，也不使已有验证证据失效。

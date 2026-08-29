@@ -13,13 +13,11 @@ def current_validation_evidence(store: SessionStore, context: WorkspaceContext) 
         tree = snapshot_tree(context.active_root, context.base_commit or "HEAD")
     except GitSnapshotError:
         return []
-    revision = int(store.read_meta().get("candidate_revision", 0))
     return [
         event.payload for event in store.read_events()
         if event.type == "validation_completed"
         and event.payload.get("status") == "passed"
         and int(event.payload.get("workspace_revision", -1)) == context.workspace_revision
         and event.payload.get("base_commit") == context.base_commit
-        and int(event.payload.get("candidate_revision", -1)) == revision
         and event.payload.get("subject_tree") == tree
     ]

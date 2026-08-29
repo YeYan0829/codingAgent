@@ -116,7 +116,8 @@ class CommandService:
                 try:
                     after = take_workspace_snapshot(self.context.active_root, self.context.base_commit or "HEAD")
                     audit = compare_workspace(before, after)
-                    after_revision = self.store.next_candidate_revision()
+                    if audit.changes:
+                        after_revision = self.store.next_candidate_revision()
                     after_tree, audit_changes = audit.after_subject_tree, audit.changes
                 except WorkspaceAuditError as exc:
                     self.store.mark_workspace_tainted(f"command after audit失败: {exc}", [])

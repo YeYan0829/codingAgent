@@ -23,6 +23,7 @@ from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
 from codeagent.runtime.runner import AgentRunner
 from codeagent.runtime.candidate import ApplyStatus, CandidateError, CandidateService
 from codeagent.runtime.current_changes import CurrentChangesError, CurrentChangesService
+from codeagent.runtime.validation import current_validation_evidence
 from codeagent.session.events import SessionEvent
 from codeagent.session.store import SessionStore, SessionStoreError
 from codeagent.tools.fs_read import build_fs_tools
@@ -453,6 +454,14 @@ def _format_session_overview(store: SessionStore, recent_count: int = 6) -> str:
         f"events: {len(events)}",
         f"events: {store.events_path}",
     ]
+    context = store.workspace_context()
+    if context.workspace_kind == "git_worktree":
+        changed = _current_changed_paths(context)
+        lines.append(f"current changes: {len(changed)} file(s)" + (f" ({', '.join(changed[:8])})" if changed else ""))
+        evidence = current_validation_evidence(store, context)
+        lines.append(f"current validation: {'passed evidence exists' if evidence else 'none for current file tree'}")
+    else:
+        lines.extend(["current changes: none (source-only)", "current validation: none"])
     recent = [event for event in events if event.type != "session_created"][-recent_count:]
     if recent:
         lines.append("")
@@ -463,6 +472,18 @@ def _format_session_overview(store: SessionStore, recent_count: int = 6) -> str:
         lines.append("")
         lines.append("recent history: <empty>")
     return "\n".join(lines)
+
+
+def _current_changed_paths(context: WorkspaceContext) -> list[str]:
+    result = subprocess.run(
+        ["git", "-C", str(context.active_root), "status", "--porcelain=v1", "--untracked-files=all"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line[3:] for line in result.stdout.splitlines() if len(line) > 3]
 
 
 def _select_session(workspace_filter: Path | None, session_root: Path | None) -> tuple[str, Path] | None:

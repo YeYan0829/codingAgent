@@ -15,3 +15,20 @@ def test_context_rebuilds_assistant_tool_call_and_tool_result_pair(tmp_path):
     assert assistant["tool_calls"][0]["id"] == "call_1"
     assert assistant["tool_calls"][0]["function"]["name"] == "list_dir"
     assert tool["tool_call_id"] == "call_1"
+
+
+def test_context_keeps_user_turns_but_compacts_completed_tool_noise(tmp_path):
+    store = SessionStore(tmp_path).create()
+    store.append_event("user_message", {"message": "运行精确命令 --required-flag"})
+    for index in range(25):
+        call_id = f"old-{index}"
+        store.append_event("assistant_tool_calls", {"tool_calls": [{"call_id": call_id, "name": "read_file", "arguments": {"path": f"file-{index}.py"}}]})
+        store.append_event("tool_result", {"call_id": call_id, "name": "read_file", "content": '{"ok": true}'})
+    store.append_event("assistant_message", {"message": "上一轮尚未完成验证。"})
+    store.append_event("user_message", {"message": "继续并使用我指定的命令"})
+
+    messages = ContextBuilder(store).build()
+
+    user_messages = [message["content"] for message in messages if message["role"] == "user"]
+    assert user_messages == ["运行精确命令 --required-flag", "继续并使用我指定的命令"]
+    assert not any(message.get("tool_calls") for message in messages)

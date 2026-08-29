@@ -7,22 +7,28 @@ from codeagent.session.store import SessionStore
 
 
 class ContextBuilder:
-    def __init__(self, session_store: SessionStore, max_events: int = 40) -> None:
+    def __init__(self, session_store: SessionStore, max_turns: int = 8) -> None:
         self.session_store = session_store
-        self.max_events = max_events
+        self.max_turns = max_turns
 
     def build(self) -> list[dict]:
         messages = [
             {"role": "system", "content": self._read_prompt("system.md")},
             {"role": "system", "content": self._read_prompt("tool_policy.md")},
         ]
+        events = self.session_store.read_events()
+        starts = [index for index, event in enumerate(events) if event.type == "user_message"][-self.max_turns :]
+        if not starts:
+            return messages
+        selected = events[starts[0] :]
+        latest_start = starts[-1] - starts[0]
         known_tool_call_ids: set[str] = set()
-        for event in self.session_store.read_events()[-self.max_events :]:
+        for index, event in enumerate(selected):
             if event.type == "user_message":
                 messages.append({"role": "user", "content": event.payload.get("message", "")})
             elif event.type == "assistant_message":
                 messages.append({"role": "assistant", "content": event.payload.get("message", "")})
-            elif event.type == "assistant_tool_calls":
+            elif index >= latest_start and event.type == "assistant_tool_calls":
                 tool_calls = []
                 for call in event.payload.get("tool_calls", []):
                     call_id = call.get("call_id", "")
@@ -44,7 +50,7 @@ class ContextBuilder:
                         "tool_calls": tool_calls,
                     }
                 )
-            elif event.type == "tool_result":
+            elif index >= latest_start and event.type == "tool_result":
                 call_id = event.payload.get("call_id", "")
                 if call_id not in known_tool_call_ids:
                     continue

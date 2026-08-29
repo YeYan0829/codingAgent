@@ -84,7 +84,7 @@ def test_validation_evidence_binds_after_revision(tmp_path):
     result = service(store, context, FakeSandboxExecutor()).run_command({"command": "true", "purpose": "validation"})
     assert result.ok
     evidence = [event.payload for event in store.read_events() if event.type == "validation_completed"][-1]
-    assert evidence["candidate_revision"] == 1
+    assert evidence["candidate_revision"] == 0
     assert evidence["command"] == "true"
 
 
@@ -123,13 +123,13 @@ def test_timeout_changes_remain_legal_when_process_tree_and_audit_are_complete(t
     assert result.metadata["command_induced_changes"] == [{"path": "timeout.lock", "kind": "create"}]
 
 
-def test_later_command_makes_previous_validation_evidence_stale(tmp_path):
+def test_later_no_change_command_keeps_previous_validation_evidence_current(tmp_path):
     _, store, context = execution_session(tmp_path)
     commands = service(store, context, FakeSandboxExecutor())
     assert commands.run_command({"command": "true", "purpose": "validation"}).ok
     assert current_validation_evidence(store, context)
     assert commands.run_command({"command": "inspect", "purpose": "utility"}).ok
-    assert current_validation_evidence(store, context) == []
+    assert current_validation_evidence(store, context)
 
 
 def test_session_grant_is_requested_again_if_resource_object_is_replaced(tmp_path):
