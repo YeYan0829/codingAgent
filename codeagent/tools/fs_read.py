@@ -118,7 +118,7 @@ def build_fs_tools(
             if end - start + 1 > MAX_READ_LINES:
                 raise ValueError(f"单次最多读取 {MAX_READ_LINES} 行")
             selected: list[str] = []
-            total_lines: int | None = 0
+            total_lines = 0
             output_chars = 0
             output_limited = False
             with path.open("r", encoding="utf-8", errors="strict", newline=None) as stream:
@@ -127,21 +127,27 @@ def build_fs_tools(
                     if number < start:
                         continue
                     if number > end:
-                        total_lines = None
-                        break
+                        continue
+                    if output_limited:
+                        continue
                     normalized = line.rstrip("\r\n")
                     if output_chars + len(normalized) + 1 > MAX_OUTPUT_CHARS:
                         output_limited = True
-                        total_lines = None
-                        break
+                        continue
                     selected.append(normalized)
                     output_chars += len(normalized) + 1
             content = "\n".join(selected)
             actual_end = start + len(selected) - 1 if selected else start - 1
-            implicit_limit = end_value is None and total_lines is None
+            has_more_before = start > 1 and total_lines > 0
+            has_more_after = actual_end < total_lines
+            implicit_limit = end_value is None and has_more_after
             return ToolResult(ok=True, content=content, truncated=output_limited or implicit_limit, metadata={
                 "path": path.relative_to(guard.workspace_root).as_posix(), "start_line": start,
                 "end_line": actual_end, "total_lines": total_lines, "content_bytes": len(content.encode("utf-8")),
+                "requested_range": {"start_line": start, "end_line": end_value},
+                "returned_range": {"start_line": start, "end_line": actual_end},
+                "file_total_lines": total_lines, "has_more_before": has_more_before,
+                "has_more_after": has_more_after,
                 "sha256": digest.hexdigest(),
             })
         except UnicodeDecodeError:
@@ -160,9 +166,10 @@ def build_fs_tools(
             query = args.get("query")
             if not isinstance(query, str) or not 1 <= len(query) <= 4096:
                 raise ValueError("query 必须是 1..4096 字符的字符串")
+            mode = _choice(args.get("mode", "literal"), "mode", {"literal", "regex"})
             outcome = search.search_text(
                 query=query, path=_relative_path_argument(args.get("path", ".")),
-                mode=_choice(args.get("mode", "literal"), "mode", {"literal", "regex"}),
+                mode=mode,
                 case=_choice(args.get("case", "smart"), "case", {"sensitive", "insensitive", "smart"}),
                 include=_patterns(args.get("include", []), "include"),
                 exclude=_patterns(args.get("exclude", []), "exclude"),
@@ -170,7 +177,16 @@ def build_fs_tools(
                 context_lines=_bounded_int(args.get("context_lines", 0), "context_lines", 0, 3),
                 max_results=_bounded_int(args.get("max_results", 100), "max_results", 1, 200),
             )
-            return _outcome_result(outcome)
+            result = _outcome_result(outcome)
+            result.metadata.update({
+                "query": query,
+                "query_mode": mode,
+                "query_interpretation": (
+                    "exact literal text; regex metacharacters are not interpreted"
+                    if mode == "literal" else "ripgrep regular expression"
+                ),
+            })
+            return result
         except RepositorySearchError as exc:
             return _failure(exc.code, str(exc))
         except (TypeError, ValueError, PathGuardError) as exc:
@@ -194,8 +210,8 @@ def build_fs_tools(
     return [
         ToolSpec("list_dir", "列出显式目录内容，不应用 repository ignore。", PermissionLevel.READ, _object_schema({"path": _string("相对 workspace 的目录路径，默认 .。")}), list_dir),
         ToolSpec("show_tree", "显示显式目录的有界树形结构，不跟随 symlink。", PermissionLevel.READ, _object_schema({"path": _string("相对 workspace 的目录路径，默认 .。"), "max_depth": {"type": "integer", "minimum": 1, "maximum": 4}}), show_tree),
-        ToolSpec("read_file", "严格按 UTF-8 读取文本文件，可指定行范围。", PermissionLevel.READ, _object_schema({"path": _string("相对 workspace 的文本文件路径。"), "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}}, ["path"]), read_file),
-        ToolSpec("search_text", "使用 ripgrep 在 repository 可见文件中搜索文本或正则。", PermissionLevel.READ, _object_schema({"query": _string("查询字符串。", 1, 4096), "path": _string("搜索起点，默认 .。"), "mode": _enum(["literal", "regex"]), "case": _enum(["sensitive", "insensitive", "smart"]), "include": _string_array(), "exclude": _string_array(), "include_hidden": {"type": "boolean"}, "context_lines": {"type": "integer", "minimum": 0, "maximum": 3}, "max_results": {"type": "integer", "minimum": 1, "maximum": 200}}, ["query"]), search_text),
+        ToolSpec("read_file", "严格按 UTF-8 读取文本文件。可指定最多 1000 行的范围；结果会区分请求范围、实际返回范围和文件总行数，并说明前后是否还有内容。省略范围时从第 1 行开始读取，受行数和输出大小上限约束。", PermissionLevel.READ, _object_schema({"path": _string("相对 workspace 的文本文件路径。"), "start_line": {"type": "integer", "minimum": 1, "description": "请求的起始行（包含），默认 1；它不是文件总行数。"}, "end_line": {"type": "integer", "minimum": 1, "description": "请求的结束行（包含）；省略时最多读取 1000 行。"}}, ["path"]), read_file),
+        ToolSpec("search_text", "使用 ripgrep 搜索 repository 可见文件。默认 mode=literal，query 按完整普通文本匹配，`|`、括号、`.*` 等不会作为正则解释；需要正则语义时必须显式设置 mode=regex。结果 metadata 会回显实际 query_mode 和解释方式。", PermissionLevel.READ, _object_schema({"query": _string("查询内容。mode=literal 时是完整普通文本；只有 mode=regex 时才可使用 `|`、分组、字符类等正则语法。", 1, 4096), "path": _string("搜索起点，默认 .。"), "mode": {"type": "string", "enum": ["literal", "regex"], "description": "查询解释方式，默认 literal；使用任何正则语法时必须显式选择 regex。", "default": "literal"}, "case": {"type": "string", "enum": ["sensitive", "insensitive", "smart"], "description": "大小写策略，默认 smart。", "default": "smart"}, "include": _string_array(), "exclude": _string_array(), "include_hidden": {"type": "boolean"}, "context_lines": {"type": "integer", "minimum": 0, "maximum": 3}, "max_results": {"type": "integer", "minimum": 1, "maximum": 200}}, ["query"]), search_text),
         ToolSpec("find_files", "使用 ripgrep repository visibility 查找文件。", PermissionLevel.READ, _object_schema({"path": _string("搜索起点，默认 .。"), "include": _string_array(), "exclude": _string_array(), "include_hidden": {"type": "boolean"}, "max_results": {"type": "integer", "minimum": 1, "maximum": 1000}}), find_files),
     ]
 

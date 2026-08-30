@@ -10,7 +10,7 @@
 
 ## 1. Problem / Motivation
 
-当前 `pytest.targeted` / `pytest.full` 可以证明固定命令接入正确，但无法覆盖 `uv run pytest`、`npm test`、`cargo test`、`make` 和项目脚本。继续增加 Command Profile（预定义命令模板）最终会成为不完整的 shell 白名单，并把项目工具链知识错误地固化进 Runtime。
+设计开始前的 `pytest.targeted` / `pytest.full` 只能证明固定命令接入正确，无法覆盖 `uv run pytest`、`npm test`、`cargo test`、`make` 和项目脚本。继续增加 Command Profile（预定义命令模板）会成为不完整的 shell 白名单，并把项目工具链知识错误地固化进 Runtime；这些旧组件现已删除。
 
 目标模型改为：
 
@@ -23,9 +23,9 @@ Agent 提出任意 shell command
 
 安全性不再来自“Runtime 认识命令名字”，而来自命令无论叫什么都无法越过相同的操作系统边界。
 
-## 2. Current Execution Model
+## 2. 被取代的执行模型（设计输入）
 
-当前真实调用链：
+本设计实施前的调用链如下，仅用于解释迁移动机，不是当前架构：
 
 ```text
 run_validation
@@ -48,7 +48,7 @@ run_validation
 | `CommandArtifactStore` | 临时目录与失败诊断 | 保留统一存储职责 |
 | `workspace_tainted` | 当前把检测到的非Atomic命令变化视为污染 | 重定义：命令变化合法；只有无法建立可信after boundary才taint |
 
-当前开发环境没有安装 `bwrap`。实现阶段必须把依赖探测、安装提示和 fail-closed 作为第一项验收，不能静默退回当前 executor。
+实现已经加入 `bwrap` 可信路径 probe、namespace smoke test、安装提示和 fail-closed；实际 Linux/WSL 环境仍需单独安装系统 `bwrap`，不可用时不会回退到宿主 executor。
 
 ## 3. Goals
 
@@ -278,7 +278,7 @@ Candidate 内有两种同等合法的修改来源：
 
 两者都属于用户可查看、继续编辑、验证、采纳或丢弃的 Candidate changes。Runtime不因修改“不是 Atomic Edit产生”而自动 taint。Atomic Edit在之后读取command生成文件时仍使用正常完整SHA前置条件；accept从最终Candidate Git diff生成统一patch，不按来源拆分或只采纳Atomic Edit部分。
 
-Session增加统一单调 `candidate_revision`：每次成功Atomic Edit提交后递增；每次payload实际启动的command在完成审计后也递增，无论exit为0、非0或timeout。这样即使命令只产生ignored缓存或没有Git-visible变化，后续执行也会使旧validation evidence保守失效。command完成事件记录其`before_candidate_revision`和`after_candidate_revision`。
+Session增加统一单调 `candidate_revision`：每次成功Atomic Edit提交后递增；payload实际启动的command在完成审计且检测到workspace tree变化时递增，无论exit为0、非0或timeout。没有改变subject tree的只读或utility command不推进revision，也不使已有validation evidence失效。command完成事件记录其`before_candidate_revision`和`after_candidate_revision`。
 
 ### 13.2 Command workspace audit
 
@@ -304,9 +304,9 @@ command exit非0、timeout后确认进程树已停止、合法写Candidate、尝
 
 - **accept**：消费Candidate相对accepted baseline的最终Git patch，包含Atomic Edit和command产生的所有Git-visible变化；不交付ignored residue。要求workspace非tainted/recovery，并满足第19节的current validation evidence invariant。
 - **discard**：恢复accepted baseline并用`git clean -fdx`移除tracked、untracked和ignored residue；复检HEAD/status/tree。tainted也允许discard；复检失败转`recovery_required`。
-- **validation**：可以针对任意来源组合后的当前Candidate运行。验证命令自身若产生可确认变化，先推进`candidate_revision`，成功evidence绑定命令结束后的revision和subject tree；后续Atomic Edit或command都会使它stale。
+- **validation**：可以针对任意来源组合后的当前Candidate运行。验证命令自身若产生可确认的workspace tree变化，先推进`candidate_revision`，成功evidence绑定命令结束后的revision和subject tree；后续Atomic Edit或改变tree的command会使它stale。
 
-真实build/test常创建ignored的`target/`、cache等。它们不进入交付patch，审计不承诺完整列举，但`candidate_revision`会因每次command推进，避免把更早validation误当成对后续执行状态的证明；discard负责清理。
+真实build/test常创建ignored的`target/`、cache等。它们不进入交付patch，审计也不承诺完整逐文件列举；discard负责清理。validation currentness以subject tree、workspace/base identity等正式绑定为准，不把“运行过另一条命令”本身当成源码变化。
 
 ## 14. Path Semantics
 
@@ -372,7 +372,7 @@ exact command 可能含用户手写 secret，首版无法可靠脱敏。UI/文�
 - `WorkspaceContext` / `GitWorktreeManager`：保留 Candidate/source 与 resume gate。
 - `ApprovalGate`：输入变为 permission bundle，支持 ONCE/SESSION。
 - `SessionStore`：增加紧凑 Session grants和事件，不新增目录。
-- 当前以Atomic Edit为中心的`edit_revision`有效性判断迁移为统一`candidate_revision`；Atomic Edit和每次已启动command共同推进它。
+- 当前以Atomic Edit为中心的`edit_revision`有效性判断迁移为统一`candidate_revision`；Atomic Edit和产生workspace tree变化的command共同推进它。
 - `CommandSpec/Result/Receipt`：改为 arbitrary command、有效策略、before/after candidate revision和command-induced changes语义。
 - `CommandArtifactStore`：继续管理临时数据与失败诊断。
 - workspace audit重构为合法change provenance；tainted/recovery按第13节新语义保留；accept/discard统一处理Atomic Edit与command changes。
@@ -459,7 +459,7 @@ exact command 可能含用户手写 secret，首版无法可靠脱敏。UI/文�
 - source-only首次 command组合审批、upgrade、原命令恰好一次；
 - ASK/DENY不spawn；SESSION不重复问，ONCE下次重问；
 - Atomic Edit与成功/失败/timeout command产生的Git-visible源码、lockfile、formatter/codegen变化都成为合法Candidate changes，可继续edit/command/validation/accept；
-- command before/after audit正确记录create/update/delete/rename、revision和subject tree；每次已启动command推进candidate revision并使旧validation stale；
+- command before/after audit正确记录create/update/delete/rename、revision和subject tree；只有tree变化才推进candidate revision并按正式identity判断旧validation是否stale；
 - before audit失败不spawn；after audit无法建立可信边界才taint；进程树、保护identity或恢复无法确认才recovery；
 - discard清除 tracked/untracked/ignored并复检，失败 recovery；
 - resume recovery gate优先于 grants；
@@ -502,7 +502,7 @@ exact command 可能含用户手写 secret，首版无法可靠脱敏。UI/文�
 
 ## 24. Review Summary
 
-本轮review提出的change provenance、Permission Request责任、sensitive范围、symlink解析、validation语义和resource schema已经写入目标契约。当前状态仍是Draft for Review；在人工确认这些修改前，不宣称已经获准实现。
+本轮 review 提出的 change provenance、Permission Request 责任、sensitive 范围、symlink 解析、validation 语义和 resource schema 已写入目标契约，并在后续 review 后完成实现。本节保留当时的关键 invariant，顶部状态和实现说明代表当前事实。
 
 修改后的关键invariant：
 
@@ -519,10 +519,10 @@ exact command 可能含用户手写 secret，首版无法可靠脱敏。UI/文�
 - Command Profile整体删除；current validation只提供evidence-exists invariant，不保证质量。
 - 不新增artifact家族，不提前引入Docker/cgroup/proxy。
 
-仍存在但不改变产品边界的实现期确认项：
+实现期确认项的当前结果：
 
-- 本机尚未安装`bwrap`；实现可先进行，但backend集成验收前必须安装并通过feature probe。最低要求以实际feature probe为准，不只比较版本字符串。
-- `/tmp`、输出和diagnostics的具体字节上限需在实现常量中确定并由测试冻结。
-- 确定宿主敏感根和socket清单需要依据当前Linux/WSL路径形成集中配置；不得扩展成repo文件名扫描器。
+- 当前 Linux/WSL2 环境已经安装 `/usr/bin/bwrap`，并通过可信路径 probe、namespace smoke test 和正式 CLI dogfood；其他部署环境仍须各自 probe，不以版本字符串代替能力检查。
+- `/tmp`、输出和 diagnostics 的具体字节上限已由实现常量与测试冻结。
+- 宿主敏感根和 socket 清单已集中在 Runtime policy 中；没有扩展成 repo 文件名扫描器。
 
-这些不是需要新增产品决策的open question。进入implementation的条件是：人工批准本修订设计，并接受“当前环境安装Bubblewrap后才能完成正式集成测试”的前置条件。
+上述项目没有遗留 implementation-blocking open question。未来若改变 hard deny、网络、source 写保护或无沙盒 fallback 等产品边界，仍须重新 review。

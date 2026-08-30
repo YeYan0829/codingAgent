@@ -4,7 +4,7 @@
 
 ## D-2026-08-28-01：下一执行层改为 Controlled Arbitrary Command + Sandbox
 
-状态：Accepted and Implemented  
+状态：Accepted and Implemented
 范围：Command execution、Validation、Policy、Approval 与 Linux/WSL2 sandbox
 
 ### 决策
@@ -72,7 +72,7 @@ Stage 2 当前优先级是扩展 Coding Agent 的基础工具能力并证明 sch
 
 ## D-2026-08-27-02：Execution Boundary 保持最小并内嵌于 Command Profiles 设计
 
-状态：Accepted  
+状态：Superseded by D-2026-08-28-01
 范围：Command Profiles / Validation 与未来 SWE-bench adapter
 
 ### 决策
@@ -105,7 +105,7 @@ Session / Workspace / Persistence 重构完成后，优先级将回到补齐 Age
 - Session 创建时不预先选择 `readonly` / `execution` mode，也不预先创建 worktree。
 - Agent 首次需要编辑或执行受保护命令时，Runtime 经过对应 Policy / Approval 后为该 Session 按需创建独立 Git worktree。
 - worktree 是 Agent 在该 Session 中的当前隔离工作区，不属于 Task；创建后，读取、搜索、编辑和验证都应针对同一个 active workspace。
-- worktree 的存在不等于获得任意权限。编辑只能经过结构化编辑工具；每个命令是否需要审批仍由其可信 profile 和 Policy 决定；任意 shell 继续不开放。
+- worktree 的存在不等于获得任意权限。编辑只能经过结构化编辑工具。本文当时采用可信 profile、关闭任意 shell；该命令部分已由 D-2026-08-28-01 的 sandboxed `run_command` 与资源 Policy 取代。
 - 采纳或丢弃结束的是当前一轮修改，不结束 Session。具体 worktree 生命周期已由后续 D-2026-08-27-05 收敛：两者都保留同一 worktree 并回到 `changes_active`，不再回到 source-only。
 - 内部可以用单调递增的 `workspace_revision` 区分同一 Session 的多轮隔离工作区，但它不是用户需要理解的产品概念。
 - 当前原型没有需要迁移的旧 Session 数据；本轮重构可以直接替换 metadata schema 和 CLI mode，不实现旧格式兼容层。
@@ -193,7 +193,7 @@ Agent 不获得 Git 写工具。checkpoint、临时 index/tree/commit 和 merge-
 
 ## D-2026-08-28-02：任意命令实现确认与持久化边界
 
-状态：Accepted and Implemented  
+状态：Accepted and Implemented
 范围：命令执行、权限、验证、当前修改和恢复
 
 - Agent-facing 执行工具统一为 `run_command`；Command Profile、`run_validation`、pytest allowlist 和裸本地 executor 已删除。
@@ -236,3 +236,47 @@ Agent 不获得 Git 写工具。checkpoint、临时 index/tree/commit 和 merge-
 - TTY 交互使用支持 bracketed paste 的 `PromptSession`：一次多行粘贴进入同一可编辑缓冲区，粘贴后可继续输入，只有用户随后按 Enter 才形成单个 `user_message`。
 - 粘贴中的换行和代码块原样保留；提交后缓冲区清空，残留文本不得被后续审批读取。
 - 不新增 `/paste` 产品接口。非 TTY 输入继续使用简单逐行路径，保持脚本和 CLI 测试兼容。
+
+## D-2026-08-29-04：执行切片不等于用户对话轮次
+
+状态：Accepted and Implemented
+范围：AgentRunner、交互 CLI、Resume、benchmark/API
+
+- `max_steps_per_turn` 作为单个内部执行切片的控制点，默认 12 个 ModelStep；切片耗尽不结束 UserTurn。
+- 同一 UserTurn 默认最多 48 个 ModelStep。达到总预算才以明确的未完成状态终止，不写入伪成功的 Assistant Final。
+- 交互 CLI 在切片边界询问是否继续；拒绝只暂停，之后可用 `/continue` 或 Resume 继续，不创建内容为“继续”的 UserMessage。
+- 非交互 `ask` 在总预算内自动继续，便于 benchmark 完成较长任务。
+- 执行切片只用已有 Event 记录一个紧凑控制事实，不建立 Slice 数据结构、目录或 artifact 家族。
+- Context 始终保留该 UserTurn 的原始 UserMessage 和完整工具协议对；旧工具调用前说明可按确定性窗口省略，以限制长轮次增长。
+
+## D-2026-08-30-01：Agent 提示聚焦任务行为，Read 结果明确范围边界
+
+状态：Accepted and Implemented
+范围：System Prompt、`read_file`、Context residue
+
+- Agent 只需要知道完成任务所需的操作约束，不要求理解 Runtime、Policy、ToolRegistry 或 Candidate 等内部模块名词。
+- “workspace 操作必须通过已注册工具”不等于“每个响应都必须调用工具”；信息充分时允许分析、编辑、验证或直接给出最终回复。
+- Agent 应进行最小充分探索，避免重复读取同一 SHA 下已经覆盖的范围；信息不足时先说明具体缺口。
+- `read_file` 始终区分 requested range、returned range 和 file total lines，并明确前后是否还有内容；部分读取不再用 `total_lines=null` 表示“尚未扫描到 EOF”。
+- 这些字段属于工具结果和确定性历史 residue，不新增阅读进度 artifact 或语义任务状态。
+
+## D-2026-08-30-02：Search 解释模式显式化，Context 容量失败正常终止当前轮次
+
+状态：Accepted and Implemented
+范围：`search_text`、AgentRunner、CLI、Resume
+
+- `search_text` 默认 `literal`，schema 明确正则语法只有在 `mode=regex` 时生效；结果回显实际 `query_mode` 和解释方式。
+- Context 最低集合超出单次模型输入预算时不再由未捕获异常退出。Runner 写入 `turn_terminated(reason=context_budget_exceeded)`，包含 estimated/usable tokens 和已采用的 reductions。
+- 该状态只终止当前未完成 UserTurn，不删除 Session/workspace，也不谎称任务完成；CLI 明确区分 Context 输入容量与 Session 累计额度。
+- 如何压缩 active UserTurn 内较旧、已闭合的工具交换仍需独立 Technical Design；本决策不提前引入语义摘要或新的持久化 artifact。
+
+## D-2026-08-30-03：Working Context 优先于 SWE-bench adapter
+
+状态：Accepted
+范围：下一阶段顺序、Context、Agent orchestration
+
+- 五次真实 HTTPX Session 已证明当前 Runtime 工具能执行，但 Agent 在长工具轨迹中无法维持稳定源码工作集和执行阶段；这不是单纯提高 step/token budget 可以解决的问题。
+- 下一阶段先完成 Agent Orchestration / Working Context Technical Design 与实现验收，再进入 SWE-bench 薄 adapter。
+- 设计必须把完整持久 Event、历史执行摘要、当前代码 Working Set 和短期 Execution Checkpoint 分开；不得继续让“最新工具结果”同时承担所有职责。
+- 当前不决定引入 LangGraph、LLM semantic compactor 或新的 Task/artifact 体系；框架选择必须晚于状态语义。
+- 真实模型用于人工验收和发现编排问题；自动化正确性仍由 Fake Model、fixture、Runtime/Git 状态和 pytest 证明。

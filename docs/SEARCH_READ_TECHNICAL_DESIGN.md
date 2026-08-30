@@ -132,6 +132,7 @@ Policy/Approval denial 由 `AgentRunner` 使用既有事件链表达；实现本
 - `query` 长度 1..4096；
 - `path` 默认 `.`，可以是目录或单个文件；
 - `mode` 默认 `literal`；
+- `literal` 把 query 作为完整普通文本，`|`、括号、字符类和 `.*` 均没有正则含义；使用这些语义必须显式传 `mode=regex`；
 - `case` 默认 `smart`；
 - include/exclude 各最多 20 项，每项最长 256；
 - glob 不能包含 NUL，不能以 `/` 开始，也不能通过 `..` 表达 workspace 外路径；
@@ -167,9 +168,13 @@ metadata：
   "limit_reason": null,
   "search_root": "src",
   "mode": "literal",
+  "query_mode": "literal",
+  "query_interpretation": "exact literal text; regex metacharacters are not interpreted",
   "case": "smart"
 }
 ```
+
+工具 schema 和每次结果都回显这一解释边界，避免 Agent 把带 `|` 的查询误当成正则并在零结果后重复改写查询。
 
 `limit_reason` 为 `max_results`、`output_bytes` 或 `timeout`。timeout 返回 `ok=false/error_code=timed_out`；已经读取的 partial matches只保存在 metadata 计数，不作为成功内容返回，避免模型把不完整结果误认为完整搜索。
 
@@ -221,7 +226,7 @@ metadata 包含 `file_count`、`limit_reason`、`search_root`。到达 `max_resu
 - 单次最多请求 1000 行；
 - 未提供范围时从第一行开始读取，仍受 line/byte 上限限制。
 
-实现按 binary 模式读取有限字节并严格 UTF-8 decode，不能先整体读入任意大小文件。返回文本保留通用 LF 展示语义，并在 metadata 中提供：
+实现以流式方式扫描文件，不把任意大小文件整体载入内存；完整 bytes 用于稳定 SHA-256，文本流使用严格 UTF-8 decode。返回正文仍受行数/byte 上限约束并保留通用 LF 展示语义；扫描继续到 EOF 以确定文件总行数。metadata 提供：
 
 ```json
 {
@@ -229,11 +234,16 @@ metadata 包含 `file_count`、`limit_reason`、`search_root`。到达 `max_resu
   "start_line": 1,
   "end_line": 200,
   "total_lines": 846,
+  "requested_range": {"start_line": 1, "end_line": 200},
+  "returned_range": {"start_line": 1, "end_line": 200},
+  "file_total_lines": 846,
+  "has_more_before": false,
+  "has_more_after": true,
   "content_bytes": 7312
 }
 ```
 
-如果为确定 `total_lines` 需要扫描超过文件大小上限，则 `total_lines=null`。读取超过 64 KiB 或 1000 行时截断；实际常量在实现中集中定义。
+`total_lines` / `file_total_lines` 始终表示整个文件的行数，不再因为显式请求只覆盖文件前段而返回 `null`。读取正文超过 64 KiB，或省略范围时文件超过默认 1000 行窗口，会标记截断；实际常量在实现中集中定义。
 
 显式读取非敏感 hidden file 是允许的。敏感路径、symlink escape、binary 和非法 UTF-8 分别返回稳定 error code。
 

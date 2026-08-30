@@ -7,7 +7,7 @@ ItsDangerous 的 URL-safe Base64 解码当前会悄悄忽略部分不属于 Base
 请先阅读现有实现和测试，补充针对性回归测试，运行：
 
 ```text
-PYTHONPATH=src ~/.cache/codeagent-evals/itsdangerous-strict-base64/bin/python -m pytest -q -p no:cacheprovider tests/test_itsdangerous/test_encoding.py
+PYTHONPATH=src {{EVAL_PYTHON}} -m pytest -q -p no:cacheprovider tests/test_itsdangerous/test_encoding.py
 ```
 
 不要安装或升级依赖，不需要网络，不要改变公开异常类型或合法 token 格式。

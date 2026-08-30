@@ -67,6 +67,29 @@ def test_read_file_and_line_range(tmp_path):
 
     assert whole.ok and "three" in whole.content
     assert part.content == "two"
+    assert whole.metadata["requested_range"] == {"start_line": 1, "end_line": None}
+    assert whole.metadata["returned_range"] == {"start_line": 1, "end_line": 3}
+    assert whole.metadata["file_total_lines"] == 3
+    assert not whole.metadata["has_more_before"]
+    assert not whole.metadata["has_more_after"]
+    assert part.metadata["requested_range"] == {"start_line": 2, "end_line": 2}
+    assert part.metadata["returned_range"] == {"start_line": 2, "end_line": 2}
+    assert part.metadata["file_total_lines"] == 3
+    assert part.metadata["has_more_before"]
+    assert part.metadata["has_more_after"]
+
+
+def test_read_file_partial_range_always_reports_file_total(tmp_path):
+    (tmp_path / "a.txt").write_text("\n".join(f"line {number}" for number in range(1, 243)) + "\n", encoding="utf-8")
+
+    result = registry(tmp_path).call("read_file", {"path": "a.txt", "start_line": 1, "end_line": 119})
+
+    assert result.ok
+    assert result.metadata["end_line"] == 119
+    assert result.metadata["total_lines"] == 242
+    assert result.metadata["file_total_lines"] == 242
+    assert result.metadata["has_more_after"] is True
+    assert result.truncated is False
 
 
 def test_read_file_sensitive_env_is_blocked(tmp_path):
@@ -94,6 +117,22 @@ def test_search_text(tmp_path):
 
     assert result.ok
     assert "a.txt:2" in result.content
+    assert result.metadata["query_mode"] == "literal"
+    assert "regex metacharacters are not interpreted" in result.metadata["query_interpretation"]
+
+
+def test_search_text_requires_explicit_regex_mode(tmp_path):
+    (tmp_path / "a.txt").write_text("alpha\nbeta\nalpha|beta\n", encoding="utf-8")
+    reg = registry(tmp_path)
+
+    literal = reg.call("search_text", {"query": "alpha|beta"})
+    regex = reg.call("search_text", {"query": "alpha|beta", "mode": "regex"})
+
+    assert literal.ok and literal.metadata["match_count"] == 1
+    assert literal.metadata["query_mode"] == "literal"
+    assert regex.ok and regex.metadata["match_count"] == 3
+    assert regex.metadata["query_mode"] == "regex"
+    assert regex.metadata["query_interpretation"] == "ripgrep regular expression"
 
 
 def test_search_text_skips_sensitive_file_content(tmp_path):

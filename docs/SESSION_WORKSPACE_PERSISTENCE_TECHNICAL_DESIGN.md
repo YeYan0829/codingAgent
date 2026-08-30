@@ -51,7 +51,7 @@ CLI 和普通错误信息不要求用户理解 Task、Candidate、journal、rece
 - `source_workspace`：Session 创建时绑定的真实 Git workspace，生命周期内不改变；
 - `active_workspace`：当前 Agent 实际读取和操作的位置；无 worktree 时等于 source，有当前修改时指向受管 worktree；
 - `workspace_revision`：同一 Session 每次成功创建 worktree 后递增，用于隔离多轮修改的 identity；
-- `candidate_revision`：Atomic Edit 或已启动并完成 audit 的 command 的统一递增编号；
+- `candidate_revision`：Atomic Edit 或完成可信 audit 且产生 workspace tree 变化的 command 的统一递增编号；
 - frozen patch：采纳前固定并校验的 diff；它是内部安全机制，不建立独立用户心智模型；
 - diagnostic data：失败恢复、审计或开发调试所需的详细数据。
 
@@ -148,7 +148,7 @@ ToolRegistry 在 `source_only` 时仍向模型提供受保护工具的稳定 sch
 
 当前修改的事实来源是 active worktree 相对其 `base_commit` 的 Git 状态和 diff。Atomic Edit journal 用于证明修改归属、并发前置条件和恢复，不再作为另一份用户可见文件清单。
 
-每次成功编辑和每次已启动并完成可信 audit 的命令增加 `candidate_revision`。两类变化都统一进入可采纳的当前修改；只有 after boundary 无法确认才 taint。
+每次成功编辑和完成可信 audit 且检测到 workspace tree 变化的命令增加 `candidate_revision`。两类变化都统一进入可采纳的当前修改；命令没有改变 tree 时不推进 revision，只有 after boundary 无法确认才 taint。
 
 ### 7.2 验证
 
@@ -161,7 +161,7 @@ ToolRegistry 在 `source_only` 时仍向模型提供受保护工具的稳定 sch
 - profile id/revision；
 - 结果分类和简短输出摘要。
 
-编辑或任意后续命令发生后，旧 `candidate_revision` 的成功验证不得被展示为当前修改仍已验证。
+编辑或后续命令改变 subject tree 后，旧成功验证不得被展示为当前修改仍已验证；没有改变 tree 的命令不会仅因执行顺序使证据失效。完整 currentness 以当前 Command/Sandbox 契约为准。
 
 ### 7.3 采纳
 

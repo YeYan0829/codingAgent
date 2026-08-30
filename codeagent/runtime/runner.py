@@ -5,7 +5,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from codeagent.config import ModelConfig, RuntimeConfig
-from codeagent.context.builder import ContextBuilder
+from codeagent.context.builder import ContextManager
+from codeagent.context.models import ContextBudgetExceeded, ModelCapabilities
 from codeagent.model_gateway.base import BaseModelClient, LLMToolCall, MalformedToolArgumentsError, ModelRequest
 from codeagent.runtime.approval import ApprovalGate
 from codeagent.runtime.policy import DefaultPolicy, PolicyDecision
@@ -31,6 +32,8 @@ from codeagent.workspace.workspace import SessionWorkspaceState
 class RunnerOutput:
     final_text: str
     steps: list[dict] = field(default_factory=list)
+    status: str = "completed"
+    steps_used_in_turn: int = 0
 
 
 class AgentRunner:
@@ -76,18 +79,42 @@ class AgentRunner:
             self.tools.register(build_atomic_edit_tool(self.atomic_edit_service))
         elif dynamic_workspace:
             self._register_upgrade_tools()
+        self.context_manager = ContextManager(session_store, self.tools)
 
     def run_turn(self, message: str) -> RunnerOutput:
         self.session_store.append_event("user_message", {"message": message})
+        return self._run_slice()
+
+    def continue_turn(self) -> RunnerOutput:
+        if not self._has_incomplete_turn():
+            raise RuntimeError("当前没有可继续的未完成 UserTurn")
+        return self._run_slice()
+
+    def _run_slice(self) -> RunnerOutput:
         steps: list[dict] = []
         self._workspace_upgrade_denied_this_turn = False
         repair_messages: list[dict] = []
+        control_messages = self._continuation_messages()
         protocol_failures = 0
         previous_failure: tuple[str, str] | None = None
+        steps_before = self._steps_used_in_current_turn()
+        remaining = self.config.max_model_steps_per_user_turn - steps_before
+        if remaining <= 0:
+            return self._terminate_budget(steps, steps_before)
 
-        for _ in range(self.config.max_steps_per_turn):
+        slice_limit = min(self.config.max_steps_per_turn, remaining)
+        for _ in range(slice_limit):
+            try:
+                messages = self.context_manager.build(
+                    model_capabilities=ModelCapabilities(
+                        generation_reserve=self.model_config.max_tokens or 4_000,
+                    ),
+                    current_turn_transient_messages=tuple(control_messages + repair_messages),
+                )
+            except ContextBudgetExceeded as exc:
+                return self._terminate_context_budget(steps, exc)
             request = ModelRequest(
-                messages=ContextBuilder(self.session_store).build() + repair_messages,
+                messages=messages,
                 tools=self.tools.as_model_tools(),
                 model=self.model_config.resolved_model,
                 temperature=self.model_config.temperature,
@@ -107,7 +134,7 @@ class AgentRunner:
                         f"模型连续返回无法解析的 {exc.tool_name} 参数；工具未执行，workspace 未修改。"
                     )
                     self.session_store.append_event("assistant_message", {"message": final})
-                    return RunnerOutput(final_text=final, steps=steps)
+                    return RunnerOutput(final_text=final, steps=steps, steps_used_in_turn=self._steps_used_in_current_turn())
                 previous_failure = fingerprint
                 repair_messages.append({"role": "system", "content": (
                     f"上一响应中 {exc.tool_name} 的 arguments 不是合法 JSON：{exc.message} "
@@ -118,7 +145,7 @@ class AgentRunner:
             if not response.tool_calls:
                 final = response.text or ""
                 self.session_store.append_event("assistant_message", {"message": final})
-                return RunnerOutput(final_text=final, steps=steps)
+                return RunnerOutput(final_text=final, steps=steps, steps_used_in_turn=self._steps_used_in_current_turn())
 
             tool_payload = {
                 "message": response.text or "",
@@ -132,9 +159,76 @@ class AgentRunner:
                 steps.append(step)
                 self._notify({"type": "tool_step", "step": step})
 
-        final = "本轮达到最大模型步骤数，建议缩小任务范围或继续下一轮。"
-        self.session_store.append_event("assistant_message", {"message": final})
-        return RunnerOutput(final_text=final, steps=steps)
+        used = self._steps_used_in_current_turn()
+        if used >= self.config.max_model_steps_per_user_turn:
+            return self._terminate_budget(steps, used)
+        meta = self.session_store.read_meta()
+        self.session_store.append_event("execution_slice_exhausted", {
+            "slice_steps": slice_limit,
+            "steps_used_in_turn": used,
+            "max_model_steps_per_user_turn": self.config.max_model_steps_per_user_turn,
+            "candidate_revision": int(meta.get("candidate_revision", 0)),
+            "workspace_state": meta.get("workspace_state"),
+        })
+        text = f"Agent 已执行 {slice_limit} 个模型步骤但尚未完成；可继续同一 UserTurn（已用 {used}/{self.config.max_model_steps_per_user_turn}）。"
+        return RunnerOutput(final_text=text, steps=steps, status="slice_exhausted", steps_used_in_turn=used)
+
+    def _terminate_budget(self, steps: list[dict], used: int) -> RunnerOutput:
+        text = f"Agent 已耗尽当前 UserTurn 的模型步骤预算（{used}/{self.config.max_model_steps_per_user_turn}），任务未确认完成。"
+        self.session_store.append_event("turn_terminated", {
+            "reason": "model_step_budget_exhausted", "message": text,
+            "steps_used_in_turn": used,
+            "max_model_steps_per_user_turn": self.config.max_model_steps_per_user_turn,
+        })
+        return RunnerOutput(final_text=text, steps=steps, status="model_step_budget_exhausted", steps_used_in_turn=used)
+
+    def _terminate_context_budget(self, steps: list[dict], exc: ContextBudgetExceeded) -> RunnerOutput:
+        report = exc.report
+        used = self._steps_used_in_current_turn()
+        text = (
+            "Agent 的下一次模型请求无法在当前上下文输入预算内安全构建；"
+            f"最低集合估算为 {report.estimated_tokens} token，预算为 {report.usable_tokens} token。"
+            "当前任务未完成，Session 与 workspace 已保留。"
+        )
+        self.session_store.append_event("turn_terminated", {
+            "reason": "context_budget_exceeded",
+            "message": text,
+            "estimated_tokens": report.estimated_tokens,
+            "usable_tokens": report.usable_tokens,
+            "dropped_turn_ids": list(report.dropped_turn_ids),
+            "reductions": list(report.reductions),
+            "steps_used_in_turn": used,
+        })
+        return RunnerOutput(final_text=text, steps=steps, status="context_budget_exceeded", steps_used_in_turn=used)
+
+    def _steps_used_in_current_turn(self) -> int:
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        return sum(event.turn_id == turn_id and event.type in {
+            "assistant_tool_calls", "assistant_message", "model_protocol_error",
+        } for event in events)
+
+    def _has_incomplete_turn(self) -> bool:
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        if turn_id is None:
+            return False
+        return not any(event.turn_id == turn_id and event.type in {"assistant_message", "turn_terminated"} for event in events)
+
+    def _continuation_messages(self) -> list[dict]:
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        latest = next((event for event in reversed(events)
+                       if event.turn_id == turn_id and event.type == "execution_slice_exhausted"), None)
+        if latest is None:
+            return []
+        payload = latest.payload
+        return [{"role": "system", "content": (
+            "这是同一 UserTurn 的后续执行切片；原始用户请求和约束仍然有效，不要要求用户重复，也不要从头探索。"
+            f"上一切片结束时已使用 {payload.get('steps_used_in_turn')} 个模型步骤，"
+            f"candidate_revision={payload.get('candidate_revision')}，workspace_state={payload.get('workspace_state')}。"
+            "请根据现有工具记录、Runtime Snapshot 和 Active Code 继续；已有足够证据时优先编辑和运行用户要求的验证。"
+        )}]
 
     def _notify(self, event: dict) -> None:
         if self.progress_callback is not None:
@@ -153,7 +247,8 @@ class AgentRunner:
         policy_result = self.policy.evaluate(tool)
         if policy_result.decision == PolicyDecision.DENY:
             result = ToolResult(ok=False, error=policy_result.reason, error_code="policy_denied")
-            self.session_store.append_event("tool_denied", {"call_id": call.call_id, "name": call.name, "reason": policy_result.reason})
+            self.session_store.append_event("tool_denied", {"call_id": call.call_id, "name": call.name,
+                                                            "reason": policy_result.reason, "result": result.model_dump()})
             return self._step(call, "deny", result)
 
         if policy_result.decision == PolicyDecision.ASK:
@@ -162,7 +257,8 @@ class AgentRunner:
             self.session_store.append_event("approval_decision", {"call_id": call.call_id, "name": call.name, "allowed": allowed})
             if not allowed:
                 result = ToolResult(ok=False, error="user denied approval", error_code="approval_denied")
-                self.session_store.append_event("tool_denied", {"call_id": call.call_id, "name": call.name, "reason": "user denied approval"})
+                self.session_store.append_event("tool_denied", {"call_id": call.call_id, "name": call.name,
+                                                                "reason": "user denied approval", "result": result.model_dump()})
                 return self._step(call, "deny", result)
 
         result = tool.handler(call.arguments)
@@ -223,6 +319,7 @@ class AgentRunner:
             self.command_service = command_service
             self.atomic_edit_service = edit_service
             self.candidate_service = candidate_service
+            self.context_manager.tool_registry = registry
         except Exception as exc:
             if hasattr(self.approval_gate, "workspace_context"):
                 self.approval_gate.workspace_context = previous_approval_context

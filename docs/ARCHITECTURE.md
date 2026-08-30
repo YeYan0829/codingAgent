@@ -30,12 +30,17 @@ Session(source-only)
 | `command_service` | request freeze、审批、before/after audit、Candidate revision、结果与证据 |
 | `candidate` / `current_changes` | 按需 patch、三方合并、accept/discard、accepted checkpoint |
 | `session` | 当前状态与紧凑历史事件 |
+| `context` | Event 投影、Runtime Snapshot、工具 residue、Active Code 与 token budget |
 
 不存在无沙盒 Agent command fallback。`LocalCommandExecutor`、Command Profile、pytest-only command compiler 和 Agent-facing `run_validation` 已删除。
 
 ## 3. Search / Read / Atomic Edit
 
 只读工具支持目录树、文件枚举、严格 UTF-8 分段读取、literal/regex 搜索、文件查找及固定 argv 的 `git_status`、`git_diff`、`git_diff_stat`。`include_hidden=true` 仍遵守 ignore、SensitivePath、PathGuard 和 symlink 规则。
+
+`read_file` 明确区分请求范围、实际返回范围和文件总行数，并返回 `has_more_before/after` 与完整文件 SHA。即使只请求文件中段，也会扫描到 EOF 确认总行数，避免模型把自己的 `end_line` 误认为文件末尾；历史 residue 保留这些边界事实而不重复保存源码正文。
+
+`search_text` 默认按 literal 普通文本解释；正则必须显式传 `mode=regex`。schema 与结果 metadata 都说明实际模式，避免 `|` 等字符被 Agent 误当成已启用的正则语法。
 
 `apply_workspace_edit` 只有 create/replace/delete/move。replace/delete/move 要求来自 `read_file.metadata.sha256` 的完整 bytes SHA-256。事务先完成冲突、安全和目录副作用 prepare，再 mutation；失败回滚所有文件和自动创建目录。无法确认恢复时进入 `recovery_required`。
 
@@ -69,7 +74,7 @@ Bubblewrap 每条命令创建一次 namespace。probe 检查 trusted absolute ex
 
 ## 6. Workspace audit 与状态
 
-payload 真正启动的每条命令都有 before/after Git snapshot。命令 exit 0、非零或 timeout，只要进程树已停止且 after audit 完整，其 create/update/delete/rename 都是合法 Candidate changes，并推进一次 `candidate_revision`。
+payload 真正启动的每条命令都有 before/after Git snapshot。命令 exit 0、非零或 timeout，只要进程树已停止且 after audit 完整，其 create/update/delete/rename 都是合法 Candidate changes；只有 audit 检测到 workspace tree 变化时才推进一次 `candidate_revision`。
 
 - `changes_active`：边界可信，可继续 edit/command/validation/accept/discard；
 - `workspace_tainted`：命令可能写入但 after boundary 无法建立；只允许 read 和 discard；
@@ -79,7 +84,7 @@ payload 真正启动的每条命令都有 before/after Git snapshot。命令 exi
 
 ## 7. Candidate revision 与验证
 
-Atomic Edit 成功事务和每次已启动且完成 audit 的命令都推进统一 `candidate_revision`。validation evidence 绑定 exact command/hash、结束后的 revision、subject tree、workspace/base identity 和 Policy revision。任何后续编辑或命令都会令旧证据失效。
+Atomic Edit 成功事务和产生 workspace tree 变化的命令推进统一 `candidate_revision`。validation evidence 绑定 exact command/hash、结束后的 revision、subject tree、workspace/base identity 和 Policy revision。当前有效性以 subject tree、workspace/base identity 为准；没有改变 tree 的后续命令不会使证据失效。
 
 Accept 只要求存在 current evidence。`purpose=validation` 加 exit 0 的含义仅是“所选验证命令成功执行”，不是 Runtime 证明命令充分或一定是 pytest。
 
@@ -97,7 +102,19 @@ Accept 从 accepted baseline、Agent tree 和当前 source tree 做 Git 三方�
 
 成功命令删除 stdout/stderr、runtime HOME/TMP 和 mount masks。失败、timeout、sandbox setup、tainted/recovery 保留有界 diagnostics。没有独立 commands/grants/audit 日志家族。
 
-## 9. 当前限制
+## 9. Context Management
+
+新事件显式记录 `seq/turn_id/model_step_id`，ToolCall 使用 provider `call_id`；旧 Session 由 JSONL 行序、UserMessage 边界和 call id 兼容投影，不改写历史文件。每次模型调用前，Context Manager 从 Event、当前 Runtime/Git/Validation 和 active workspace 重新构建临时视图。
+
+旧工具正文按工具规则缩减为结构化 residue；Active Code 只按 changed path、失败目标或历史 read range 等明确证据选择，并重读当前 workspace。默认 32k context，预留 4k generation、4k continuation/tool 和 2k safety margin；无 tokenizer 时按 UTF-8 保守估算。超预算从最老开始整轮淘汰 completed UserTurn；最低集合仍超限则明确失败。当前 v1 对同一路径主要选择最后 read range，尚未实现稳定范围合并，因此不能把 Active Code 等同于完整 Working Set。
+
+Context View、Snapshot、Residue、Active Code 和 BudgetReport 都是内存派生对象，没有新增持久 artifact。Semantic Compaction 不属于 v1。
+
+最低 Context 集合仍超出单次模型输入预算时，Runner 记录 `context_budget_exceeded` 并明确终止当前 UserTurn；CLI 说明任务未完成且 Session/workspace 已保留。active UserTurn 的旧闭合工具交换如何进一步缩减仍处于独立调研/设计阶段，见 [Context Capacity Research](CONTEXT_CAPACITY_RESEARCH_2026-08-30.md)。
+
+一次 UserTurn 可以跨多个内部“执行切片”。默认每个切片最多 12 次模型调用，同一 UserTurn 总计最多 48 次；切片耗尽只产生控制事件，不伪造 Final Assistant Message，也不新增 UserMessage。交互 CLI 由用户选择是否继续，`/continue` 可在 Resume 后继续原请求；非交互 `ask` 在总预算内自动续切片。长轮次仍保留完整 tool-call/tool-result 配对，但只保留最近 4 个执行步骤的工具调用前说明，避免说明文字重复膨胀上下文。
+
+## 10. 当前限制
 
 - Linux/WSL2 only；需要系统 `bwrap`；nested/container 环境由实际 probe 决定；
 - 没有 cgroup CPU/内存/进程配额和复杂 seccomp；输出、timeout 与 `/tmp` 大小已有边界；
@@ -105,3 +122,6 @@ Accept 从 accepted baseline、Agent tree 和当前 source tree 做 Git 三方�
 - bind mask 无法保证遮罩 sandbox 创建后才出现的未来路径；
 - Candidate patch 仍限制为有界 UTF-8 文本 patch；
 - 不评价模型工具选择能力或 validation command 质量。
+- 当前执行切片使用固定配置值，不支持针对单个 Session 动态追加总预算；达到 48 次模型调用后明确终止当前 UserTurn。
+- active UserTurn 的旧闭合工具协议会持续占用输入，同时旧正文已 residue 化；真实 Pro Session 在 35–40 个 ModelStep 触发 22k 输入预算上限；
+- Active Code 的“最新 range”策略会使先前相关代码退出工作视图，模型可能改用 command 重读；稳定 Working Set 与 Execution Checkpoint 尚未实现；

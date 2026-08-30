@@ -33,7 +33,9 @@ Command Profile、Agent-facing `run_validation`、pytest-only executor 和裸执
 
 ## 下一步
 
-本阶段进入人工验收。之后优先设计 SWE-bench 薄 adapter：注入 repository/issue/执行环境，复用正式 Runtime，导出最终 patch 给官方 harness；不复制 Agent 工具链，也不把 benchmark 容器替代普通 CLI 的 Bubblewrap 边界。
+真实 DeepSeek Flash/Pro Session 已证明基础工具能够执行，但当前 Agent 在长工具轨迹中无法维持稳定 Working Context：同一文件的旧相关范围会被最新读取覆盖，模型转用 `sed/cat` 重建视野；active UserTurn 的闭合工具协议持续增长并在 35–40 个 ModelStep 左右触发 Context 输入容量上限。详见 [真实 LLM Agent 测试审计](REAL_LLM_AGENT_EVALUATION_2026-08-30.md)。
+
+下一步优先完成 **Agent Orchestration / Working Context Technical Design**，统一设计稳定代码工作集、执行 checkpoint、旧闭合工具交换缩减、slice/Resume 连续性和容量触发。该设计和实现通过真实任务复测后，再进入 SWE-bench 薄 adapter。
 
 当前不做 Task 数据结构、多 worktree 并行、多 Agent、Docker/远程 executor、domain proxy、cgroup 或复杂 seccomp。
 
@@ -46,6 +48,9 @@ Command Profile、Agent-facing `run_validation`、pytest-only executor 和裸执
 | [ARCHITECTURE](ARCHITECTURE.md) | 已实现模块、调用链、安全与持久化边界 |
 | [DECISIONS](DECISIONS.md) | 跨阶段仍有效的产品决策；新决策可明确取代旧决策 |
 | [Controlled Arbitrary Command + Sandbox TD](CONTROLLED_ARBITRARY_COMMAND_SANDBOX_TECHNICAL_DESIGN.md) | 已实现的命令、权限、Bubblewrap、audit 和 validation 契约 |
+| [Context Management TD](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md) | 已实现的 Event projection、工具结果生命周期、Active Code、token budget 与 Resume context；Semantic Compaction 后置 |
+| [真实 LLM Agent 测试审计](REAL_LLM_AGENT_EVALUATION_2026-08-30.md) | 五次 HTTPX Session 的证据、已修复问题与 Working Context/编排根因 |
+| [Context Capacity Research](CONTEXT_CAPACITY_RESEARCH_2026-08-30.md) | 成熟方案的 tool clearing、trim、compaction 调研和下一 TD 输入 |
 | [Session/Workspace/Persistence TD](SESSION_WORKSPACE_PERSISTENCE_TECHNICAL_DESIGN.md) | Session、按需 worktree、accepted baseline 和采纳语义 |
 | [Atomic Edit TD](ATOMIC_EDIT_TECHNICAL_DESIGN.md) | 原子编辑事务与恢复契约 |
 | [Search/Read TD](SEARCH_READ_TECHNICAL_DESIGN.md) | 搜索和只读工具契约 |

@@ -80,7 +80,10 @@ class AtomicEditService:
                 metadata=receipt,
             )
         except AtomicEditError as exc:
-            return ToolResult(ok=False, error_code=exc.code, error=f"workspace edit 被拒绝: {exc}")
+            return ToolResult(ok=False, error_code=exc.code, error=f"workspace edit 被拒绝: {exc}", metadata={
+                "workspace_changed": False,
+                "operation_errors": _operation_argument_errors(arguments) if exc.code == "invalid_arguments" else [],
+            })
         except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
             return ToolResult(ok=False, error_code="internal_error", error=f"workspace edit 失败: {exc}")
 
@@ -509,3 +512,16 @@ def _adapt_patch_newlines(before: str, old_text: str, new_text: str) -> tuple[st
     newline = found[0]
     adapt = lambda value: value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", newline)
     return adapt(old_text), adapt(new_text)
+
+
+def _operation_argument_errors(arguments: Any) -> list[dict[str, Any]]:
+    """只报告可机械确定的字段错误，不从自然语言错误中反推。"""
+    if not isinstance(arguments, dict) or not isinstance(arguments.get("operations"), list):
+        return [{"field": "operations", "reason": "required_array"}]
+    errors = []
+    for index, operation in enumerate(arguments["operations"]):
+        if not isinstance(operation, dict):
+            errors.append({"operation_index": index, "field": None, "reason": "object_required"})
+        elif not isinstance(operation.get("op"), str):
+            errors.append({"operation_index": index, "field": "op", "reason": "required_string"})
+    return errors

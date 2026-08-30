@@ -44,6 +44,14 @@ cp -a -- "$source_dir" "$workspace"
 python3 -m venv "$venv_dir"
 "$venv_dir/bin/python" -m pip install "${dependencies[@]}"
 
+# Sandbox 中 HOME 是 private runtime HOME，不能把任务命令写成 ~/.cache/...。
+# 为当前机器生成带真实绝对解释器路径的任务文件。
+task_template="$script_dir/tasks/$task_id.md"
+task_output="$workspace/CODEAGENT_TASK.md"
+while IFS= read -r line || [[ -n "$line" ]]; do
+  printf '%s\n' "${line//'{{EVAL_PYTHON}}'/"$venv_dir/bin/python"}"
+done < "$task_template" > "$task_output"
+
 git -C "$workspace" init
 git -C "$workspace" config user.name "CodeAgent Eval"
 git -C "$workspace" config user.email "codeagent-eval@example.invalid"
@@ -54,7 +62,7 @@ cat <<EOF
 环境已准备：
   workspace: $workspace
   venv:      $venv_dir
-  task:      $script_dir/tasks/$task_id.md
+  task:      $task_output
 
 下一步请阅读任务文档，然后以 workspace 路径启动 codeagent。
 EOF

@@ -142,7 +142,10 @@ class CommandService:
                           metadata={"execution_id": request.execution_id, "status": result.status.value,
                                     "exit_code": result.exit_code, "before_candidate_revision": request.before_candidate_revision,
                                     "after_candidate_revision": after_revision, "command_induced_changes": list(audit_changes),
-                                    "effective_policy": effective.summary(), "workspace_state": workspace_state})
+                                    "effective_policy": effective.summary(), "workspace_state": workspace_state,
+                                    "stdout_tail": _bounded_tail(result.stdout),
+                                    "stderr_tail": _bounded_tail(result.stderr),
+                                    "diagnostic": result.spawn_error})
 
     def _finalize_diagnostics(self, paths, request, result, workspace_state: str) -> None:
         keep = result.status != CommandExecutionStatus.COMPLETED or result.exit_code != 0 or workspace_state != SessionWorkspaceState.CHANGES_ACTIVE.value
@@ -186,3 +189,13 @@ def _result_content(result):
         parts.append(f"diagnostic: {result.spawn_error}")
     parts.append(f"effective_policy: {json.dumps(result.effective_policy, ensure_ascii=False)}")
     return "\n".join(parts)
+
+
+def _bounded_tail(value: str, *, max_lines: int = 20, max_chars: int = 1200) -> str:
+    """保存确定性的有限输出尾部，供历史 Context 保留实际结果或失败根因。"""
+    if not value:
+        return ""
+    tail = "\n".join(value.splitlines()[-max_lines:])
+    if len(tail) <= max_chars:
+        return tail
+    return "...[tail truncated]\n" + tail[-max_chars:]

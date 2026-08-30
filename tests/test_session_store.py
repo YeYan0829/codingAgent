@@ -86,3 +86,18 @@ def test_explicit_session_root_can_exclude_legacy_sessions(tmp_path):
     sessions = SessionStore.list_sessions(workspace, session_root=session_root, include_legacy=False)
 
     assert [session["session_id"] for session in sessions] == [current.session_id]
+
+
+def test_schema_v2_session_is_read_without_rewriting_history(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    store = SessionStore(workspace).create()
+    meta = store.read_meta()
+    meta["schema_version"] = 2
+    store.meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    before = store.events_path.read_bytes()
+
+    loaded = SessionStore(workspace, session_id=store.session_id).load()
+
+    assert loaded.read_meta()["schema_version"] == 2
+    assert loaded.events_path.read_bytes() == before

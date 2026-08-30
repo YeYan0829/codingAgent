@@ -22,7 +22,7 @@ class SessionStore:
     """Session 的唯一业务状态与 append-only 关键历史。"""
 
     UNTITLED = "Untitled session"
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, workspace_root: Path | str, session_id: str | None = None, session_root: Path | str | None = None) -> None:
         self.workspace_root = Path(workspace_root).expanduser().resolve()
@@ -204,12 +204,29 @@ class SessionStore:
         self._write_state(meta)
 
     def append_event(self, event_type: str, payload: dict[str, Any] | None = None) -> SessionEvent:
-        event = SessionEvent(type=event_type, payload=payload or {})
-        if event.type == "user_message":
-            self._maybe_set_title(str(event.payload.get("message", "")))
+        meta = self.read_meta()
+        if "event_seq" in meta:
+            seq = int(meta["event_seq"]) + 1
+        else:
+            existing = self.read_events() if self.events_path.exists() else []
+            seq = max((event.seq or index for index, event in enumerate(existing, 1)), default=0) + 1
+        turn_id = meta.get("current_turn_id")
+        model_step_id = meta.get("current_model_step_id")
+        if event_type == "user_message":
+            turn_id = f"turn-{seq}"
+            model_step_id = None
+        elif event_type in {"assistant_tool_calls", "assistant_message", "model_protocol_error"}:
+            model_step_id = f"step-{seq}"
+        event = SessionEvent(seq=seq, turn_id=turn_id, model_step_id=model_step_id, type=event_type, payload=payload or {})
         with self.events_path.open("a", encoding="utf-8") as fh:
             fh.write(event.model_dump_json() + "\n")
-        meta = self.read_meta()
+        if event.type == "user_message" and meta.get("title") == self.UNTITLED:
+            title = self.title_from_message(str(event.payload.get("message", "")))
+            if title != self.UNTITLED:
+                meta["title"] = title
+        meta["event_seq"] = seq
+        meta["current_turn_id"] = turn_id
+        meta["current_model_step_id"] = model_step_id
         meta["last_active_at"] = event.ts
         self._write_state(meta)
         return event
@@ -219,7 +236,7 @@ class SessionStore:
             value = json.loads(self.meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise SessionStoreError(f"session.json is corrupted: {exc}") from exc
-        if value.get("schema_version") != self.SCHEMA_VERSION:
+        if value.get("schema_version") not in {2, self.SCHEMA_VERSION}:
             raise SessionStoreError("unsupported session schema")
         return value
 

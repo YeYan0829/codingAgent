@@ -5,8 +5,10 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    # 真实修复通常包含读取、基线验证、编辑、自我修正、复测和总结。
+    # 单个执行切片的控制点；耗尽不结束 UserTurn。
     max_steps_per_turn: int = 12
+    # 同一 UserTurn 的总体模型调用预算；CLI 可逐 slice 继续，benchmark 可自动继续。
+    max_model_steps_per_user_turn: int = 48
 
 
 @dataclass(frozen=True)

@@ -42,7 +42,7 @@ examples/eval-tasks/prepare.sh click-short-help-sentences /data/codeagent-evals
 
 ## 运行与验收
 
-打开对应任务文档，复制“给 Agent 的请求”：
+`prepare.sh` 会在 workspace 中生成 `CODEAGENT_TASK.md`，其中验证命令已经替换为当前机器 venv 的绝对路径。请复制这份生成后的“给 Agent 的请求”，不要直接把模板中的 `{{EVAL_PYTHON}}` 或 `~/.cache/...` 交给 Agent；Sandbox 的 `~` 指向 private runtime HOME。
 
 ```bash
 test -n "${DEEPSEEK_API_KEY:-}" || echo "请先按项目 README 配置 DeepSeek Key"

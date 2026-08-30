@@ -7,7 +7,7 @@ Click 自动生成 command short help 时会在第一个以句点结尾的句子
 请补充最小回归测试，并运行：
 
 ```text
-PYTHONPATH=src ~/.cache/codeagent-evals/click-short-help-sentences/bin/python -m pytest -q -p no:cacheprovider tests/test_utils/test_make_default_short_help.py
+PYTHONPATH=src {{EVAL_PYTHON}} -m pytest -q -p no:cacheprovider tests/test_utils/test_make_default_short_help.py
 ```
 
 不要安装依赖，不需要网络，不要对无关 help formatting 做重构。

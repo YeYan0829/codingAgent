@@ -127,6 +127,12 @@ def ask(
     store = _create_session(ws, session_root, model_config, title=SessionStore.title_from_message(message))
     runner = build_runner(store, ws, interactive=False, model_config=model_config)
     output = runner.run_turn(message)
+    while output.status == "slice_exhausted":
+        continued = runner.continue_turn()
+        output.steps.extend(continued.steps)
+        output.final_text = continued.final_text
+        output.status = continued.status
+        output.steps_used_in_turn = continued.steps_used_in_turn
     for step in output.steps:
         console.print(_format_tool_step(step))
         if step["result"].get("content"):
@@ -338,11 +344,42 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
         if raw == "/log":
             console.print(str(store.events_path))
             continue
+        if raw == "/continue":
+            try:
+                output = runner.continue_turn()
+            except RuntimeError as exc:
+                console.print(f"[yellow]{exc}[/yellow]")
+                continue
+            _finish_or_offer_continuation(runner, output)
+            continue
         if raw.startswith("/call"):
             handle_manual_call(console, runner, raw)
             continue
         output = runner.run_turn(raw)
-        console.print(Panel(Text(output.final_text), title="Assistant"))
+        _finish_or_offer_continuation(runner, output)
+
+
+def _finish_or_offer_continuation(runner: AgentRunner, output) -> None:
+    while output.status == "slice_exhausted":
+        console.print(Panel(Text(output.final_text), title="Execution Paused"))
+        try:
+            allowed = Confirm.ask("继续同一 UserTurn 的下一执行切片？", default=False)
+        except (EOFError, KeyboardInterrupt):
+            allowed = False
+        if not allowed:
+            console.print("已暂停；稍后可输入 /continue，不需要发送新的“继续”消息。")
+            return
+        output = runner.continue_turn()
+    if output.status == "context_budget_exceeded":
+        console.print(Panel(
+            output.final_text + "\n\n"
+            "这不是 Session 总额度耗尽，也不是任务完成。本轮已明确终止；"
+            "Session 和 workspace 仍可检查，并可发送新的具体指令开始下一轮。",
+            title="Context Capacity Reached",
+        ))
+        return
+    title = "Assistant" if output.status == "completed" else "Execution Stopped"
+    console.print(Panel(Text(output.final_text), title=title))
 
 
 def _build_input_session(**kwargs) -> PromptSession[str]:
@@ -470,6 +507,18 @@ def _format_session_overview(store: SessionStore, recent_count: int = 6) -> str:
     else:
         lines.extend(["current changes: none (source-only)", "current validation: none"])
     recent = [event for event in events if event.type != "session_created"][-recent_count:]
+    latest_turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+    if latest_turn_id:
+        turn_events = [event for event in events if event.turn_id == latest_turn_id]
+        paused = next((event for event in reversed(turn_events) if event.type == "execution_slice_exhausted"), None)
+        finished = any(event.type in {"assistant_message", "turn_terminated"} for event in turn_events)
+        if paused is not None and not finished:
+            lines.extend([
+                "",
+                "active turn: execution paused; original request remains active",
+                f"model steps: {paused.payload.get('steps_used_in_turn', '?')}/{paused.payload.get('max_model_steps_per_user_turn', '?')}",
+                "next action: type /continue to continue without creating a new user message",
+            ])
     if recent:
         lines.append("")
         lines.append("recent history:")
@@ -554,6 +603,12 @@ def _summarize_event(event: SessionEvent) -> str:
         return f"approval decision: {payload.get('name')} allowed={payload.get('allowed')}"
     if event.type == "cli_command":
         return f"cli: {_one_line(payload.get('command', ''))}"
+    if event.type == "execution_slice_exhausted":
+        return ("execution paused: "
+                f"steps={payload.get('steps_used_in_turn', '?')}/"
+                f"{payload.get('max_model_steps_per_user_turn', '?')}")
+    if event.type == "turn_terminated":
+        return f"execution stopped: {payload.get('reason', 'unknown')} {_one_line(payload.get('message', ''))}"
     return f"{event.type}: {_one_line(str(payload))}"
 
 

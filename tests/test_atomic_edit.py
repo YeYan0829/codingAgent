@@ -78,6 +78,17 @@ def test_stale_sha_rejects_without_changes(tmp_path):
     assert target.read_bytes() == before
 
 
+def test_invalid_operation_reports_machine_readable_field_and_no_workspace_change(tmp_path):
+    _, _, _, service = operation_service(tmp_path)
+    result = service.apply_workspace_edit({"operations": [{"path": "sort_utils.py"}]})
+    assert not result.ok
+    assert result.error_code == "invalid_arguments"
+    assert result.metadata["workspace_changed"] is False
+    assert result.metadata["operation_errors"] == [
+        {"operation_index": 0, "field": "op", "reason": "required_string"}
+    ]
+
+
 @pytest.mark.parametrize("path", ["../escape.py", ".env", "nested/.env"])
 def test_atomic_edit_rejects_escape_and_sensitive_paths(tmp_path, path):
     _, _, _, service = operation_service(tmp_path)

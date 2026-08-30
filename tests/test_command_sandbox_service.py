@@ -88,6 +88,18 @@ def test_validation_evidence_binds_after_revision(tmp_path):
     assert evidence["command"] == "true"
 
 
+def test_command_result_exposes_bounded_output_tails_for_context(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    value = CommandResult(exit_code=2, status=CommandExecutionStatus.COMPLETED,
+                          stdout="\n".join(f"pass-{i}" for i in range(30)),
+                          stderr="missing interpreter", payload_started=True, process_tree_stopped=True)
+    result = service(store, context, FakeSandboxExecutor(result=value)).run_command({"command": "check"})
+    assert result.metadata["status"] == "completed"
+    assert result.metadata["exit_code"] == 2
+    assert result.metadata["stdout_tail"].startswith("pass-10")
+    assert result.metadata["stderr_tail"] == "missing interpreter"
+
+
 def test_external_write_asks_and_session_grant_persists(tmp_path):
     _, store, context = execution_session(tmp_path)
     external = tmp_path / "external"

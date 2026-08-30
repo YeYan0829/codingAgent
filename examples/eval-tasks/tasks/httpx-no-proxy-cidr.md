@@ -9,7 +9,7 @@ HTTPX 会把 `NO_PROXY` 中的 IPv4/IPv6 CIDR 转成 mount pattern，但 `URLPat
 请补充回归测试，并运行：
 
 ```text
-PYTHONPATH=. ~/.cache/codeagent-evals/httpx-no-proxy-cidr/bin/python -m pytest -q -p no:cacheprovider -k 'environment_proxies or url_matches or pattern_priority or cidr' tests/test_utils.py
+PYTHONPATH=. {{EVAL_PYTHON}} -m pytest -q -p no:cacheprovider -k 'environment_proxies or url_matches or pattern_priority or cidr' tests/test_utils.py
 ```
 
 不要安装依赖、不要访问网络、不要重写整个 proxy subsystem。
