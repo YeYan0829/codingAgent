@@ -1,5 +1,7 @@
 # 长工具轨迹 Context 容量调研
 
+> 本文记录 2026-08-30 的阶段性调研。其“稳定 Working Set”建议已由 D-2026-08-31-01 修正：Context v2 先移除隐式 Active Code，以 Recent Tool Context、residue 和合法边界 condensation 建立基线；Working Set 暂缓为有 benchmark 证据后的可选优化。
+
 ## 1. 问题
 
 真实 HTTPX Session `a4dca0d1a266` 在一个未完成 UserTurn 中累计 40 次模型调用、53 组工具调用/结果。确定性 residue 已缩小旧正文，但当前实现仍把 active UserTurn 的全部闭合 provider 工具协议对列入最低集合，最终下一次请求估算 `23503 > 22000`，无法继续构建。修复错误路径后，`2f6ce17a6bde` 在 35 个 ModelStep、41 个工具调用时被明确终止为 `23024 > 22000`。

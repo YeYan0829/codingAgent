@@ -1,5 +1,7 @@
 # 真实 LLM Agent 测试审计与 Working Context 问题
 
+> 本文保留 HTTPX 失败证据和当时的根因分析。后续 D-2026-08-31-01 没有否定这些观测，但改变了解法：v2 不自动维护稳定 Working Set，而是删除造成双重源码语义的 Active Code，先验证近期 Tool Observation、旧 residue 和 OpenHands 式 condensation。
+
 状态：2026-08-30 调研结论；下一轮 Technical Design 的主要输入
 范围：DeepSeek Flash/Pro、HTTPX `NO_PROXY` CIDR 任务、执行切片、工具使用、Context 与 Agent 编排
 

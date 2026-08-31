@@ -110,7 +110,9 @@ Accept 从 accepted baseline、Agent tree 和当前 source tree 做 Git 三方�
 
 Context View、Snapshot、Residue、Active Code 和 BudgetReport 都是内存派生对象，没有新增持久 artifact。Semantic Compaction 不属于 v1。
 
-最低 Context 集合仍超出单次模型输入预算时，Runner 记录 `context_budget_exceeded` 并明确终止当前 UserTurn；CLI 说明任务未完成且 Session/workspace 已保留。active UserTurn 的旧闭合工具交换如何进一步缩减仍处于独立调研/设计阶段，见 [Context Capacity Research](CONTEXT_CAPACITY_RESEARCH_2026-08-30.md)。
+上述内容是当前已实现的 v1 事实。D-2026-08-31-01 已决定 v2 删除隐式 Active Code，改用 Recent Tool Context、旧 Observation residue 和合法边界 condensation；该变化尚未进入代码，详细迁移契约见 [Context Management v2 TD](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md)。
+
+最低 Context 集合仍超出单次模型输入预算时，Runner 记录 `context_budget_exceeded` 并明确终止当前 UserTurn；CLI 说明任务未完成且 Session/workspace 已保留。v2 已完成 active UserTurn 历史降级的设计、尚未实现；调研证据见 [Context Capacity Research](CONTEXT_CAPACITY_RESEARCH_2026-08-30.md)，实现契约见 v2 TD。
 
 一次 UserTurn 可以跨多个内部“执行切片”。默认每个切片最多 12 次模型调用，同一 UserTurn 总计最多 48 次；切片耗尽只产生控制事件，不伪造 Final Assistant Message，也不新增 UserMessage。交互 CLI 由用户选择是否继续，`/continue` 可在 Resume 后继续原请求；非交互 `ask` 在总预算内自动续切片。长轮次仍保留完整 tool-call/tool-result 配对，但只保留最近 4 个执行步骤的工具调用前说明，避免说明文字重复膨胀上下文。
 
@@ -124,4 +126,4 @@ Context View、Snapshot、Residue、Active Code 和 BudgetReport 都是内存派
 - 不评价模型工具选择能力或 validation command 质量。
 - 当前执行切片使用固定配置值，不支持针对单个 Session 动态追加总预算；达到 48 次模型调用后明确终止当前 UserTurn。
 - active UserTurn 的旧闭合工具协议会持续占用输入，同时旧正文已 residue 化；真实 Pro Session 在 35–40 个 ModelStep 触发 22k 输入预算上限；
-- Active Code 的“最新 range”策略会使先前相关代码退出工作视图，模型可能改用 command 重读；稳定 Working Set 与 Execution Checkpoint 尚未实现；
+- Active Code 的“最新 range”策略会使先前相关代码退出工作视图，模型可能改用 command 重读；v2 已决定移除该隐式第二代码来源，但尚未实现；

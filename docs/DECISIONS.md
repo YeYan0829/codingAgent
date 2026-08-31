@@ -2,6 +2,37 @@
 
 本文记录近期实践中已经确认、且会约束后续实现的产品级决策。历史版本决策保存在 `archive/`，不自动继承为当前约束。
 
+## D-2026-08-31-01：Context v2 不维护隐式 Active Code，精确源码按需重新获取
+
+状态：Accepted，待实现
+范围：Context Management v2、长 UserTurn、源码 Observation 与 compaction
+
+### 背景
+
+Context v1 根据历史 `read_file`、失败编辑目标和 changed paths 选择 Active Code，并在每次模型调用前从当前 workspace 重读正文。HTTPX 真实 Session 表明，同一路径只保留最后 range 会使先前完整读取被后续小范围读取覆盖；更根本的问题是一次 Agent 读取同时产生“历史 Tool Result”和“Runtime 推断的重要源码”两个表现，模型难以判断源码来自刚刚的操作还是 Context Builder 的隐式补充。
+
+OpenHands 的当前实现不维护独立 Active Code，而是从 append-only Event 投影当前 View，在合法 tool protocol 边界压缩旧 Event，需要精确环境事实时重新执行工具。Aider 能稳定维护 chat files，是因为文件集合由用户或工作流显式 add/drop，而不是从每次 read 行为隐式推断。源码级证据见 [Coding Agent Context 实现源码调研](CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md)。
+
+### 决策
+
+- Context v2 删除 `ActiveCodeSlice` 和 `_active_code()` 注入，不根据 Agent 的 read/search 行为隐式判断哪些源码长期重要。
+- 精确源码是可重新获取的环境事实，只通过近期 `read_file`、`search_text` 或明确命令 Observation 进入模型输入；Context 不建立第二份代码事实来源。
+- Event 固定投影为 `Session → UserTurn → ModelStep → ToolExchange[]`。ModelStep 只表示一次主 Agent API response；同一 response 的批量 ToolCall 不拆分，全部 call 有唯一 terminal outcome 后才 closed，历史操作只能切在 closed ModelStep 之间。
+- summarizer/condenser 调用不属于主 Agent trajectory，不分配 `model_step_id`；它只追加具有独立 identity 的 `context_condensed` 派生 Event。
+- Tool Result 依次经历三种不同机制：单 Observation Bounding 后仍是 raw exact body；较旧 closed ModelStep 的 payload 确定性退化为 typed residue；residue 与协议 shell 仍超预算时，连续合法旧前缀才进入 semantic condensation。
+- active UserTurn 不是不可切割历史块，其旧 closed ModelStep 可以 residue/condense；completed UserTurn 只是优先压缩为 UserMessage + Final，不被判定为语义失效。
+- 旧 read residue 必须保留 path、requested/returned range、file total、SHA、成功状态以及 `content_retained=false`；如能确定当前文件已变化，再标记 `changed_since_read=true`。需要精确内容时由 Agent 重新读取。
+- compaction 负责保留用户目标、已完成动作、文件/符号定位、修改、测试和未决问题，不以模型摘要替代当前源码、Git、Candidate、Validation 或 Policy 真相。
+- 原始 `events.jsonl` 继续 append-only。`context_condensed` 只记录派生 Model Context history View 的覆盖范围、digest、summary 和 provenance；它不是 Event Store 的通用 tombstone，不影响 Runtime/Candidate/Approval/Audit projection，也不删除原 Event。
+- Working Set 作为后续可选 Context cache optimization 暂缓。只有 benchmark 证明合理的重复代码 retrieval 已成为显著成本或失败来源时才重新评估；优先考虑显式 pin/unpin，而不是静默分析 read 行为。
+- 本轮不引入 LangGraph。框架不能替代 Event/View、合法裁剪边界和 compaction 语义。
+
+### 对旧决策的影响
+
+D-2026-08-30-03 中“设计必须分离当前代码 Working Set”的方向被本决策取代：下一阶段仍优先解决 Working Context，但基线是不建立独立 Working Set。D-2026-08-30-01 的 read range、SHA 和避免无效重复读取原则继续有效；重新读取已经被明确压缩或发生变化的源码不视为无效重复。
+
+完整契约见 [Context Management v2 Technical Design](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md)。
+
 ## D-2026-08-28-01：下一执行层改为 Controlled Arbitrary Command + Sandbox
 
 状态：Accepted and Implemented
@@ -272,7 +303,7 @@ Agent 不获得 Git 写工具。checkpoint、临时 index/tree/commit 和 merge-
 
 ## D-2026-08-30-03：Working Context 优先于 SWE-bench adapter
 
-状态：Accepted
+状态：Superseded in part by D-2026-08-31-01
 范围：下一阶段顺序、Context、Agent orchestration
 
 - 五次真实 HTTPX Session 已证明当前 Runtime 工具能执行，但 Agent 在长工具轨迹中无法维持稳定源码工作集和执行阶段；这不是单纯提高 step/token budget 可以解决的问题。
