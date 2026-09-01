@@ -38,8 +38,8 @@ console = Console()
 
 WORKSPACE_ARG = typer.Argument(Path("."), help="要进入的代码工作区目录；默认 '.' 表示当前目录。")
 MESSAGE_ARG = typer.Argument(..., help="本轮要发送给 agent 的用户消息。")
-PROVIDER_OPT = typer.Option("fake", "--provider", help="模型 provider：fake 或 deepseek。默认 fake。")
-MODEL_OPT = typer.Option(None, "--model", help="provider 内的模型编号；deepseek 默认 deepseek-v4-flash。")
+PROVIDER_OPT = typer.Option("fake", "--provider", help="模型 provider：fake、deepseek 或 glm。默认 fake。")
+MODEL_OPT = typer.Option(None, "--model", help="provider 内的模型编号；deepseek 默认 deepseek-v4-flash，glm 默认 glm-5.2。")
 SESSION_ROOT_OPT = typer.Option(None, "--session-root", help="session 数据库根目录；默认使用 CODEAGENT_SESSION_ROOT 或 ~/.codeagent/sessions。")
 WORKSPACE_FILTER_OPT = typer.Option(None, "--workspace", "-w", help="只显示/选择某个 workspace 的 session；省略时使用全部 session。")
 
@@ -478,10 +478,14 @@ def _format_session_list_row(meta: dict) -> str:
     )
 
 
-def _format_tool_step(step: dict) -> str:
+def _format_tool_step(step: dict) -> Text:
     args_text = json.dumps(step.get("arguments", {}), ensure_ascii=False, sort_keys=True)
     result = step.get("result", {})
-    return f"[cyan]tool[/cyan] {step.get('tool')} {args_text} -> ok={result.get('ok')} truncated={result.get('truncated')}"
+    rendered = Text("tool", style="cyan")
+    rendered.append(
+        f" {step.get('tool')} {args_text} -> ok={result.get('ok')} truncated={result.get('truncated')}"
+    )
+    return rendered
 
 
 def _format_session_overview(store: SessionStore, recent_count: int = 6) -> str:

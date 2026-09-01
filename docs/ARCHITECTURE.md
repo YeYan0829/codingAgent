@@ -106,15 +106,17 @@ Accept 从 accepted baseline、Agent tree 和当前 source tree 做 Git 三方�
 
 新事件显式记录 `seq/turn_id/model_step_id`，ToolCall 使用 provider `call_id`；旧 Session 由 JSONL 行序、UserMessage 边界和 call id 兼容投影，不改写历史文件。每次模型调用前，Context Manager 从 Event、当前 Runtime/Git/Validation 和 active workspace 重新构建临时视图。
 
-旧工具正文按工具规则缩减为结构化 residue；Active Code 只按 changed path、失败目标或历史 read range 等明确证据选择，并重读当前 workspace。默认 32k context，预留 4k generation、4k continuation/tool 和 2k safety margin；无 tokenizer 时按 UTF-8 保守估算。超预算从最老开始整轮淘汰 completed UserTurn；最低集合仍超限则明确失败。当前 v1 对同一路径主要选择最后 read range，尚未实现稳定范围合并，因此不能把 Active Code 等同于完整 Working Set。
+Context v2 Phase A 已删除 Active Code 与独立 code budget。源码正文只通过真实 Tool Observation 进入输入；Runtime Snapshot 不根据历史 read/search 再次读取或注入文件。Event 确定性投影为 `UserTurn → ModelStep → ToolExchange[]`，同一 assistant response 的 batch ToolCall 保持为一个 ModelStep；open、orphan 或 duplicate protocol fail closed。
 
-Context View、Snapshot、Residue、Active Code 和 BudgetReport 都是内存派生对象，没有新增持久 artifact。Semantic Compaction 不属于 v1。
+单个 raw Observation 在 View 中最多 16 KiB并保留截断标志和 metadata。active UserTurn 默认尽量保留最近 4 个 closed ModelStep 的 bounded raw result，更旧步骤保留完整 assistant/tool 配对并把 payload 换成 typed residue；hard budget 下近期目标可继续退化。Context View、Snapshot、Residue 和 BudgetReport 都是内存派生对象，没有新增持久 artifact。
 
-上述内容是当前已实现的 v1 事实。D-2026-08-31-01 已决定 v2 删除隐式 Active Code，改用 Recent Tool Context、旧 Observation residue 和合法边界 condensation；该变化尚未进入代码，详细迁移契约见 [Context Management v2 TD](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md)。
-
-最低 Context 集合仍超出单次模型输入预算时，Runner 记录 `context_budget_exceeded` 并明确终止当前 UserTurn；CLI 说明任务未完成且 Session/workspace 已保留。v2 已完成 active UserTurn 历史降级的设计、尚未实现；调研证据见 [Context Capacity Research](CONTEXT_CAPACITY_RESEARCH_2026-08-30.md)，实现契约见 v2 TD。
+默认 32k context，预留 4k generation、4k continuation/tool 和 2k safety margin；无 tokenizer 时按 UTF-8 保守估算。超预算先缩减 recent raw，再从最老开始整轮淘汰 completed UserTurn；最低集合仍超限则 Runner 记录 `context_budget_exceeded` 并明确终止，保留 Session/workspace。Phase B 分类预算和 Phase C Semantic Condensation 尚未实现，契约见 [Context Management v2 TD](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md)。
 
 一次 UserTurn 可以跨多个内部“执行切片”。默认每个切片最多 12 次模型调用，同一 UserTurn 总计最多 48 次；切片耗尽只产生控制事件，不伪造 Final Assistant Message，也不新增 UserMessage。交互 CLI 由用户选择是否继续，`/continue` 可在 Resume 后继续原请求；非交互 `ask` 在总预算内自动续切片。长轮次仍保留完整 tool-call/tool-result 配对，但只保留最近 4 个执行步骤的工具调用前说明，避免说明文字重复膨胀上下文。
+
+System prompt 明确告知模型 Tool Observation 只在近期 Context 暂时保留；证据已经支持可验证修改时应立即行动，不得以获得不影响实现选择的额外确定性为由重复调查。这是行动收敛提示，不是 Runtime 对任务充分性的权威判断。
+
+模型网关支持 Fake、DeepSeek 和 GLM。DeepSeek 与 GLM 共用 OpenAI Chat Completions 兼容 transport；GLM 默认 `glm-5.2` 和智谱标准 API endpoint，可通过 `GLM_BASE_URL` 切换到 Coding Plan endpoint。DeepSeek/Fake 暂用 32k context limit，GLM 使用保守的 128k Runtime 实验上限（118k usable input），避免错误复用 DeepSeek 的 22k 输入预算。两者当前均关闭 thinking，避免尚未持久化的 reasoning content 破坏多轮工具协议。
 
 ## 10. 当前限制
 
@@ -126,4 +128,4 @@ Context View、Snapshot、Residue、Active Code 和 BudgetReport 都是内存派
 - 不评价模型工具选择能力或 validation command 质量。
 - 当前执行切片使用固定配置值，不支持针对单个 Session 动态追加总预算；达到 48 次模型调用后明确终止当前 UserTurn。
 - active UserTurn 的旧闭合工具协议会持续占用输入，同时旧正文已 residue 化；真实 Pro Session 在 35–40 个 ModelStep 触发 22k 输入预算上限；
-- Active Code 的“最新 range”策略会使先前相关代码退出工作视图，模型可能改用 command 重读；v2 已决定移除该隐式第二代码来源，但尚未实现；
+- Phase A 已移除 Active Code；是否足以改善长程源码理解仍待 HTTPX 真实复测；

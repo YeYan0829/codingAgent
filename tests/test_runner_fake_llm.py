@@ -1,4 +1,5 @@
 from codeagent.model_gateway.fake import FakeLLM
+from codeagent.config import ModelConfig
 from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest
 from codeagent.runtime.approval import AutoApprovalGate
 from codeagent.runtime.runner import AgentRunner
@@ -66,3 +67,31 @@ def test_runner_reports_assistant_intent_and_tool_results_immediately(tmp_path):
     assert progress[1]["step"]["tool"] == "read_file"
     tool_call_event = next(event for event in store.read_events() if event.type == "assistant_tool_calls")
     assert tool_call_event.payload["message"] == "我先读取 README，确认项目背景。"
+
+
+def test_runner_passes_glm_context_capacity_to_context_manager(tmp_path):
+    class FinalModel(BaseModelClient):
+        def complete(self, request: ModelRequest) -> LLMResponse:
+            return LLMResponse(text="done")
+
+    ws = Workspace(tmp_path)
+    store = SessionStore(ws.root, session_root=tmp_path / "sessions").create()
+    runner = AgentRunner(
+        store,
+        FinalModel(),
+        ToolRegistry(),
+        AutoApprovalGate(allow=False),
+        model_config=ModelConfig(provider="glm"),
+    )
+    captured = []
+
+    def build(**kwargs):
+        captured.append(kwargs["model_capabilities"])
+        return [{"role": "user", "content": "finish"}]
+
+    runner.context_manager.build = build
+    output = runner.run_turn("test")
+
+    assert output.status == "completed"
+    assert captured[0].context_limit == 128_000
+    assert captured[0].usable_input_budget == 118_000

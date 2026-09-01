@@ -10,6 +10,15 @@ class ProjectionError(RuntimeError):
     pass
 
 
+class ContextNotReady(ProjectionError):
+    """最新主模型响应仍在等待 Runtime 完成工具结果或原子恢复。"""
+
+
+def _require_closed(step: ModelStepView | None, seq: int) -> None:
+    if step is not None and not step.closed:
+        raise ContextNotReady(f"open ModelStep {step.step_id!r} before event {seq}; Runtime recovery required")
+
+
 def project_events(events: list[SessionEvent]) -> list[UserTurnView]:
     """兼容新 identity 与旧 JSONL 行序，机械恢复 conversation/tool protocol。"""
     turns: list[UserTurnView] = []
@@ -19,6 +28,7 @@ def project_events(events: list[SessionEvent]) -> list[UserTurnView]:
     for line, event in enumerate(events, 1):
         seq = event.seq or line
         if event.type == "user_message":
+            _require_closed(current_step, seq)
             current = UserTurnView(event.turn_id or f"legacy-turn-{seq}", str(event.payload.get("message", "")))
             turns.append(current)
             current_step = None
@@ -27,6 +37,7 @@ def project_events(events: list[SessionEvent]) -> list[UserTurnView]:
         if current is None:
             continue
         if event.type == "assistant_tool_calls":
+            _require_closed(current_step, seq)
             current_step = ModelStepView(event.model_step_id or f"legacy-step-{seq}", str(event.payload.get("message") or ""))
             current.model_steps.append(current_step)
             for item in event.payload.get("tool_calls", []):
@@ -43,6 +54,8 @@ def project_events(events: list[SessionEvent]) -> list[UserTurnView]:
                 raise ProjectionError(f"unknown call_id {call_id!r} at event {seq}")
             if exchange.terminal_kind is not None:
                 raise ProjectionError(f"duplicate terminal outcome for {call_id}")
+            if event.model_step_id and current_step and event.model_step_id != current_step.step_id:
+                raise ProjectionError(f"terminal outcome for {call_id} has mismatched model_step_id at event {seq}")
             exchange.terminal_kind = "result" if event.type == "tool_result" else "denied"
             result = event.payload.get("result")
             if not isinstance(result, dict):
@@ -56,14 +69,17 @@ def project_events(events: list[SessionEvent]) -> list[UserTurnView]:
                     result = {"ok": False, "error": event.payload.get("reason", "tool denied"), "error_code": "tool_denied"}
             exchange.result = result
         elif event.type == "model_protocol_error":
+            _require_closed(current_step, seq)
             current_step = ModelStepView(event.model_step_id or f"legacy-step-{seq}", protocol_error=dict(event.payload))
             current.model_steps.append(current_step)
         elif event.type == "assistant_message":
+            _require_closed(current_step, seq)
             current.model_steps.append(ModelStepView(event.model_step_id or f"legacy-step-{seq}",
                                                      message=str(event.payload.get("message", ""))))
             current.final_message = str(event.payload.get("message", ""))
             current_step = None
         elif event.type == "turn_terminated":
+            _require_closed(current_step, seq)
             current.final_message = str(event.payload.get("message", "UserTurn terminated"))
             current_step = None
     return turns

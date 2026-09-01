@@ -1,6 +1,6 @@
 # Context Management v2 Technical Design
 
-状态：Accepted Design，待实现
+状态：Accepted Design；Phase A 已实现，Phase B/C 待实现
 日期：2026-08-31
 取代范围：Context v1 的 Active Code selection、active UserTurn 历史保留和仅按 completed UserTurn 淘汰策略
 不取代范围：append-only Event、Event identity/projection、Runtime Snapshot、容量错误和 execution slice 已实现契约

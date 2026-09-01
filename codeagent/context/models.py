@@ -10,7 +10,7 @@ class ModelCapabilities:
     generation_reserve: int = 4_000
     continuation_reserve: int = 4_000
     safety_margin: int = 2_000
-    active_code_budget: int = 4_000
+    preferred_recent_raw_steps: int = 4
 
     @property
     def usable_input_budget(self) -> int:
@@ -32,6 +32,11 @@ class ModelStepView:
     message: str = ""
     exchanges: list[ToolExchange] = field(default_factory=list)
     protocol_error: dict[str, Any] | None = None
+
+    @property
+    def closed(self) -> bool:
+        """主模型响应已获得全部 terminal outcome，或本身无需执行工具。"""
+        return not self.exchanges or all(exchange.terminal_kind is not None for exchange in self.exchanges)
 
 
 @dataclass
@@ -56,16 +61,6 @@ class RuntimeSnapshot:
     changed_paths: tuple[dict[str, str], ...]
     validation_state: str
     environment: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class ActiveCodeSlice:
-    path: str
-    start_line: int
-    end_line: int
-    content: str
-    reason: str
-    range_provenance: str
 
 
 @dataclass(frozen=True)

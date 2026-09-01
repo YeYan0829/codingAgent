@@ -4,6 +4,7 @@ from codeagent.config import ModelConfig
 from codeagent.model_gateway.deepseek_client import DeepSeekClient
 from codeagent.model_gateway.factory import build_model_client
 from codeagent.model_gateway.fake import FakeLLM
+from codeagent.model_gateway.glm_client import GLMClient
 
 
 def test_model_factory_builds_fake():
@@ -23,3 +24,17 @@ def test_deepseek_default_model_with_injected_client():
     client = DeepSeekClient(api_key="test-key", client=object())
 
     assert client.model == "deepseek-v4-flash"
+
+
+def test_model_factory_glm_requires_key(monkeypatch):
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="GLM_API_KEY"):
+        build_model_client(ModelConfig(provider="glm"))
+
+
+def test_glm_default_model_with_injected_client():
+    client = GLMClient(api_key="test-key", client=object())
+
+    assert client.model == "glm-5.2"
+    assert ModelConfig(provider="glm").resolved_model == "glm-5.2"

@@ -107,6 +107,7 @@ class AgentRunner:
             try:
                 messages = self.context_manager.build(
                     model_capabilities=ModelCapabilities(
+                        context_limit=self.model_config.context_limit,
                         generation_reserve=self.model_config.max_tokens or 4_000,
                     ),
                     current_turn_transient_messages=tuple(control_messages + repair_messages),

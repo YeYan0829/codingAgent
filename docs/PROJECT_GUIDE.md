@@ -35,7 +35,7 @@ Command Profile、Agent-facing `run_validation`、pytest-only executor 和裸执
 
 真实 DeepSeek Flash/Pro Session 已证明基础工具能够执行，但当前 Agent 在长工具轨迹中无法维持稳定 Working Context：同一文件的旧相关范围会被最新读取覆盖，模型转用 `sed/cat` 重建视野；active UserTurn 的闭合工具协议持续增长并在 35–40 个 ModelStep 左右触发 Context 输入容量上限。详见 [真实 LLM Agent 测试审计](REAL_LLM_AGENT_EVALUATION_2026-08-30.md)。
 
-下一步实现 [Context Management v2](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md)：移除隐式 Active Code，以近期真实 Tool Observation、旧 exchange residue、合法 protocol 边界和 OpenHands 式 condensation 构建每次 API Context。精确源码按需重新读取；Working Set 暂缓为有 benchmark 证据后才考虑的 cache optimization。该实现通过真实 HTTPX 复测后，再进入 SWE-bench 薄 adapter。
+Context Management v2 Phase A 已实现：删除隐式 Active Code，以近期真实 Tool Observation 和旧 exchange residue 构建每次 API Context，并在 closed ModelStep 边界内降级 active turn；精确源码按需重新读取。下一步先做真实 HTTPX 复测，再根据证据推进 Phase B 分类预算和 Phase C condensation；源码 cache optimization 继续暂缓。
 
 当前不做 Task 数据结构、多 worktree 并行、多 Agent、Docker/远程 executor、domain proxy、cgroup 或复杂 seccomp。
 
@@ -49,7 +49,7 @@ Command Profile、Agent-facing `run_validation`、pytest-only executor 和裸执
 | [DECISIONS](DECISIONS.md) | 跨阶段仍有效的产品决策；新决策可明确取代旧决策 |
 | [Controlled Arbitrary Command + Sandbox TD](CONTROLLED_ARBITRARY_COMMAND_SANDBOX_TECHNICAL_DESIGN.md) | 已实现的命令、权限、Bubblewrap、audit 和 validation 契约 |
 | [Context Management TD](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md) | 已实现的 Event projection、工具结果生命周期、Active Code、token budget 与 Resume context；Semantic Compaction 后置 |
-| [Context Management v2 TD](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md) | 已接受、待实现的无 Active Code Context View、Recent Tool Context、合法裁剪、condensation 与预算契约 |
+| [Context Management v2 TD](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md) | Phase A 已实现；Phase B/C 待实现的无 Active Code Context View、合法裁剪、condensation 与预算契约 |
 | [真实 LLM Agent 测试审计](REAL_LLM_AGENT_EVALUATION_2026-08-30.md) | 五次 HTTPX Session 的证据、已修复问题与 Working Context/编排根因 |
 | [Context Capacity Research](CONTEXT_CAPACITY_RESEARCH_2026-08-30.md) | 成熟方案的 tool clearing、trim、compaction 调研和下一 TD 输入 |
 | [Coding Agent Context 实现源码调研](CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md) | OpenHands、SWE-agent、Aider 的 API Context 组装调用链、数据来源与生命周期对照 |

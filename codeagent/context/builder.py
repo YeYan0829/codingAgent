@@ -7,8 +7,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from codeagent.context.models import ActiveCodeSlice, BudgetReport, ContextBudgetExceeded, ModelCapabilities, RuntimeSnapshot, ToolExchange, UserTurnView
-from codeagent.context.projector import ProjectionError, project_events
+from codeagent.context.models import BudgetReport, ContextBudgetExceeded, ModelCapabilities, RuntimeSnapshot, ToolExchange, UserTurnView
+from codeagent.context.projector import ContextNotReady, ProjectionError, project_events
 from codeagent.safety.path_guard import PathGuard, PathGuardError
 from codeagent.session.store import SessionStore
 from codeagent.tools.registry import ToolRegistry
@@ -34,43 +34,54 @@ class ContextManager:
         turns = project_events(self.session_store.read_events())
         context = self.session_store.workspace_context()
         snapshot = self._runtime_snapshot(context)
-        active_code = self._active_code(turns, context, caps.active_code_budget, snapshot)
         instructions = [
             {"role": "system", "content": self._read_prompt("system.md")},
             {"role": "system", "content": self._read_prompt("tool_policy.md")},
-            {"role": "system", "content": self._render_snapshot(snapshot, active_code)},
+            {"role": "system", "content": self._render_snapshot(snapshot)},
         ]
         schemas = self.tool_registry.as_model_tools() if self.tool_registry else []
         retained, dropped = list(turns), []
+        recent_raw_steps = max(0, caps.preferred_recent_raw_steps)
+        reductions: list[str] = []
         while True:
-            messages = instructions + self._render_turns(retained) + list(current_turn_transient_messages)
+            messages = instructions + self._render_turns(retained, recent_raw_steps=recent_raw_steps) + list(current_turn_transient_messages)
             estimate = self.estimator.estimate(messages) + self.estimator.estimate([tool.model_dump() for tool in schemas])
             if estimate <= caps.usable_input_budget:
-                self.last_budget_report = BudgetReport(estimate, caps.usable_input_budget, tuple(dropped), ("whole_turn_eviction",) if dropped else ())
+                self.last_budget_report = BudgetReport(estimate, caps.usable_input_budget, tuple(dropped), tuple(reductions))
                 return messages
+            if recent_raw_steps > 0:
+                recent_raw_steps -= 1
+                if "recent_raw_to_residue" not in reductions:
+                    reductions.append("recent_raw_to_residue")
+                continue
             removable = next((turn for turn in retained[:-1] if turn.completed), None)
             if removable is None:
-                report = BudgetReport(estimate, caps.usable_input_budget, tuple(dropped), ("minimum_set",))
+                report = BudgetReport(estimate, caps.usable_input_budget, tuple(dropped), tuple(reductions + ["minimum_set"]))
                 self.last_budget_report = report
                 raise ContextBudgetExceeded(report)
             retained.remove(removable)
             dropped.append(removable.turn_id)
+            if "whole_turn_eviction" not in reductions:
+                reductions.append("whole_turn_eviction")
 
-    def _render_turns(self, turns: list[UserTurnView]) -> list[dict]:
+    def _render_turns(self, turns: list[UserTurnView], *, recent_raw_steps: int = 4) -> list[dict]:
         messages: list[dict] = []
         for index, turn in enumerate(turns):
             messages.append({"role": "user", "content": turn.user_message})
             if index == len(turns) - 1 or not turn.completed:
                 execution_indexes = [step_index for step_index, item in enumerate(turn.model_steps) if item.exchanges]
-                latest_execution_index = execution_indexes[-1] if execution_indexes else -1
-                recent_preamble_indexes = set(execution_indexes[-4:])
+                recent_indexes = set(execution_indexes[-recent_raw_steps:]) if recent_raw_steps else set()
                 for step_index, step in enumerate(turn.model_steps):
                     if step.protocol_error:
                         messages.append({"role": "system", "content": self._protocol_error_residue(step.protocol_error)})
                         continue
                     if not step.exchanges:
                         continue
-                    messages.append({"role": "assistant", "content": step.message if step_index in recent_preamble_indexes else None, "tool_calls": [
+                    if not step.closed:
+                        raise ContextNotReady(
+                            f"open ModelStep {step.step_id!r}; Runtime must append terminal tool outcomes before the next model request"
+                        )
+                    messages.append({"role": "assistant", "content": step.message if step_index in recent_indexes else None, "tool_calls": [
                         {"id": item.call_id, "type": "function", "function": {"name": item.tool_name,
                          "arguments": json.dumps(item.arguments, ensure_ascii=False)}} for item in step.exchanges
                     ]})
@@ -79,7 +90,7 @@ class ContextManager:
                             raise ProjectionError(f"incomplete tool exchange: {exchange.call_id}")
                         messages.append({"role": "tool", "tool_call_id": exchange.call_id,
                                          "content": json.dumps(
-                                             self._bounded_result(exchange) if step_index == latest_execution_index
+                                             self._bounded_result(exchange) if step_index in recent_indexes
                                              else self._historical_residue(exchange), ensure_ascii=False)})
             else:
                 residues = [self._historical_residue(exchange) for step in turn.model_steps for exchange in step.exchanges]
@@ -95,9 +106,17 @@ class ContextManager:
         result = dict(exchange.result or {})
         content = str(result.get("content") or "")
         if len(content.encode("utf-8")) > limit:
-            result["content"] = content.encode("utf-8")[:limit].decode("utf-8", "ignore") + "\n...[context truncated]"
-            result["truncated"] = True
-            result.setdefault("metadata", {})["context_limit_bytes"] = limit
+            marker = b"\n...[context truncated]"
+            bounded = content.encode("utf-8")[:max(0, limit - len(marker))].decode("utf-8", "ignore")
+            result["content"] = bounded + marker.decode("ascii")
+            result["context_truncated"] = True
+            metadata = result.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            else:
+                metadata = dict(metadata)
+            result["metadata"] = metadata
+            metadata["context_limit_bytes"] = limit
         return result
 
     @staticmethod
@@ -116,7 +135,8 @@ class ContextManager:
             "operation_errors", "status", "exit_code", "stdout_tail", "stderr_tail", "diagnostic",
         ) if key in metadata}
         residue = {"tool": exchange.tool_name, "call_id": exchange.call_id, "ok": result.get("ok"),
-                   "error_code": result.get("error_code"), "error": result.get("error"), "metadata": kept_metadata}
+                   "error_code": result.get("error_code"), "error": result.get("error"),
+                   "content_retained": False, "omission_reason": "historical_reduction", "metadata": kept_metadata}
         if exchange.tool_name in {"search_text", "find_files"}:
             residue["query"] = exchange.arguments.get("query")
         elif exchange.tool_name == "run_command":
@@ -154,58 +174,13 @@ class ContextManager:
             int(meta.get("candidate_revision", 0)), context.base_commit, tree, tuple(changed), validation,
             {"default_cwd": ".", "home_kind": "private_runtime_home", "tilde_is_host_home": False, "network_mode": "off"})
 
-    def _active_code(self, turns: list[UserTurnView], context: WorkspaceContext, token_budget: int,
-                     snapshot: RuntimeSnapshot) -> list[ActiveCodeSlice]:
-        evidence: dict[str, tuple[int, int, str, str]] = {}
-        for item in snapshot.changed_paths:
-            if item.get("kind") != "delete":
-                evidence[item["path"]] = (1, 200, "changed_file", "deterministic prefix; no range metadata")
-        for turn in turns:
-            for step in turn.model_steps:
-                for exchange in step.exchanges:
-                    result = exchange.result or {}
-                    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
-                    if exchange.tool_name == "apply_workspace_edit" and not result.get("ok"):
-                        for operation in exchange.arguments.get("operations", []):
-                            if not isinstance(operation, dict):
-                                continue
-                            target = operation.get("path") or operation.get("source") or operation.get("destination")
-                            if isinstance(target, str):
-                                start = int(operation.get("start_line", 1))
-                                end = int(operation.get("end_line", start + 199))
-                                provenance = "failed edit operation range" if "start_line" in operation else "deterministic prefix; no range metadata"
-                                evidence[target] = (start, min(end, start + 199), "latest_failed_edit_target", provenance)
-                    path = metadata.get("path") or exchange.arguments.get("path")
-                    if not isinstance(path, str):
-                        continue
-                    if exchange.tool_name == "read_file" and result.get("ok"):
-                        start = int(metadata.get("start_line", exchange.arguments.get("start_line", 1)))
-                        end = int(metadata.get("end_line", exchange.arguments.get("end_line", start + 199)))
-                        evidence[path] = (start, min(end, start + 199), "recent_read", "read_file requested range")
-                    elif not result.get("ok") and exchange.tool_name == "apply_workspace_edit":
-                        evidence[path] = (1, 200, "latest_failed_edit_target", "deterministic prefix; no range metadata")
-        slices, remaining = [], max(0, token_budget)
-        priority = {"latest_failed_edit_target": 0, "changed_file": 1, "recent_read": 2}
-        guard = PathGuard(context.active_root)
-        for path, (start, end, reason, provenance) in sorted(evidence.items(), key=lambda item: (priority[item[1][2]], item[0])):
-            if remaining <= 0:
-                break
-            try:
-                lines = guard.resolve(path).read_text(encoding="utf-8").splitlines()
-            except (PathGuardError, OSError, UnicodeError):
-                continue
-            content = "\n".join(lines[start - 1:end])[:remaining * 3]
-            slices.append(ActiveCodeSlice(path, start, start + max(0, content.count("\n")), content, reason, provenance))
-            remaining -= self.estimator.estimate(content)
-        return slices
-
     @staticmethod
-    def _render_snapshot(snapshot: RuntimeSnapshot, active_code: list[ActiveCodeSlice]) -> str:
+    def _render_snapshot(snapshot: RuntimeSnapshot) -> str:
         data = {"runtime_snapshot": {"workspace_state": snapshot.workspace_state,
             "workspace_revision": snapshot.workspace_revision, "candidate_revision": snapshot.candidate_revision,
             "base_commit": snapshot.base_commit, "subject_tree": snapshot.subject_tree,
             "changed_paths": list(snapshot.changed_paths), "validation_state": snapshot.validation_state,
-            "execution_environment": snapshot.environment}, "active_code": [item.__dict__ for item in active_code]}
+            "execution_environment": snapshot.environment}}
         return "以下是当前 Runtime/Git 客观事实；它覆盖历史对话中的旧状态：\n" + json.dumps(data, ensure_ascii=False)
 
     @staticmethod

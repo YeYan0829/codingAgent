@@ -24,7 +24,16 @@ class ModelConfig:
             return self.model
         if self.provider == "deepseek":
             return "deepseek-v4-flash"
+        if self.provider == "glm":
+            return "glm-5.2"
         return "fake"
+
+    @property
+    def context_limit(self) -> int:
+        """Runtime 实验输入上限；低于 provider 宣称容量也可用于成本保护。"""
+        if self.provider == "glm":
+            return 128_000
+        return 32_000
 
 
 def default_session_root() -> Path:

@@ -1,6 +1,10 @@
+from io import StringIO
+
+from rich.console import Console
 from typer.testing import CliRunner
 
-from codeagent.cli import app
+from codeagent.cli import _format_tool_step, app
+from codeagent.config import ModelConfig
 
 
 def test_ask_records_fake_provider_model_and_title_outside_workspace(tmp_path):
@@ -28,3 +32,31 @@ def test_deepseek_provider_without_key_fails_clearly(tmp_path, monkeypatch):
 
     assert result.exit_code != 0
     assert "DEEPSEEK_API_KEY" in str(result.exception)
+
+
+def test_glm_provider_without_key_fails_clearly(tmp_path, monkeypatch):
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+
+    result = CliRunner().invoke(app, ["ask", str(tmp_path), "hi", "--provider", "glm"])
+
+    assert result.exit_code != 0
+    assert "GLM_API_KEY" in str(result.exception)
+
+
+def test_glm_uses_provider_specific_context_limit():
+    assert ModelConfig(provider="glm").context_limit == 128_000
+    assert ModelConfig(provider="deepseek").context_limit == 32_000
+
+
+def test_tool_progress_renders_model_text_without_rich_markup_parsing():
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, color_system=None)
+    step = {
+        "tool": "run_command",
+        "arguments": {"command": r"pattern=[^/path][/path]"},
+        "result": {"ok": True, "truncated": False},
+    }
+
+    console.print(_format_tool_step(step))
+
+    assert "[/path]" in output.getvalue()

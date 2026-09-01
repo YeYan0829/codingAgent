@@ -6,7 +6,7 @@ import pytest
 
 from codeagent.context.builder import ConservativeTokenEstimator, ContextManager
 from codeagent.context.models import ContextBudgetExceeded, ModelCapabilities
-from codeagent.context.projector import ProjectionError, project_events
+from codeagent.context.projector import ContextNotReady, ProjectionError, project_events
 from codeagent.session.store import SessionStore
 
 
@@ -52,8 +52,49 @@ def test_incomplete_tool_exchange_fails_closed_before_provider_render(tmp_path):
     store = SessionStore(root).create()
     store.append_event("user_message", {"message": "inspect"})
     store.append_event("assistant_tool_calls", {"tool_calls": [{"call_id": "c1", "name": "read_file", "arguments": {"path": "a.py"}}]})
-    with pytest.raises(ProjectionError, match="incomplete tool exchange"):
+    with pytest.raises(ContextNotReady, match="open ModelStep"):
         ContextManager(store).build()
+
+
+def test_batch_model_step_remains_one_closed_manipulation_atom(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "inspect two things"})
+    store.append_event("assistant_tool_calls", {"message": "batch", "tool_calls": [
+        {"call_id": "c1", "name": "read_file", "arguments": {"path": "a.py"}},
+        {"call_id": "c2", "name": "git_status", "arguments": {}},
+    ]})
+    store.append_event("tool_result", {"call_id": "c1", "result": {"ok": True, "content": "source"}})
+    turns = project_events(store.read_events())
+    assert len(turns[0].model_steps) == 1
+    assert turns[0].model_steps[0].closed is False
+
+    store.append_event("tool_denied", {"call_id": "c2", "reason": "denied"})
+    turns = project_events(store.read_events())
+    assert len(turns[0].model_steps) == 1
+    assert turns[0].model_steps[0].closed is True
+    messages = ContextManager(store).build()
+    assistant = next(message for message in messages if message.get("tool_calls"))
+    assert [call["id"] for call in assistant["tool_calls"]] == ["c1", "c2"]
+
+
+def test_orphan_and_duplicate_terminal_outcomes_fail_projection(tmp_path):
+    root = _git_workspace(tmp_path)
+    orphan = SessionStore(root).create()
+    orphan.append_event("user_message", {"message": "inspect"})
+    orphan.append_event("tool_result", {"call_id": "missing", "result": {"ok": True}})
+    with pytest.raises(ProjectionError, match="unknown call_id"):
+        project_events(orphan.read_events())
+
+    duplicate = SessionStore(root).create()
+    duplicate.append_event("user_message", {"message": "inspect"})
+    duplicate.append_event("assistant_tool_calls", {"tool_calls": [
+        {"call_id": "c1", "name": "read_file", "arguments": {"path": "a.py"}}
+    ]})
+    duplicate.append_event("tool_result", {"call_id": "c1", "result": {"ok": True}})
+    duplicate.append_event("tool_denied", {"call_id": "c1", "reason": "late denial"})
+    with pytest.raises(ProjectionError, match="duplicate terminal outcome"):
+        project_events(duplicate.read_events())
 
 
 def test_old_execution_becomes_residue_without_body(tmp_path):
@@ -72,7 +113,7 @@ def test_old_execution_becomes_residue_without_body(tmp_path):
     assert '"changed_since_read": true' in residue
 
 
-def test_active_code_rereads_current_workspace_and_has_range_provenance(tmp_path):
+def test_context_does_not_reread_source_into_runtime_snapshot(tmp_path):
     root = _git_workspace(tmp_path)
     store = SessionStore(root).create()
     store.append_event("user_message", {"message": "inspect"})
@@ -81,9 +122,10 @@ def test_active_code_rereads_current_workspace_and_has_range_provenance(tmp_path
     (root / "a.py").write_text("new current\nline2\n", encoding="utf-8")
     messages = ContextManager(store).build()
     snapshot = messages[2]["content"]
-    assert "new current" in snapshot
-    assert "read_file requested range" in snapshot
-    assert '"path": "a.py"' in snapshot
+    rendered = json.dumps(messages, ensure_ascii=False)
+    assert "new current" not in rendered
+    assert '"active_code"' not in snapshot
+    assert "old" in rendered
 
 
 def test_budget_evicts_whole_completed_turns_and_keeps_current(tmp_path):
@@ -95,7 +137,7 @@ def test_budget_evicts_whole_completed_turns_and_keeps_current(tmp_path):
     store.append_event("user_message", {"message": "current request"})
     manager = ContextManager(store)
     messages = manager.build(model_capabilities=ModelCapabilities(context_limit=7_000, generation_reserve=1000,
-        continuation_reserve=1000, safety_margin=1000, active_code_budget=100))
+        continuation_reserve=1000, safety_margin=1000))
     assert any(item.get("content") == "current request" for item in messages)
     assert manager.last_budget_report and manager.last_budget_report.dropped_turn_ids
     assert manager.last_budget_report.estimated_tokens <= manager.last_budget_report.usable_tokens
@@ -107,7 +149,7 @@ def test_minimum_context_over_budget_fails_with_breakdown(tmp_path):
     store.append_event("user_message", {"message": "x" * 5000})
     with pytest.raises(ContextBudgetExceeded) as caught:
         ContextManager(store).build(model_capabilities=ModelCapabilities(context_limit=1000, generation_reserve=100,
-            continuation_reserve=100, safety_margin=100, active_code_budget=0))
+            continuation_reserve=100, safety_margin=100))
     assert caught.value.report.estimated_tokens > caught.value.report.usable_tokens
 
 
@@ -120,6 +162,18 @@ def test_conservative_estimator_counts_utf8_and_no_context_artifacts(tmp_path):
     assert forbidden.isdisjoint({path.name for path in store.session_dir.iterdir()})
 
 
+def test_system_prompt_explains_temporary_observations_and_action_convergence(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "fix it"})
+
+    system_prompt = ContextManager(store).build()[0]["content"]
+
+    assert "工具读取结果只会在近期 Context 中暂时保留" in system_prompt
+    assert "足以支持一项可验证的 bugfix 时，立即" in system_prompt
+    assert "不要为了获得不影响实现选择的额外确定性继续读取" in system_prompt
+
+
 def test_desensitized_real_session_fixture_preserves_success_failure_and_resume_context(tmp_path):
     root = _git_workspace(tmp_path)
     store = SessionStore(root).create()
@@ -129,9 +183,76 @@ def test_desensitized_real_session_fixture_preserves_success_failure_and_resume_
     messages = ContextManager(store).build()
     rendered = json.dumps(messages, ensure_ascii=False)
     assert "继续完成测试并验证" in rendered
-    assert "fixed current source" in rendered
+    assert "fixed current source" not in rendered
     assert "operation_errors" in rendered and "workspace_changed" in rendered
     assert "old source body" not in rendered
+
+
+def test_active_turn_keeps_four_recent_steps_raw_and_older_steps_as_residue(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "inspect"})
+    for index in range(6):
+        call_id = f"read-{index}"
+        store.append_event("assistant_tool_calls", {"message": f"step {index}", "tool_calls": [
+            {"call_id": call_id, "name": "read_file", "arguments": {"path": "a.py"}}
+        ]})
+        store.append_event("tool_result", {"call_id": call_id, "result": {
+            "ok": True, "content": f"RAW-{index}", "metadata": {"path": "a.py", "sha256": "old"}
+        }})
+
+    rendered = json.dumps(ContextManager(store).build(), ensure_ascii=False)
+    assert "RAW-0" not in rendered and "RAW-1" not in rendered
+    assert all(f"RAW-{index}" in rendered for index in range(2, 6))
+    tool_results = [json.loads(message["content"]) for message in ContextManager(store).build()
+                    if message["role"] == "tool"]
+    assert sum(result.get("content_retained") is False for result in tool_results) == 2
+
+
+def test_recent_raw_target_can_degrade_under_hard_budget(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "inspect"})
+    for index in range(4):
+        call_id = f"read-{index}"
+        store.append_event("assistant_tool_calls", {"tool_calls": [
+            {"call_id": call_id, "name": "read_file", "arguments": {"path": "a.py"}}
+        ]})
+        store.append_event("tool_result", {"call_id": call_id, "result": {
+            "ok": True, "content": str(index) * 12_000, "metadata": {"path": "a.py", "sha256": "old"}
+        }})
+
+    manager = ContextManager(store)
+    messages = manager.build(model_capabilities=ModelCapabilities(
+        context_limit=8_000, generation_reserve=1_000, continuation_reserve=1_000, safety_margin=1_000,
+    ))
+    assert manager.last_budget_report
+    assert "recent_raw_to_residue" in manager.last_budget_report.reductions
+    assert manager.last_budget_report.estimated_tokens <= 5_000
+    tool_results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
+    assert any(result.get("content_retained") is False for result in tool_results)
+
+
+def test_observation_bounding_is_raw_and_preserves_metadata(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "inspect"})
+    store.append_event("assistant_tool_calls", {"tool_calls": [
+        {"call_id": "large", "name": "read_file", "arguments": {"path": "a.py"}}
+    ]})
+    store.append_event("tool_result", {"call_id": "large", "result": {
+        "ok": True, "content": "x" * 20_000,
+        "metadata": {"path": "a.py", "returned_range": [1, 200], "sha256": "digest"},
+    }})
+
+    tool_message = next(message for message in ContextManager(store).build() if message["role"] == "tool")
+    result = json.loads(tool_message["content"])
+    assert result["context_truncated"] is True
+    assert result["metadata"]["context_limit_bytes"] == 16_000
+    assert result["metadata"]["returned_range"] == [1, 200]
+    assert result["metadata"]["sha256"] == "digest"
+    assert "content_retained" not in result
+    assert len(result["content"].encode("utf-8")) <= 16_000
 
 
 def test_legacy_command_residue_recovers_bounded_stderr_tail(tmp_path):

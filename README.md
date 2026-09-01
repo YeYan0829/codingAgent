@@ -14,7 +14,7 @@ CodeAgent Runtime 是一个本地运行、以不覆盖用户代码为首要约�
 
 ## 当前能力
 
-- 使用 Fake 或 DeepSeek provider 探索本地代码；
+- 使用 Fake、DeepSeek 或 GLM provider 探索本地代码；
 - 使用遵守 repository ignore 的 ripgrep literal/regex 搜索和文件查找，可显式包含非敏感 hidden 文件；
 - 严格读取 UTF-8 文本，并通过固定只读 Git 工具查看 status、diff stat 和实际 diff；
 - 首次需要编辑或受控验证时，经批准按需创建 Session 专属 detached worktree；
@@ -82,6 +82,26 @@ codeagent ask . "只读取 README，并用三句话概括项目，不要编辑�
 ```
 
 这会产生真实 API 费用。先用小任务观察 token 消耗，并在 DeepSeek 控制台设置合理余额；价格可能变化，请查看上述官方页面。
+
+### 2.1 配置 GLM-5.2
+
+GLM provider 使用 `GLM_API_KEY`，默认模型为 `glm-5.2`，默认使用智谱标准 OpenAI-compatible endpoint `https://open.bigmodel.cn/api/paas/v4`。Runtime 初始采用 128k context 实验上限，而不是复用 DeepSeek 的 32k/22k 配置；该值仍显著低于模型官方容量，用于控制 Phase A 尚无 semantic condensation 时的单次请求成本：
+
+```bash
+read -rsp "GLM API Key: " GLM_API_KEY
+echo
+export GLM_API_KEY
+
+codeagent start . --provider glm --model glm-5.2
+```
+
+如果使用 GLM Coding Plan Key，需要改用套餐专属 endpoint：
+
+```bash
+export GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
+```
+
+标准 API Key 与 Coding Plan Key/额度不可混用。Runtime 不读取仓库 `.env`，不要把 Key 写入 Git。当前 adapter 关闭 thinking mode，因为 Runtime 尚未持久化 reasoning content；本轮对比重点是 non-thinking tool-use 的行动收敛性。接口参数以[智谱 OpenAI API 兼容文档](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)和 [Coding Plan 接入说明](https://docs.bigmodel.cn/cn/coding-plan/tool/others)为准。
 
 ### 3. 创建交互 Session
 

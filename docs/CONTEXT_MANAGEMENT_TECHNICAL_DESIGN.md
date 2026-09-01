@@ -5,7 +5,7 @@
 范围：持续 Session 中 Event、Runtime State 到每次模型调用所需 Context View 的投影、压缩与 Resume
 实现状态：Event Projection、Runtime Snapshot、deterministic reducers、Active Code、token budget、whole-turn eviction、execution slices、容量失败终止与 Resume 重建已实现。当前 Active Code 仍以同一路径最后 range 为主，active UserTurn 保留全部闭合工具协议对；这不足以维持稳定长程工作现场。后续设计已收敛到 v2，不直接把 Semantic Condensation 当作唯一解法。
 
-> 本文继续记录已经实现的 v1。D-2026-08-31-01 已取代其中 Active Code 和后续 Working Set 方向；待实现设计见 [Context Management v2 TD](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md)。在 v2 落地前，当前代码事实仍以本文和 `ARCHITECTURE.md` 为准。
+> 本文记录 v1 历史实现。D-2026-08-31-01 已取代其中 Active Code 和后续 Working Set 方向；v2 Phase A 已落地，当前代码事实以 `ARCHITECTURE.md` 为准，后续契约见 [Context Management v2 TD](CONTEXT_MANAGEMENT_V2_TECHNICAL_DESIGN.md)。
 
 ## 1. 背景与问题定义
 
