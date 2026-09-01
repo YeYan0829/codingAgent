@@ -100,6 +100,31 @@ def test_command_result_exposes_bounded_output_tails_for_context(tmp_path):
     assert result.metadata["stderr_tail"] == "missing interpreter"
 
 
+def test_command_result_exposes_active_workspace_and_warns_on_baseline_reference(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    command = f"cd {context.source_root} && pwd"
+
+    result = service(store, context, FakeSandboxExecutor()).run_command({"command": command})
+
+    assert result.ok
+    assert result.metadata["active_workspace"] == str(context.active_root)
+    assert result.metadata["baseline_workspace"] == str(context.source_root)
+    assert result.metadata["initial_cwd"] == str(context.active_root)
+    assert "不包含当前 Candidate 修改" in result.metadata["workspace_warning"]
+    assert "workspace_warning:" in result.content
+
+
+def test_nonzero_completed_command_has_specific_error_code(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    value = CommandResult(exit_code=2, status=CommandExecutionStatus.COMPLETED,
+                          payload_started=True, process_tree_stopped=True)
+
+    result = service(store, context, FakeSandboxExecutor(result=value)).run_command({"command": "false"})
+
+    assert not result.ok
+    assert result.error_code == "command_exit_nonzero"
+
+
 def test_external_write_asks_and_session_grant_persists(tmp_path):
     _, store, context = execution_session(tmp_path)
     external = tmp_path / "external"

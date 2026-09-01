@@ -280,7 +280,7 @@ class AgentRunner:
 
     def _register_upgrade_tools(self) -> None:
         atomic = build_atomic_edit_tool(AtomicEditService(self.workspace_context, self.session_store))
-        command = ToolSpec("run_command", "在Candidate的Linux沙盒中运行任意shell命令；额外资源必须由Agent显式申请。",
+        command = ToolSpec("run_command", "在当前 active_workspace 的 Linux 沙盒中运行命令；默认 cwd 是 Candidate 根目录，额外资源必须显式申请。",
                            atomic.permission_level, command_tool_schema(), lambda _: ToolResult(ok=False))
         self.tools.register(ToolSpec(atomic.name, atomic.description, atomic.permission_level, atomic.schema,
                                      lambda args: self._upgrade_and_dispatch(atomic.name, args)))

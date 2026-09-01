@@ -56,6 +56,9 @@ class RuntimeSnapshot:
     workspace_state: str
     workspace_revision: int
     candidate_revision: int
+    workspace_kind: str
+    active_workspace: str
+    baseline_workspace: str
     base_commit: str | None
     subject_tree: str | None
     changed_paths: tuple[dict[str, str], ...]

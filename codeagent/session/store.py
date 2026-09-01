@@ -97,7 +97,12 @@ class SessionStore:
         meta["workspace_state"] = SessionWorkspaceState.CHANGES_ACTIVE.value
         meta["workspace_state_reason"] = ""
         self._write_state(meta)
-        self.append_event("workspace_activated", {"workspace_revision": context.workspace_revision, "base_commit": context.base_commit})
+        self.append_event("workspace_activated", {
+            "workspace_revision": context.workspace_revision,
+            "base_commit": context.base_commit,
+            "active_workspace": str(context.active_root),
+            "baseline_workspace": str(context.source_root),
+        })
 
     def cancel_workspace_upgrade(self, reason: str) -> None:
         meta = self.read_meta()

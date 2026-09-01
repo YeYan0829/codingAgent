@@ -16,7 +16,8 @@ def command_tool_schema() -> dict:
     ]}
     return {"type": "object", "properties": {
                         "command": {"type": "string", "minLength": 1, "maxLength": CommandLimits.MAX_COMMAND_CHARS},
-                        "cwd": {"type": "string", "default": "."},
+                        "cwd": {"type": "string", "default": ".",
+                                "description": "相对于 Runtime Snapshot active_workspace 的目录；省略时为 Candidate 根目录"},
                         "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": CommandLimits.MAX_TIMEOUT_SECONDS},
                         "purpose": {"type": "string", "enum": ["utility", "validation"], "default": "utility"},
                         "permissions": {"type": "array", "items": permission, "maxItems": CommandLimits.MAX_PERMISSIONS, "default": []}},
@@ -24,5 +25,5 @@ def command_tool_schema() -> dict:
 
 
 def build_command_tool(service: CommandService) -> ToolSpec:
-    return ToolSpec("run_command", "在Candidate的Linux沙盒中运行任意shell命令；额外资源必须由Agent显式申请。",
+    return ToolSpec("run_command", "在当前 active_workspace 的 Linux 沙盒中运行命令；默认 cwd 是 Candidate 根目录，额外资源必须显式申请。",
                     PermissionLevel.READ, command_tool_schema(), service.run_command)

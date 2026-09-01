@@ -8,6 +8,7 @@ from codeagent.context.builder import ConservativeTokenEstimator, ContextManager
 from codeagent.context.models import ContextBudgetExceeded, ModelCapabilities
 from codeagent.context.projector import ContextNotReady, ProjectionError, project_events
 from codeagent.session.store import SessionStore
+from codeagent.workspace.workspace import WorkspaceContext
 
 
 def _git_workspace(tmp_path):
@@ -126,6 +127,34 @@ def test_context_does_not_reread_source_into_runtime_snapshot(tmp_path):
     assert "new current" not in rendered
     assert '"active_code"' not in snapshot
     assert "old" in rendered
+
+
+def test_runtime_snapshot_exposes_dynamic_active_workspace_contract(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    active = tmp_path / "candidate"
+    active.mkdir()
+    (active / "a.py").write_text("candidate\n", encoding="utf-8")
+    context = WorkspaceContext(root, active, "git_worktree", "base", 1)
+    store.begin_workspace_upgrade(1)
+    store.activate_workspace(context)
+
+    snapshot = ContextManager(store).build()[2]["content"]
+
+    assert f'"active_workspace": "{active}"' in snapshot
+    assert f'"baseline_workspace": "{root}"' in snapshot
+    assert f'"default_cwd_resolves_to": "{active}"' in snapshot
+    assert "不要 cd 回该目录验证修改" in snapshot
+
+
+def test_source_only_snapshot_does_not_claim_worktree_transition(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+
+    snapshot = ContextManager(store).build()[2]["content"]
+
+    assert '"workspace_kind": "source"' in snapshot
+    assert "Runtime 已动态激活隔离 Candidate worktree" not in snapshot
 
 
 def test_budget_evicts_whole_completed_turns_and_keeps_current(tmp_path):

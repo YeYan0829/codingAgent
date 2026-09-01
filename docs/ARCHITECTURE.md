@@ -17,6 +17,8 @@ Session(source-only)
 
 项目没有独立 Task 实体。worktree 是 Session 的 active workspace；HEAD 是最近 accepted baseline，working tree 是当前尚未处理的修改。
 
+Session 不预先区分只读模式和写模式。初始 `source_only` 阶段允许探索；首次受保护编辑或命令经用户批准后动态创建 Candidate worktree。切换后的 Runtime Snapshot 每次都明确提供 `active_workspace` 与 `baseline_workspace`：所有工具默认以 active workspace 为根，baseline 只表示不含当前 Candidate 修改的原始基线。`workspace_activated` Event 同时记录两者路径，保留这次状态迁移的历史事实。
+
 ## 2. 模块边界
 
 | 模块 | 职责 |
@@ -30,7 +32,7 @@ Session(source-only)
 | `command_service` | request freeze、审批、before/after audit、Candidate revision、结果与证据 |
 | `candidate` / `current_changes` | 按需 patch、三方合并、accept/discard、accepted checkpoint |
 | `session` | 当前状态与紧凑历史事件 |
-| `context` | Event 投影、Runtime Snapshot、工具 residue、Active Code 与 token budget |
+| `context` | Event 投影、Runtime Snapshot、工具 residue 与 token budget |
 
 不存在无沙盒 Agent command fallback。`LocalCommandExecutor`、Command Profile、pytest-only command compiler 和 Agent-facing `run_validation` 已删除。
 
@@ -61,6 +63,8 @@ closed tool schema
 `command` 是单个 frozen shell string。host 使用 `subprocess.Popen(argv, shell=False)`；字符串只作为一个参数传给 sandbox 内固定 `/bin/bash --noprofile --norc -c`。因此 pipeline、redirect、glob、inline env、subshell 和命令链由 sandbox 内 bash 解释。
 
 Runtime 不分析 shell AST 或工具名，不从 stderr 推断权限，不自动重放命令。漏报权限时命令在现有 Policy 中普通失败，并返回 diagnostics 与 Effective Policy 摘要。
+
+`run_command.cwd` 只能是相对 active workspace 的路径，省略时为 Candidate 根目录。结果 metadata 明确返回 active/baseline workspace、实际初始 cwd 与 workspace revision。如果命令文本显式引用 baseline workspace，Runtime 不擅自改写命令，但返回非阻断警告，提醒该目录看不到 Candidate 修改。进程正常结束但 exit code 非零时使用 `command_exit_nonzero`，与进程状态 `completed` 分开表达。
 
 ## 5. Filesystem 与 Network Policy
 
@@ -104,7 +108,7 @@ Accept 从 accepted baseline、Agent tree 和当前 source tree 做 Git 三方�
 
 ## 9. Context Management
 
-新事件显式记录 `seq/turn_id/model_step_id`，ToolCall 使用 provider `call_id`；旧 Session 由 JSONL 行序、UserMessage 边界和 call id 兼容投影，不改写历史文件。每次模型调用前，Context Manager 从 Event、当前 Runtime/Git/Validation 和 active workspace 重新构建临时视图。
+新事件显式记录 `seq/turn_id/model_step_id`，ToolCall 使用 provider `call_id`；旧 Session 由 JSONL 行序、UserMessage 边界和 call id 兼容投影，不改写历史文件。每次模型调用前，Context Manager 从 Event、当前 Runtime/Git/Validation 和 active workspace 重新构建临时视图。Runtime Snapshot 持久呈现 workspace kind、active/baseline 绝对路径以及默认 cwd 的解析目标；worktree 动态激活后，它明确要求后续读取、编辑和验证只针对 active workspace。该状态属于 mandatory 当前事实，不依赖历史 Tool Observation，也不会因历史降级而消失。
 
 Context v2 Phase A 已删除 Active Code 与独立 code budget。源码正文只通过真实 Tool Observation 进入输入；Runtime Snapshot 不根据历史 read/search 再次读取或注入文件。Event 确定性投影为 `UserTurn → ModelStep → ToolExchange[]`，同一 assistant response 的 batch ToolCall 保持为一个 ModelStep；open、orphan 或 duplicate protocol fail closed。
 

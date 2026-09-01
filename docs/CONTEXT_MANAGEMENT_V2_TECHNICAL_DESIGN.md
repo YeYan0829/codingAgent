@@ -64,7 +64,7 @@ summary 可以表达历史进展，但 Runtime Snapshot 始终覆盖其中的旧
 | 层次 |内容 |生命周期 |权威性 |
 | --- | --- | --- | --- |
 | Event Store | User/Assistant、ToolCall、ToolResult、Approval、控制 Event | Session 持久 |历史事实权威 |
-| Runtime Snapshot | workspace、revision、tree、changes、validation、environment |每次构建重算 |当前 Runtime 真相 |
+| Runtime Snapshot | workspace kind、active/baseline root、revision、tree、changes、validation、environment |每次构建重算 |当前 Runtime 真相 |
 | Context Condensation |覆盖范围、digest、summary、版本与原因 |可持久派生 Event |仅控制 Model Context history projection |
 | Model Context View | instructions、snapshot、历史、raw observation、residue、summary |单次主 Agent 请求 |非持久派生 |
 | Provider Messages | provider 所需合法 wire shape |单次请求 | transport 对象 |

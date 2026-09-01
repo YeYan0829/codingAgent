@@ -136,13 +136,24 @@ class CommandService:
             })
         self._finalize_diagnostics(paths, request, result, workspace_state)
         success = result.status == CommandExecutionStatus.COMPLETED and result.exit_code == 0 and workspace_state == SessionWorkspaceState.CHANGES_ACTIVE.value
-        return ToolResult(ok=success, content=_result_content(result), error=None if success else "命令未成功完成",
-                          error_code=None if success else result.status.value,
+        workspace_warning = _workspace_path_warning(request.command, self.context)
+        error_code = None if success else (
+            "command_exit_nonzero"
+            if result.status == CommandExecutionStatus.COMPLETED and result.exit_code not in {None, 0}
+            else result.status.value
+        )
+        return ToolResult(ok=success, content=_result_content(result, workspace_warning),
+                          error=None if success else "命令未成功完成", error_code=error_code,
                           truncated=result.stdout_truncated or result.stderr_truncated,
                           metadata={"execution_id": request.execution_id, "status": result.status.value,
                                     "exit_code": result.exit_code, "before_candidate_revision": request.before_candidate_revision,
                                     "after_candidate_revision": after_revision, "command_induced_changes": list(audit_changes),
                                     "effective_policy": effective.summary(), "workspace_state": workspace_state,
+                                    "workspace_revision": request.workspace_revision,
+                                    "active_workspace": str(self.context.active_root),
+                                    "baseline_workspace": str(self.context.source_root),
+                                    "initial_cwd": str(self.context.active_root / request.cwd),
+                                    "workspace_warning": workspace_warning,
                                     "stdout_tail": _bounded_tail(result.stdout),
                                     "stderr_tail": _bounded_tail(result.stderr),
                                     "diagnostic": result.spawn_error})
@@ -179,8 +190,10 @@ def _valid_evidence(result, workspace_state):
     return result.status == CommandExecutionStatus.COMPLETED and result.exit_code == 0 and result.payload_started and result.process_tree_stopped and workspace_state == SessionWorkspaceState.CHANGES_ACTIVE.value
 
 
-def _result_content(result):
+def _result_content(result, workspace_warning: str | None = None):
     parts = [f"status: {result.status.value}", f"exit_code: {result.exit_code}"]
+    if workspace_warning:
+        parts.append(f"workspace_warning: {workspace_warning}")
     if result.stdout:
         parts.append(f"stdout:\n{result.stdout}")
     if result.stderr:
@@ -189,6 +202,16 @@ def _result_content(result):
         parts.append(f"diagnostic: {result.spawn_error}")
     parts.append(f"effective_policy: {json.dumps(result.effective_policy, ensure_ascii=False)}")
     return "\n".join(parts)
+
+
+def _workspace_path_warning(command: str, context: WorkspaceContext) -> str | None:
+    """提示模型不要在动态升级后回到看不到 Candidate 修改的基线目录。"""
+    if context.active_root == context.source_root or str(context.source_root) not in command:
+        return None
+    return (
+        f"命令文本引用了 baseline_workspace {context.source_root}；该目录不包含当前 Candidate 修改。"
+        f" 后续读取、编辑和验证应使用默认 cwd 或 active_workspace {context.active_root}。"
+    )
 
 
 def _bounded_tail(value: str, *, max_lines: int = 20, max_chars: int = 1200) -> str:

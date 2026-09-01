@@ -133,6 +133,7 @@ class ContextManager:
             "returned_range", "has_more_before", "has_more_after", "sha256", "match_count", "file_count", "entry_count",
             "candidate_revision", "subject_tree", "before_tree", "after_tree", "changed_paths", "workspace_changed",
             "operation_errors", "status", "exit_code", "stdout_tail", "stderr_tail", "diagnostic",
+            "workspace_revision", "active_workspace", "baseline_workspace", "initial_cwd", "workspace_warning",
         ) if key in metadata}
         residue = {"tool": exchange.tool_name, "call_id": exchange.call_id, "ok": result.get("ok"),
                    "error_code": result.get("error_code"), "error": result.get("error"),
@@ -171,17 +172,30 @@ class ContextManager:
                 pass
         validation = "current" if current_validation_evidence(self.session_store, context) else "none_or_stale"
         return RuntimeSnapshot(str(meta.get("workspace_state", "unknown")), int(meta.get("workspace_revision", 0)),
-            int(meta.get("candidate_revision", 0)), context.base_commit, tree, tuple(changed), validation,
-            {"default_cwd": ".", "home_kind": "private_runtime_home", "tilde_is_host_home": False, "network_mode": "off"})
+            int(meta.get("candidate_revision", 0)), context.workspace_kind, str(context.active_root),
+            str(context.source_root), context.base_commit, tree, tuple(changed), validation,
+            {"default_cwd": ".", "default_cwd_resolves_to": str(context.active_root),
+             "home_kind": "private_runtime_home", "tilde_is_host_home": False, "network_mode": "off"})
 
     @staticmethod
     def _render_snapshot(snapshot: RuntimeSnapshot) -> str:
         data = {"runtime_snapshot": {"workspace_state": snapshot.workspace_state,
             "workspace_revision": snapshot.workspace_revision, "candidate_revision": snapshot.candidate_revision,
+            "workspace_kind": snapshot.workspace_kind, "active_workspace": snapshot.active_workspace,
+            "baseline_workspace": snapshot.baseline_workspace,
             "base_commit": snapshot.base_commit, "subject_tree": snapshot.subject_tree,
             "changed_paths": list(snapshot.changed_paths), "validation_state": snapshot.validation_state,
             "execution_environment": snapshot.environment}}
-        return "以下是当前 Runtime/Git 客观事实；它覆盖历史对话中的旧状态：\n" + json.dumps(data, ensure_ascii=False)
+        guidance = (
+            "以下是当前 Runtime/Git 客观事实；它覆盖历史对话中的旧状态。"
+            "所有文件工具和命令的默认根目录都是 active_workspace。"
+        )
+        if snapshot.workspace_kind == "git_worktree":
+            guidance += (
+                " Runtime 已动态激活隔离 Candidate worktree；后续读取、编辑和验证必须针对 active_workspace。"
+                " baseline_workspace 仅表示原始基线，不包含当前 Candidate 修改；不要 cd 回该目录验证修改。"
+            )
+        return guidance + "\n" + json.dumps(data, ensure_ascii=False)
 
     @staticmethod
     def _read_prompt(name: str) -> str:
