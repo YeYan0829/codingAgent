@@ -1,6 +1,7 @@
 # 正式 CLI Dogfood
 
-前半部分只验证工具接入和用户可观察闭环，不使用真实 LLM 判断推理能力。真实模型评估使用 `examples/eval-tasks`，结果与已知编排问题见 [真实 LLM Agent 测试审计](REAL_LLM_AGENT_EVALUATION_2026-08-30.md)。
+前半部分只验证工具接入和用户可观察闭环，不使用真实 LLM 判断推理能力。真实模型评估使用
+`examples/eval-tasks`；自动 benchmark 的口径和基线见 [Benchmark 说明](BENCHMARKING.md)。
 
 ## 准备
 

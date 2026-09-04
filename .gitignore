@@ -12,3 +12,5 @@ build/
 dist/
 examples/buggy-repos/QuixBugs/
 reference/*/
+benchmarks/swebench/runs/
+logs/evaluation/

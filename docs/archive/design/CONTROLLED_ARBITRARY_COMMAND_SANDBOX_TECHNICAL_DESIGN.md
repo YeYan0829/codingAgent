@@ -1,7 +1,7 @@
 # Controlled Arbitrary Command + Sandbox Technical Design
 
-状态：**Accepted and Implemented（2026-08-28）**  
-目标环境：Linux / WSL2 单机本地运行  
+状态：**Accepted and Implemented（2026-08-28）**
+目标环境：Linux / WSL2 单机本地运行
 取代对象：实现完成后取代 `Command Profiles / Validation` 的命令限制机制
 
 本文既是已批准契约，也是当前实现的设计依据。实际模块、测试证据和已知限制以 `ARCHITECTURE.md`、`TESTING.md` 为准。

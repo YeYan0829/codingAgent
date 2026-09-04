@@ -23,8 +23,8 @@ class FakeClient:
         self.chat = SimpleNamespace(completions=FakeCompletions(response, self.calls))
 
 
-def response_with_message(message):
-    return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+def response_with_message(message, *, usage=None, request_id=None):
+    return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage, id=request_id)
 
 
 def test_deepseek_text_response_to_llm_response():
@@ -36,6 +36,34 @@ def test_deepseek_text_response_to_llm_response():
     assert response.text == "hello"
     assert response.tool_calls == []
     assert client.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_deepseek_normalizes_provider_usage_and_request_id():
+    usage = SimpleNamespace(
+        prompt_tokens=120,
+        completion_tokens=30,
+        total_tokens=150,
+        prompt_cache_hit_tokens=80,
+        prompt_cache_miss_tokens=40,
+        completion_tokens_details=SimpleNamespace(reasoning_tokens=12),
+    )
+    client = FakeClient(response_with_message(
+        SimpleNamespace(content="hello", tool_calls=None), usage=usage, request_id="req-1"
+    ))
+
+    response = DeepSeekClient(api_key="key", client=client).complete(
+        ModelRequest(messages=[{"role": "user", "content": "hi"}])
+    )
+
+    assert response.provider_request_id == "req-1"
+    assert response.usage.model_dump() == {
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "total_tokens": 150,
+        "cached_input_tokens": 80,
+        "cache_miss_input_tokens": 40,
+        "reasoning_tokens": 12,
+    }
 
 
 def test_deepseek_converts_model_tools_to_chat_completion_tools():
@@ -104,6 +132,22 @@ def test_deepseek_malformed_tool_arguments_return_clear_text():
     with pytest.raises(MalformedToolArgumentsError) as caught:
         deepseek.complete(ModelRequest(messages=[{"role": "user", "content": "hi"}]))
     assert caught.value.tool_name == "read_file"
+
+
+def test_deepseek_keeps_usage_when_tool_arguments_are_malformed():
+    tool_call = SimpleNamespace(
+        id="call_1", function=SimpleNamespace(name="read_file", arguments="{bad json")
+    )
+    usage = SimpleNamespace(prompt_tokens=10, completion_tokens=3, total_tokens=13)
+    client = FakeClient(response_with_message(
+        SimpleNamespace(content=None, tool_calls=[tool_call]), usage=usage, request_id="req-bad"
+    ))
+
+    with pytest.raises(MalformedToolArgumentsError) as caught:
+        DeepSeekClient(api_key="key", client=client).complete(ModelRequest(messages=[]))
+
+    assert caught.value.provider_request_id == "req-bad"
+    assert caught.value.usage.total_tokens == 13
 
 
 def test_deepseek_retries_without_extra_body_when_sdk_rejects_it():

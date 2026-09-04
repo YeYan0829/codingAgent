@@ -1,8 +1,8 @@
 # Session、Workspace 与持久化 Technical Design
 
-状态：设计 review 与实现已于 2026-08-27 完成。  
-适用范围：下一轮 Session lifecycle、按需 worktree、动态工具能力和 artifact 收敛重构。  
-产品决策见 [DECISIONS.md](DECISIONS.md) 的 D-2026-08-27-03 与 D-2026-08-27-04；当前实现事实仍以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
+状态：设计 review 与实现已于 2026-08-27 完成。
+适用范围：下一轮 Session lifecycle、按需 worktree、动态工具能力和 artifact 收敛重构。
+产品决策见历史 [DECISIONS](../DECISIONS_2026-09-04_PRE_CONSOLIDATION.md) 的 D-2026-08-27-03 与 D-2026-08-27-04；当前实现事实仍以 [ARCHITECTURE](../../ARCHITECTURE.md) 为准。
 
 > 后续迁移说明：本文的 `edit_revision` 已统一为 `candidate_revision`。Atomic Edit 与可信完成 workspace audit 的 sandboxed command 都推进该 revision；命令变化是合法当前修改，不再因为“非 Atomic Edit 产生”而自动 taint。当前命令状态语义以 [Controlled Arbitrary Command + Sandbox TD](CONTROLLED_ARBITRARY_COMMAND_SANDBOX_TECHNICAL_DESIGN.md) 为准。
 

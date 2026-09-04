@@ -1,5 +1,6 @@
 import hashlib
 import json
+import stat
 
 import pytest
 
@@ -76,6 +77,20 @@ def test_stale_sha_rejects_without_changes(tmp_path):
     assert not result.ok
     assert result.error_code == "edit_conflict"
     assert target.read_bytes() == before
+
+
+def test_replace_text_preserves_existing_file_mode(tmp_path):
+    _, _, context, service = operation_service(tmp_path)
+    target = context.active_root / "sort_utils.py"
+    target.chmod(0o755)
+
+    result = service.apply_workspace_edit({"operations": [{
+        "op": "replace_text", "path": "sort_utils.py", "expected_sha256": sha(target),
+        "old_text": "reverse=True", "new_text": "reverse=False",
+    }]})
+
+    assert result.ok, result.error
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
 
 
 def test_invalid_operation_reports_machine_readable_field_and_no_workspace_change(tmp_path):

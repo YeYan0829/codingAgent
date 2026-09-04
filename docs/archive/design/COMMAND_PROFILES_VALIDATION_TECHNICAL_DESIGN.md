@@ -2,8 +2,8 @@
 
 > 历史定位：本文记录已被取代的 pytest Profile 阶段。当前执行层已经切换到 [Controlled Arbitrary Command + Sandbox](CONTROLLED_ARBITRARY_COMMAND_SANDBOX_TECHNICAL_DESIGN.md)，Command Profile、`run_validation` 和 pytest-only executor 已删除。本文不得作为当前接口或状态语义的依据。
 
-状态：Implemented  
-日期：2026-08-27  
+状态：Implemented
+日期：2026-08-27
 适用范围：Stage 2 受控命令与验证能力，Linux/WSL；为未来 SWE-bench 薄适配保留最小注入边界。
 
 ## 1. 目标

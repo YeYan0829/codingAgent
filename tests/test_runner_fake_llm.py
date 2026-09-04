@@ -1,6 +1,6 @@
 from codeagent.model_gateway.fake import FakeLLM
 from codeagent.config import ModelConfig
-from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest
+from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest, TokenUsage
 from codeagent.runtime.approval import AutoApprovalGate
 from codeagent.runtime.runner import AgentRunner
 from codeagent.session.store import SessionStore
@@ -95,3 +95,32 @@ def test_runner_passes_glm_context_capacity_to_context_manager(tmp_path):
     assert output.status == "completed"
     assert captured[0].context_limit == 128_000
     assert captured[0].usable_input_budget == 118_000
+
+
+def test_runner_persists_usage_for_every_model_request(tmp_path):
+    class MeteredModel(BaseModelClient):
+        def complete(self, request: ModelRequest) -> LLMResponse:
+            return LLMResponse(
+                text="done", provider_request_id="req-42",
+                usage=TokenUsage(input_tokens=100, output_tokens=5, total_tokens=105),
+            )
+
+    ws = Workspace(tmp_path)
+    store = SessionStore(ws.root, session_root=tmp_path / "sessions").create(provider="glm", model="glm-5.2")
+    runner = AgentRunner(
+        store, MeteredModel(), ToolRegistry(), AutoApprovalGate(allow=False),
+        model_config=ModelConfig(provider="glm"),
+    )
+
+    runner.run_turn("test")
+
+    event = next(event for event in store.read_events() if event.type == "model_usage")
+    assert event.payload == {
+        "provider": "glm",
+        "model": "glm-5.2",
+        "provider_request_id": "req-42",
+        "usage": {
+            "input_tokens": 100, "output_tokens": 5, "total_tokens": 105,
+            "cached_input_tokens": None, "cache_miss_input_tokens": None, "reasoning_tokens": None,
+        },
+    }

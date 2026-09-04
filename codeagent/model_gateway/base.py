@@ -12,9 +12,22 @@ class LLMToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class TokenUsage(BaseModel):
+    """Provider 返回的单次请求 token 计量；未知字段保持为 None。"""
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    cache_miss_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
+
+
 class LLMResponse(BaseModel):
     text: str | None = None
     tool_calls: list[LLMToolCall] = Field(default_factory=list)
+    usage: TokenUsage | None = None
+    provider_request_id: str | None = None
 
 
 class ModelTool(BaseModel):
@@ -39,10 +52,13 @@ class BaseModelClient(ABC):
 
 
 class MalformedToolArgumentsError(ValueError):
-    def __init__(self, tool_name: str, message: str, line: int, column: int, raw_arguments: str) -> None:
+    def __init__(self, tool_name: str, message: str, line: int, column: int, raw_arguments: str,
+                 *, usage: TokenUsage | None = None, provider_request_id: str | None = None) -> None:
         super().__init__(message)
         self.tool_name = tool_name
         self.message = message
         self.line = line
         self.column = column
         self.raw_arguments = raw_arguments
+        self.usage = usage
+        self.provider_request_id = provider_request_id

@@ -1,8 +1,8 @@
 # Atomic Workspace Edit Technical Design
 
-状态：设计评审与首批实现已于 2026-08-27 完成。  
-适用范围：Stage 2 文件修改能力，Linux/WSL Session Agent worktree。  
-设计输入：[Stage 2 Research（历史快照）](archive/STAGE2_RESEARCH_2026-08.md)。当前关联契约见 [SEARCH_READ_TECHNICAL_DESIGN.md](SEARCH_READ_TECHNICAL_DESIGN.md) 和 [ARCHITECTURE.md](ARCHITECTURE.md)。
+状态：设计评审与首批实现已于 2026-08-27 完成。
+适用范围：Stage 2 文件修改能力，Linux/WSL Session Agent worktree。
+设计输入：[Stage 2 Research（历史快照）](../STAGE2_RESEARCH_2026-08.md)。当前关联契约见 [SEARCH_READ_TECHNICAL_DESIGN.md](SEARCH_READ_TECHNICAL_DESIGN.md) 和 [ARCHITECTURE.md](../../ARCHITECTURE.md)。
 
 > 实现状态：Session / Workspace / Persistence 与任意命令沙盒重构已完成。本文早期段落中的 `execution task worktree` 现指 Session 按需创建的 Agent worktree；用户可见 `Candidate` 现统一为“当前修改/采纳或丢弃”。`CandidateService` 仅是采纳前固定 patch 的内部实现名。结构化编辑、expected SHA、原子提交、rollback、固定 patch 复检和 `recovery_required` 安全契约继续有效；成功事务的 journal/backup 已清理。本文旧 `edit_revision` 统一解释为当前实现的 `candidate_revision`，验证与命令语义以任意命令 TD 为准。
 
@@ -421,4 +421,4 @@ Candidate apply 仍不暴露给 Agent，继续要求 source clean、HEAD/base id
 
 首版已知限制：仅 UTF-8 普通文本；不处理 mode、copy、case-only rename、目录删除和跨进程协同；正常失败可回滚，但极端掉电可能进入 `recovery_required`，此时必须 fail closed，不自动猜测用户文件状态。
 
-`recovery_required` 的人工解锁与同 session 恢复体验已明确暂缓，当前只要求证据保留和 fail-closed；见 [DECISIONS.md](DECISIONS.md#d-2026-08-27-01recovery_required-当前只提供-fail-closed)。
+`recovery_required` 的人工解锁与同 session 恢复体验已明确暂缓，当前只要求证据保留和 fail-closed；见历史 [DECISIONS](../DECISIONS_2026-09-04_PRE_CONSOLIDATION.md#d-2026-08-27-01recovery_required-当前只提供-fail-closed)。

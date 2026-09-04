@@ -10,9 +10,8 @@ from typing import Any
 
 from codeagent.runtime.approval import ApprovalGate
 from codeagent.runtime.artifacts import CommandArtifactStore
-from codeagent.runtime.command import CommandExecutionStatus, CommandRequest, SandboxExecutionRequest
+from codeagent.runtime.command import CommandExecutionStatus, CommandExecutor, CommandRequest, SandboxExecutionRequest
 from codeagent.runtime.permissions import PermissionDecision, PermissionError, PermissionScope, parse_permission_request, recheck_request
-from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
 from codeagent.runtime.sandbox_policy import SandboxPolicy
 from codeagent.runtime.workspace_audit import WorkspaceAuditError, compare_workspace, take_workspace_snapshot
 from codeagent.safety.path_guard import PathGuard, PathGuardError
@@ -29,7 +28,7 @@ class CommandLimits:
 
 
 class CommandService:
-    def __init__(self, context: WorkspaceContext, approval_gate: ApprovalGate, executor: SandboxedCommandExecutor,
+    def __init__(self, context: WorkspaceContext, approval_gate: ApprovalGate, executor: CommandExecutor,
                  session_store: SessionStore, artifact_store: CommandArtifactStore) -> None:
         self.context, self.approval_gate, self.executor = context, approval_gate, executor
         self.store, self.artifacts = session_store, artifact_store

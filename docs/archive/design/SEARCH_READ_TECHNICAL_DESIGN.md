@@ -2,7 +2,7 @@
 
 > 实现状态：本设计的搜索与读取契约已实现。文中保留的 readonly/execution 表述是当时的设计输入；当前 Session 初始读取 source，首次受保护操作后统一读取按需创建的 Agent worktree。搜索/读取 schema 和 PathGuard 边界未因此改变。
 
-本文定义 Stage 2 第一批搜索与读取工具的实现契约。设计输入见 [Stage 2 Research（历史快照）](archive/STAGE2_RESEARCH_2026-08.md)，当前 Runtime 边界见[当前 Runtime 实现](ARCHITECTURE.md)。
+本文定义 Stage 2 第一批搜索与读取工具的实现契约。设计输入见 [Stage 2 Research（历史快照）](../STAGE2_RESEARCH_2026-08.md)，当前 Runtime 边界见[当前 Runtime 实现](../../ARCHITECTURE.md)。
 
 本文只覆盖 Search/Read。它不设计编辑、Command Profiles、容器 sandbox 或 SWE-bench adapter；实现必须继续复用 `ToolRegistry`、`DefaultPolicy`、`PathGuard` 和敏感路径规则。
 

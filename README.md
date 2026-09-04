@@ -28,6 +28,8 @@ CodeAgent Runtime 是一个本地运行、以不覆盖用户代码为首要约�
 - accept 后 worktree HEAD 前移为内部 checkpoint，用户 source branch 不会被自动 commit；
 - Atomic Edit 与沙盒命令产生的变化都是合法当前修改；只有命令结束后无法建立可信 workspace 边界才进入 `workspace_tainted`；
 - resume 时恢复 source-only、active 或 tainted workspace，`recovery_required` 始终 fail closed。
+- 使用官方 prepared `/testbed`、per-command Docker projection 和 official grader 运行 SWE-bench；
+- 将 provider 返回的 input/output/cache/reasoning token 记录为可审计 Session Event。
 
 ## 快速使用
 
@@ -85,7 +87,7 @@ codeagent ask . "只读取 README，并用三句话概括项目，不要编辑�
 
 ### 2.1 配置 GLM-5.2
 
-GLM provider 使用 `GLM_API_KEY`，默认模型为 `glm-5.2`，默认使用智谱标准 OpenAI-compatible endpoint `https://open.bigmodel.cn/api/paas/v4`。Runtime 初始采用 128k context 实验上限，而不是复用 DeepSeek 的 32k/22k 配置；该值仍显著低于模型官方容量，用于控制 Phase A 尚无 semantic condensation 时的单次请求成本：
+GLM provider 使用 `GLM_API_KEY`，默认模型为 `glm-5.2`，默认使用智谱标准 OpenAI-compatible endpoint `https://open.bigmodel.cn/api/paas/v4`。Runtime 初始采用 128k context 实验上限，而不是复用 DeepSeek 的 32k/22k 配置；该值仍显著低于模型官方容量，用于控制尚无 semantic condensation 时的单次请求成本：
 
 ```bash
 read -rsp "GLM API Key: " GLM_API_KEY
@@ -191,8 +193,8 @@ Git worktree       当前代码和 accepted baseline
 - [当前设计上下文](docs/PROJECT_GUIDE.md)：当前状态、下一步和文档导航；
 - [近期实践计划](docs/NEXT_PHASE_PLAN.md)：实施顺序和验收层次；
 - [当前 Runtime 实现](docs/ARCHITECTURE.md)：已经实现的数据流和安全边界；
+- [Benchmark 说明](docs/BENCHMARKING.md)：SWE-bench 边界、结果语义、token 审计和当前基线；
 - [当前有效决策](docs/DECISIONS.md)：跨阶段产品级约束；
-- [Session/Workspace/Persistence Technical Design](docs/SESSION_WORKSPACE_PERSISTENCE_TECHNICAL_DESIGN.md)：本轮生命周期与持久化契约；
 - [测试说明](docs/TESTING.md) 与 [CLI Dogfood](docs/MANUAL_TEST.md)：自动化和正式 CLI 验收。
 
 历史路线和已归档调研位于 `docs/archive/`，不作为当前实现依据。

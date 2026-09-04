@@ -12,6 +12,7 @@ from codeagent.model_gateway.base import (
     MalformedToolArgumentsError,
     ModelRequest,
     ModelTool,
+    TokenUsage,
 )
 
 
@@ -51,12 +52,23 @@ class OpenAICompatibleClient(BaseModelClient):
             response = self.client.chat.completions.create(**kwargs)
 
         message = response.choices[0].message
-        tool_calls = self._parse_tool_calls(getattr(message, "tool_calls", None))
+        usage = _parse_usage(getattr(response, "usage", None))
+        request_id = _get(response, "id")
+        try:
+            tool_calls = self._parse_tool_calls(getattr(message, "tool_calls", None))
+        except MalformedToolArgumentsError as exc:
+            exc.usage = usage
+            exc.provider_request_id = request_id
+            raise
         if isinstance(tool_calls, LLMResponse):
+            tool_calls.usage = usage
+            tool_calls.provider_request_id = request_id
             return tool_calls
         if tool_calls:
-            return LLMResponse(text=getattr(message, "content", None) or None, tool_calls=tool_calls)
-        return LLMResponse(text=getattr(message, "content", None) or "")
+            return LLMResponse(text=getattr(message, "content", None) or None, tool_calls=tool_calls,
+                               usage=usage, provider_request_id=request_id)
+        return LLMResponse(text=getattr(message, "content", None) or "", usage=usage,
+                           provider_request_id=request_id)
 
     def _parse_tool_calls(self, raw_tool_calls: Any) -> list[LLMToolCall] | LLMResponse:
         if not raw_tool_calls:
@@ -81,6 +93,27 @@ def _get(obj: Any, name: str) -> Any:
     if isinstance(obj, dict):
         return obj.get(name)
     return getattr(obj, name, None)
+
+
+def _parse_usage(raw: Any) -> TokenUsage | None:
+    if raw is None:
+        return None
+    prompt_details = _get(raw, "prompt_tokens_details")
+    completion_details = _get(raw, "completion_tokens_details")
+    return TokenUsage(
+        input_tokens=_first_int(_get(raw, "prompt_tokens"), _get(raw, "input_tokens")),
+        output_tokens=_first_int(_get(raw, "completion_tokens"), _get(raw, "output_tokens")),
+        total_tokens=_first_int(_get(raw, "total_tokens")),
+        cached_input_tokens=_first_int(
+            _get(raw, "prompt_cache_hit_tokens"), _get(prompt_details, "cached_tokens")
+        ),
+        cache_miss_input_tokens=_first_int(_get(raw, "prompt_cache_miss_tokens")),
+        reasoning_tokens=_first_int(_get(completion_details, "reasoning_tokens")),
+    )
+
+
+def _first_int(*values: Any) -> int | None:
+    return next((value for value in values if isinstance(value, int) and not isinstance(value, bool)), None)
 
 
 def _to_chat_completion_tool(tool: ModelTool) -> dict[str, Any]:

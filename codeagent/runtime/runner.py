@@ -7,7 +7,13 @@ from dataclasses import dataclass, field
 from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.context.builder import ContextManager
 from codeagent.context.models import ContextBudgetExceeded, ModelCapabilities
-from codeagent.model_gateway.base import BaseModelClient, LLMToolCall, MalformedToolArgumentsError, ModelRequest
+from codeagent.model_gateway.base import (
+    BaseModelClient,
+    LLMToolCall,
+    MalformedToolArgumentsError,
+    ModelRequest,
+    TokenUsage,
+)
 from codeagent.runtime.approval import ApprovalGate
 from codeagent.runtime.policy import DefaultPolicy, PolicyDecision
 from codeagent.session.store import SessionStore
@@ -124,6 +130,7 @@ class AgentRunner:
             try:
                 response = self.model.complete(request)
             except MalformedToolArgumentsError as exc:
+                self._record_model_usage(exc.usage, exc.provider_request_id)
                 protocol_failures += 1
                 fingerprint = (exc.tool_name, exc.raw_arguments)
                 self.session_store.append_event("model_protocol_error", {
@@ -143,6 +150,7 @@ class AgentRunner:
                     "请依据工具 schema 重新生成完整工具调用，并确保所有字符串使用合法 JSON 转义。"
                 )})
                 continue
+            self._record_model_usage(response.usage, response.provider_request_id)
             if not response.tool_calls:
                 final = response.text or ""
                 self.session_store.append_event("assistant_message", {"message": final})
@@ -234,6 +242,14 @@ class AgentRunner:
     def _notify(self, event: dict) -> None:
         if self.progress_callback is not None:
             self.progress_callback(event)
+
+    def _record_model_usage(self, usage: TokenUsage | None, provider_request_id: str | None) -> None:
+        self.session_store.append_event("model_usage", {
+            "provider": self.model_config.provider,
+            "model": self.model_config.resolved_model,
+            "provider_request_id": provider_request_id,
+            "usage": usage.model_dump() if usage is not None else None,
+        })
 
     def _handle_tool_call(self, call: LLMToolCall) -> dict:
         self.session_store.append_event("tool_requested", call.model_dump())

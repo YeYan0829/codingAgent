@@ -137,7 +137,7 @@ active UserTurn 的所有闭合 assistant tool-call/result 协议对当前都保
 
 ## 8. 关联资料
 
-- [Context Management TD](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)：当前 v1 契约与已暴露限制；
-- [Context Capacity Research](CONTEXT_CAPACITY_RESEARCH_2026-08-30.md)：Anthropic/OpenAI/LangGraph 的 trim/tool clearing/compaction 调研；
-- [ARCHITECTURE](ARCHITECTURE.md)：当前已实现事实；
-- [NEXT_PHASE_PLAN](NEXT_PHASE_PLAN.md)：下一轮设计顺序。
+- [Context Management TD](../design/CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)：当前 v1 契约与已暴露限制；
+- [Context Capacity Research](../research/CONTEXT_CAPACITY_RESEARCH_2026-08-30.md)：Anthropic/OpenAI/LangGraph 的 trim/tool clearing/compaction 调研；
+- [ARCHITECTURE](../../ARCHITECTURE.md)：当前已实现事实；
+- [NEXT_PHASE_PLAN](../../NEXT_PHASE_PLAN.md)：下一轮设计顺序。

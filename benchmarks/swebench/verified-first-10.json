@@ -1,0 +1,44 @@
+{
+  "suite": "SWE-bench_Verified",
+  "selection_id": "verified-first-10-v2",
+  "selected_at": "2026-09-04",
+  "model": {
+    "provider": "glm",
+    "model": "glm-5.2"
+  },
+  "pinned_sources": {
+    "swebench_repository": "https://github.com/SWE-bench/SWE-bench.git",
+    "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0",
+    "task_repository": "https://github.com/SWE-bench/swe-bench-tasks.git",
+    "task_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d"
+  },
+  "tasks": [
+    {"instance_id": "pytest-dev__pytest-7205", "difficulty": "easy"},
+    {"instance_id": "sphinx-doc__sphinx-10323", "difficulty": "easy"},
+    {"instance_id": "pytest-dev__pytest-8399", "difficulty": "medium"},
+    {"instance_id": "sympy__sympy-20590", "difficulty": "medium"},
+    {"instance_id": "pydata__xarray-3305", "difficulty": "medium"},
+    {"instance_id": "sphinx-doc__sphinx-8120", "difficulty": "medium"},
+    {"instance_id": "pytest-dev__pytest-7432", "difficulty": "easy"},
+    {"instance_id": "pytest-dev__pytest-7982", "difficulty": "easy"},
+    {"instance_id": "sympy__sympy-19495", "difficulty": "easy"},
+    {"instance_id": "sphinx-doc__sphinx-9258", "difficulty": "easy"}
+  ],
+  "gold_preflight": {
+    "status": "passed",
+    "passed_tasks": 10,
+    "primary_run_id": "gold-2e103de5f53740f1",
+    "replacement_run_id": "gold-9431355ad5f04dc2",
+    "excluded": [
+      {
+        "instance_id": "psf__requests-2317",
+        "reason": "official gold unresolved in current Docker Desktop proxy environment"
+      }
+    ]
+  },
+  "difficulty_mapping": {
+    "easy": "<15 min fix",
+    "medium": "15 min - 1 hour",
+    "hard": "1-4 hours"
+  }
+}

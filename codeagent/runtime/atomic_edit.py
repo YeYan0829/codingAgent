@@ -4,6 +4,7 @@ import difflib
 import hashlib
 import json
 import os
+import stat
 import re
 import shutil
 import threading
@@ -394,6 +395,10 @@ class AtomicEditService:
         temp = target.parent / f".{target.name}.codeagent-{uuid.uuid4().hex}.tmp"
         try:
             temp.write_bytes(content)
+            # os.replace 会用临时文件的默认权限替换 inode。编辑既有文件时应保留
+            # 原文件 mode，否则一次纯文本修改会意外移除 executable 等权限位。
+            if target.exists():
+                os.chmod(temp, stat.S_IMODE(target.stat().st_mode))
             os.replace(temp, target)
         finally:
             temp.unlink(missing_ok=True)
