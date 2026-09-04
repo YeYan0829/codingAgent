@@ -8,6 +8,20 @@
 git diff --check
 ```
 
+## 测试证据分层
+
+| 层级 | 证明范围 | 默认 `pytest` 是否覆盖 |
+| --- | --- | --- |
+| L0 | 单元测试、fixture、Fake provider/backend、batch resume/accounting/trajectory | 是 |
+| L1 | 本机真实 Bubblewrap 与 namespace/网络边界 | 否，需显式启用 |
+| L2 | 官方 SWE-bench image 的 `/testbed` projection | 否，需 Docker 与显式启用 |
+| L3 | 固定 task repo 的 official gold preflight | 否，正式环境运行 |
+| L4 | 真实模型固定题集 | 否，会产生 API 费用 |
+| L5 | 不同 Runtime commit/config 的对照实验 | 否，属于正式实验 |
+
+因此“普通 pytest 全部通过”只证明 L0；不能表述为真实 Docker、official grader 或真实模型在本次运行中
+也已通过。每次正式报告应逐层列出实际执行的证据。
+
 真实 Bubblewrap integration 默认跳过；指定可信测试 executable 后运行：
 
 ```bash
@@ -40,8 +54,12 @@ CODEAGENT_RUN_SWEBENCH_DOCKER=1 \
 - Context 派生对象保持内存态，不生成 snapshot/residue/budget artifact 目录。
 - 执行切片保持单一 UserTurn/UserMessage、Resume `/continue`、原始请求延续、协议对完整和总 ModelStep 预算明确终止；
 - Context 最低集合超限会记录结构化终止事件并由 CLI 清楚展示，不以 traceback 或伪 Assistant Final 结束；
+- Context overflow breakdown 记录最终集合分类、最大 Observation identity 和估算 residual，不复制输入正文，
+  trajectory 对新旧 Event 分别提供明细或明确 unavailable；
 - eval task 模板不使用 Sandbox private HOME 下的 `~/.cache`，prepare 阶段生成含实际绝对 Python 路径的 workspace 任务文档。
 - SWE-bench prepared source 准入、Docker execution projection、gold preflight、prediction/grader 状态分离和 token usage 聚合。
+- SWE-bench selection/batch 确定性顺序、逐题持久化、异常恢复、resume identity、run manifest、Decimal
+  cost 和 deterministic trajectory 指标。
 
 真实 Bubblewrap 测试额外验证 Candidate 写成功、source/Git metadata 写失败、默认 network namespace 无法访问 host localhost、批准 NETWORK 后可访问，以及 Python/pytest 与 Make 两类已有工具链。
 

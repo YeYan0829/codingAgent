@@ -4,7 +4,7 @@ import codeagent.cli as cli_module
 from codeagent.cli import app
 from codeagent.config import RuntimeConfig
 from codeagent.context.builder import ContextManager
-from codeagent.context.models import BudgetReport, ContextBudgetExceeded
+from codeagent.context.models import BudgetComponent, BudgetObservation, BudgetReport, ContextBudgetExceeded
 from codeagent.model_gateway.base import BaseModelClient, LLMResponse, LLMToolCall, ModelRequest
 from codeagent.runtime.approval import AutoApprovalGate
 from codeagent.runtime.runner import AgentRunner
@@ -125,7 +125,12 @@ def test_context_budget_failure_is_recorded_and_cli_does_not_crash(tmp_path, mon
     store = SessionStore(workspace, session_root=session_root).create(provider="fake", model="fake")
 
     def fail_build(self, **kwargs):
-        raise ContextBudgetExceeded(BudgetReport(23_503, 22_000, reductions=("minimum_set",)))
+        raise ContextBudgetExceeded(BudgetReport(
+            23_503, 22_000, reductions=("minimum_set",),
+            minimum_set_components=(BudgetComponent("current_user_message", 23_000, 1),),
+            largest_observations=(BudgetObservation("read_file", "call-1", 10_000, "large.py"),),
+            component_estimated_tokens=23_000, estimation_residual=503,
+        ))
 
     monkeypatch.setattr(ContextManager, "build", fail_build)
     result = CliRunner().invoke(
@@ -142,4 +147,9 @@ def test_context_budget_failure_is_recorded_and_cli_does_not_crash(tmp_path, mon
     assert terminated.payload["reason"] == "context_budget_exceeded"
     assert terminated.payload["estimated_tokens"] == 23_503
     assert terminated.payload["usable_tokens"] == 22_000
+    assert terminated.payload["minimum_set_components"] == [{
+        "category": "current_user_message", "estimated_tokens": 23_000, "item_count": 1,
+    }]
+    assert terminated.payload["largest_observations"][0]["path"] == "large.py"
+    assert terminated.payload["estimation_residual"] == 503
     assert not any(event.type == "assistant_message" for event in events)

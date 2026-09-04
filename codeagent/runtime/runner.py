@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.context.builder import ContextManager
@@ -206,6 +206,10 @@ class AgentRunner:
             "usable_tokens": report.usable_tokens,
             "dropped_turn_ids": list(report.dropped_turn_ids),
             "reductions": list(report.reductions),
+            "minimum_set_components": [asdict(item) for item in report.minimum_set_components],
+            "largest_observations": [asdict(item) for item in report.largest_observations],
+            "component_estimated_tokens": report.component_estimated_tokens,
+            "estimation_residual": report.estimation_residual,
             "steps_used_in_turn": used,
         })
         return RunnerOutput(final_text=text, steps=steps, status="context_budget_exceeded", steps_used_in_turn=used)

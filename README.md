@@ -198,3 +198,6 @@ Git worktree       当前代码和 accepted baseline
 - [测试说明](docs/TESTING.md) 与 [CLI Dogfood](docs/MANUAL_TEST.md)：自动化和正式 CLI 验收。
 
 历史路线和已归档调研位于 `docs/archive/`，不作为当前实现依据。
+
+SWE-bench 固定题集的批量运行与中断恢复使用 `codeagent swebench-batch`；selection、run manifest、usage/cost
+以及 trajectory artifact 的参数和语义见 [Benchmark 说明](docs/BENCHMARKING.md)。

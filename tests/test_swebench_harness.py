@@ -63,9 +63,14 @@ def test_single_task_exports_prediction_and_separates_three_states(tmp_path):
     assert not (repo / "bug.py").read_text().startswith("BROKEN = False")
     saved = json.loads((Path(result.prediction_path).parent / "result.json").read_text())
     assert saved["patch_sha256"] == result.patch_sha256
-    assert saved["token_usage"] == {
+    assert saved["token_usage"]["coverage"] == "complete"
+    assert saved["token_usage"]["coverage_ratio"] == "1"
+    assert {key: saved["token_usage"][key] for key in (
+        "requests", "requests_with_usage", "input_tokens", "output_tokens", "total_tokens",
+        "cached_input_tokens", "cache_miss_input_tokens", "reasoning_tokens",
+    )} == {
         "requests": 2, "requests_with_usage": 2, "input_tokens": 240, "output_tokens": 30,
-        "total_tokens": 270, "cached_input_tokens": 150, "cache_miss_input_tokens": None,
+        "total_tokens": 270, "cached_input_tokens": 150, "cache_miss_input_tokens": 90,
         "reasoning_tokens": None,
     }
 

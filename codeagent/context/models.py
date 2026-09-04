@@ -72,6 +72,29 @@ class BudgetReport:
     usable_tokens: int
     dropped_turn_ids: tuple[str, ...] = ()
     reductions: tuple[str, ...] = ()
+    minimum_set_components: tuple["BudgetComponent", ...] = ()
+    largest_observations: tuple["BudgetObservation", ...] = ()
+    component_estimated_tokens: int | None = None
+    estimation_residual: int | None = None
+
+
+@dataclass(frozen=True)
+class BudgetComponent:
+    """最低 Context 集合中一类输入的有界计量，不保存输入正文。"""
+
+    category: str
+    estimated_tokens: int
+    item_count: int
+
+
+@dataclass(frozen=True)
+class BudgetObservation:
+    """占用较大的工具 Observation 来源摘要。"""
+
+    tool: str
+    call_id: str
+    estimated_tokens: int
+    path: str | None = None
 
 
 class ContextBudgetExceeded(RuntimeError):

@@ -2,21 +2,24 @@
 
 ## 目标
 
-SWE-bench 接入与首批双模型基线已经跑通。下一阶段把 token、trajectory、终止状态和 external oracle
-转化为可复现、可比较的优化反馈，而不是继续扩展 benchmark adapter 或统一提高预算。
+SWE-bench 接入与首批双模型基线已经跑通。正式 batch/resume、run manifest、usage/cost accounting 和
+deterministic trajectory analyzer 已进入 Runtime 基线；两题 GLM 5.2 L4 smoke 已 2/2 resolved，并验证
+46/46 次 provider usage、价格快照成本和真实 trajectory。下一阶段依据数据优化，不继续扩展 benchmark
+adapter 或统一提高预算。
 
-## P0：评测可审计
+## 已完成的评测基线
 
-1. 验证 GLM、DeepSeek 的 `model_usage` 覆盖率，确保每次 provider 响应都有 usage 或明确缺失；
-2. 在批次结果中汇总请求数、input/output/total、cache hit/miss 和 reasoning token；
-3. 用带来源与日期的价格快照计算运行成本，不把易变价格写入 Session Event；
-4. 固化 selection、模型配置、Context/step budget、镜像 digest 和 Runtime commit。
+- GLM smoke 的 `model_usage` coverage 已验证为 46/46；缺失 usage 仍有 explicit unavailable/partial 语义；
+- 批次汇总 input/output/total、cache hit/miss 和 reasoning token；
+- 成本使用带来源与日期的独立 Decimal 价格快照，不进入 Session Event；
+- run manifest 固化 selection、模型配置、Context/step budget、镜像 digest 和 Runtime commit；
+- context overflow 新事件记录有界 minimum-set 分类、最大 Observation identity 和估算 residual。
 
-完成标准：一次固定题集运行可以回答“用了多少 token、哪些可缓存、花费如何计算、结果是否完整”。
+当前固定运行已经可以回答“用了多少 token、哪些可缓存、花费如何计算、结果是否完整”。
 
 ## P1：Trajectory 指标与缺陷修复
 
-建立不依赖 LLM judge 的确定性统计：
+已建立并用真实 trajectory 校验不依赖 LLM judge 的第一版确定性统计。下一步围绕以下事实做对照分析：
 
 - Agent final、validation、patch present、external oracle 四类结果；
 - 正常完成、context budget、step budget、protocol/environment failure；

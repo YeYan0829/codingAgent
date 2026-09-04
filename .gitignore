@@ -13,4 +13,5 @@ dist/
 examples/buggy-repos/QuixBugs/
 reference/*/
 benchmarks/swebench/runs/
+benchmarks/swebench/source-cache/
 logs/evaluation/

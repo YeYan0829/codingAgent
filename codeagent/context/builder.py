@@ -7,7 +7,10 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from codeagent.context.models import BudgetReport, ContextBudgetExceeded, ModelCapabilities, RuntimeSnapshot, ToolExchange, UserTurnView
+from codeagent.context.models import (
+    BudgetComponent, BudgetObservation, BudgetReport, ContextBudgetExceeded,
+    ModelCapabilities, RuntimeSnapshot, ToolExchange, UserTurnView,
+)
 from codeagent.context.projector import ContextNotReady, ProjectionError, project_events
 from codeagent.safety.path_guard import PathGuard, PathGuardError
 from codeagent.session.store import SessionStore
@@ -56,13 +59,80 @@ class ContextManager:
                 continue
             removable = next((turn for turn in retained[:-1] if turn.completed), None)
             if removable is None:
-                report = BudgetReport(estimate, caps.usable_input_budget, tuple(dropped), tuple(reductions + ["minimum_set"]))
+                components, observations, component_total = self._minimum_set_breakdown(
+                    messages, schemas, len(current_turn_transient_messages)
+                )
+                report = BudgetReport(
+                    estimate, caps.usable_input_budget, tuple(dropped), tuple(reductions + ["minimum_set"]),
+                    components, observations, component_total, estimate - component_total,
+                )
                 self.last_budget_report = report
                 raise ContextBudgetExceeded(report)
             retained.remove(removable)
             dropped.append(removable.turn_id)
             if "whole_turn_eviction" not in reductions:
                 reductions.append("whole_turn_eviction")
+
+    def _minimum_set_breakdown(self, messages: list[dict], schemas: list[Any], transient_count: int) -> tuple[
+        tuple[BudgetComponent, ...], tuple[BudgetObservation, ...], int
+    ]:
+        """按最终 provider 输入分类估算；只返回计量和来源 identity，不复制正文。"""
+        latest_user = max((index for index, item in enumerate(messages)
+                           if item.get("role") == "user"), default=-1)
+        call_tools: dict[str, tuple[str, str | None]] = {}
+        totals: dict[str, list[int]] = {}
+        observations: list[BudgetObservation] = []
+        transient_start = len(messages) - transient_count
+        for index, message in enumerate(messages):
+            role = message.get("role")
+            if index == 0 or index == 1:
+                category = "system_prompt"
+            elif index == 2:
+                category = "runtime_snapshot"
+            elif index == latest_user:
+                category = "current_user_message"
+            elif transient_count and index >= transient_start:
+                category = "transient_control_messages"
+            elif role == "tool":
+                category = "recent_tool_observations"
+            elif role == "assistant" and message.get("tool_calls"):
+                category = "recent_tool_arguments"
+            else:
+                category = "history_messages"
+            tokens = self.estimator.estimate(message)
+            totals.setdefault(category, []).append(tokens)
+            if role == "assistant":
+                for call in message.get("tool_calls") or []:
+                    function = call.get("function") if isinstance(call, dict) else None
+                    if not isinstance(function, dict):
+                        continue
+                    path = None
+                    try:
+                        arguments = json.loads(str(function.get("arguments") or "{}"))
+                        path = arguments.get("path") if isinstance(arguments, dict) else None
+                    except json.JSONDecodeError:
+                        pass
+                    call_tools[str(call.get("id", ""))] = (str(function.get("name", "")), path)
+            elif role == "tool":
+                call_id = str(message.get("tool_call_id", ""))
+                tool, path = call_tools.get(call_id, ("unknown", None))
+                if path is None:
+                    try:
+                        content = json.loads(str(message.get("content") or "{}"))
+                        metadata = content.get("metadata") if isinstance(content, dict) else None
+                        if isinstance(metadata, dict):
+                            path = metadata.get("path")
+                    except json.JSONDecodeError:
+                        pass
+                observations.append(BudgetObservation(tool, call_id, tokens, str(path) if path else None))
+        schema_tokens = self.estimator.estimate([tool.model_dump() for tool in schemas])
+        totals["tool_definitions"] = [schema_tokens]
+        components = tuple(
+            BudgetComponent(category, sum(values), len(values))
+            for category, values in sorted(totals.items())
+        )
+        largest = tuple(sorted(observations, key=lambda item: item.estimated_tokens, reverse=True)[:10])
+        return components, largest, sum(item.estimated_tokens for item in components)
 
     def _render_turns(self, turns: list[UserTurnView], *, recent_raw_steps: int = 4) -> list[dict]:
         messages: list[dict] = []

@@ -2,10 +2,6 @@
   "suite": "SWE-bench_Verified",
   "selection_id": "verified-first-10-v2",
   "selected_at": "2026-09-04",
-  "model": {
-    "provider": "glm",
-    "model": "glm-5.2"
-  },
   "pinned_sources": {
     "swebench_repository": "https://github.com/SWE-bench/SWE-bench.git",
     "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0",

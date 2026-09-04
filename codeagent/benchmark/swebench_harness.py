@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable, Protocol, Sequence
 
 from codeagent.benchmark.swebench_executor import SWEbenchDockerCommandExecutor
+from codeagent.benchmark.accounting import aggregate_usage
 from codeagent.benchmark.swebench_source import SWEbenchSourcePreparer, SWEbenchTaskSource
 from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.model_gateway.base import BaseModelClient
@@ -95,7 +96,8 @@ class SWEbenchRunResult:
     oracle_status: str
     oracle_passed: bool | None
     oracle_detail: str
-    token_usage: dict[str, int | None]
+    token_usage: dict[str, object]
+    source_identity: dict[str, str] | None = None
 
 
 class SWEbenchHarness:
@@ -152,6 +154,11 @@ class SWEbenchHarness:
                 bool(current_validation_evidence(store, context)), bool(patch), patch_hash,
                 str(prediction_path), oracle.status, oracle.resolved, oracle.detail,
                 _aggregate_token_usage(store),
+                {
+                    "image_ref": prepared.image_ref, "image_digest": prepared.image_digest,
+                    "dataset_base_commit": prepared.dataset_base_commit,
+                    "prepared_head": prepared.prepared_head, "prepared_tree": prepared.prepared_tree,
+                },
             )
             (root / "result.json").write_text(json.dumps(asdict(result), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             return result
@@ -173,16 +180,9 @@ def _resolved_from_report(value: object, instance_id: str) -> bool:
     raise ValueError("official report 不包含可识别的 resolved 结果")
 
 
-def _aggregate_token_usage(store: SessionStore) -> dict[str, int | None]:
+def _aggregate_token_usage(store: SessionStore) -> dict[str, object]:
     events = [event for event in store.read_events() if event.type == "model_usage"]
-    known = [event.payload["usage"] for event in events if isinstance(event.payload.get("usage"), dict)]
-    fields = ("input_tokens", "output_tokens", "total_tokens", "cached_input_tokens",
-              "cache_miss_input_tokens", "reasoning_tokens")
-    summary: dict[str, int | None] = {
-        "requests": len(events),
-        "requests_with_usage": len(known),
-    }
-    for field in fields:
-        values = [usage[field] for usage in known if isinstance(usage.get(field), int)]
-        summary[field] = sum(values) if values else None
-    return summary
+    return aggregate_usage([
+        event.payload.get("usage") if isinstance(event.payload.get("usage"), dict) else None
+        for event in events
+    ])

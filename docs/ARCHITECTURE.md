@@ -106,7 +106,9 @@ Observation 进入输入；旧 Observation 在预算压力下退化为访问记�
 
 默认 DeepSeek context limit 为 32k：预留 generation、continuation/tool 和 safety 后 usable input 为 22k；
 GLM 实验配置为 128k/118k。最低集合仍超限时写入明确的 `context_budget_exceeded` 终止事件，保留 Session
-和 workspace。当前没有 semantic condensation。
+和 workspace。新事件同时保存最终 minimum set 的分类 token 估算、分项数量、最大的有界 Observation
+来源（tool/call/path）和整体估算 residual，不复制 prompt、源码或工具输出正文。历史事件缺少这些字段时保持
+unavailable。当前没有 semantic condensation。
 
 每个 provider 响应还写入独立 `model_usage` Event。它包含标准化 token usage 和 provider request id，
 不进入后续 Context，也不计为模型步骤。

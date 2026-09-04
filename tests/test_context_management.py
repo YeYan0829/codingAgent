@@ -180,6 +180,37 @@ def test_minimum_context_over_budget_fails_with_breakdown(tmp_path):
         ContextManager(store).build(model_capabilities=ModelCapabilities(context_limit=1000, generation_reserve=100,
             continuation_reserve=100, safety_margin=100))
     assert caught.value.report.estimated_tokens > caught.value.report.usable_tokens
+    report = caught.value.report
+    categories = {item.category for item in report.minimum_set_components}
+    assert {"system_prompt", "runtime_snapshot", "current_user_message", "tool_definitions"} <= categories
+    assert report.component_estimated_tokens == sum(
+        item.estimated_tokens for item in report.minimum_set_components
+    )
+    assert report.estimation_residual == report.estimated_tokens - report.component_estimated_tokens
+    assert "xxxxx" not in json.dumps([item.__dict__ for item in report.minimum_set_components])
+
+
+def test_minimum_breakdown_identifies_large_observation_without_copying_content(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "x" * 5000})
+    store.append_event("assistant_tool_calls", {"tool_calls": [{
+        "call_id": "large-read", "name": "read_file", "arguments": {"path": "a.py"},
+    }]})
+    store.append_event("tool_result", {"call_id": "large-read", "result": {
+        "ok": True, "content": "SECRET_SOURCE_BODY" * 1000,
+        "metadata": {"path": "a.py", "sha256": "digest"},
+    }})
+    with pytest.raises(ContextBudgetExceeded) as caught:
+        ContextManager(store).build(model_capabilities=ModelCapabilities(
+            context_limit=1000, generation_reserve=100, continuation_reserve=100, safety_margin=100,
+            preferred_recent_raw_steps=1,
+        ))
+    report = caught.value.report
+    assert report.largest_observations[0].tool == "read_file"
+    assert report.largest_observations[0].call_id == "large-read"
+    assert report.largest_observations[0].path == "a.py"
+    assert "SECRET_SOURCE_BODY" not in repr(report)
 
 
 def test_conservative_estimator_counts_utf8_and_no_context_artifacts(tmp_path):

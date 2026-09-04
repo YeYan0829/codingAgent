@@ -5,6 +5,8 @@ import sys
 import shutil
 import hashlib
 import subprocess
+import os
+import shlex
 from pathlib import Path
 
 import typer
@@ -140,6 +142,61 @@ def ask(
         if step["result"].get("error"):
             console.print(f"[red]{step['result']['error']}[/red]")
     console.print(Panel(Text(output.final_text), title="Assistant"))
+
+
+@app.command("swebench-batch")
+def swebench_batch(
+    selection: Path = typer.Argument(..., help="只定义固定题集的 selection JSON。"),
+    task_repo: Path = typer.Option(..., "--task-repo", help="固定版本 swe-bench-tasks 仓库。"),
+    source_cache: Path = typer.Option(..., "--source-cache", help="官方 image prepared source cache。"),
+    output_root: Path = typer.Option(..., "--output-root", help="批次 artifact 根目录。"),
+    grader_command: str = typer.Option(..., "--grader-command", help="official grader 命令前缀。"),
+    report_template: str = typer.Option(..., "--report-template", help="official 单题 report 路径模板。"),
+    provider: str = PROVIDER_OPT,
+    model: str | None = MODEL_OPT,
+    run_id: str | None = typer.Option(None, "--run-id", help="指定已有 run id 即执行兼容性校验并 resume。"),
+    temperature: float | None = typer.Option(None, "--temperature"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    max_steps_per_turn: int = typer.Option(12, "--slice-steps"),
+    max_model_steps: int = typer.Option(48, "--max-model-steps"),
+    price_snapshot: Path | None = typer.Option(None, "--price-snapshot"),
+):
+    """串行运行或恢复固定 SWE-bench selection。"""
+    from codeagent.benchmark import (
+        PriceSnapshot, SWEbenchBatchRunner, SWEbenchCLIGrader, SWEbenchGoldPreflight,
+        SWEbenchSelection, SWEbenchSourcePreparer, SWEbenchTaskRepository,
+    )
+    from codeagent.benchmark.swebench_harness import SWEbenchHarness
+    from codeagent.config import RuntimeConfig
+    selection_value = SWEbenchSelection(selection)
+    repository = SWEbenchTaskRepository(task_repo)
+    model_config = ModelConfig(provider=provider, model=model, temperature=temperature, max_tokens=max_tokens)
+    runtime_config = RuntimeConfig(max_steps_per_turn=max_steps_per_turn,
+                                   max_model_steps_per_user_turn=max_model_steps)
+    endpoint = (
+        os.environ.get("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4") if provider == "glm"
+        else "https://api.deepseek.com" if provider == "deepseek" else "local-fake"
+    )
+    dataset_path = output_root.resolve() / ".datasets" / f"{selection_value.selection_id}.json"
+    repository.export_dataset(selection_value.instance_ids, dataset_path)
+    grader = SWEbenchCLIGrader(
+        [*shlex.split(grader_command), "--dataset_name", str(dataset_path), "--split", "test"],
+        report_template,
+    )
+    runner = SWEbenchBatchRunner(
+        selection=selection_value, task_loader=lambda item: repository.load(item).task,
+        harness=SWEbenchHarness(SWEbenchSourcePreparer(source_cache), grader),
+        model_factory=lambda: build_model_client(model_config), model_config=model_config,
+        runtime_config=runtime_config, output_root=output_root, endpoint_identity=endpoint,
+        price_snapshot=PriceSnapshot.from_json(price_snapshot) if price_snapshot else None,
+        runtime_root=Path(__file__).resolve().parents[1],
+    )
+    try:
+        result = runner.run(run_id)
+    except Exception as exc:
+        console.print(f"[red]SWE-bench batch failed: {exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(json.dumps(result, ensure_ascii=False, indent=2), markup=False)
 
 
 @app.command("list-sessions")

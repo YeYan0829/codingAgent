@@ -1,0 +1,15 @@
+{
+  "suite": "SWE-bench_Verified",
+  "selection_id": "verified-smoke-2-v1",
+  "selected_at": "2026-09-04",
+  "pinned_sources": {
+    "swebench_repository": "https://github.com/SWE-bench/SWE-bench.git",
+    "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0",
+    "task_repository": "https://github.com/SWE-bench/swe-bench-tasks.git",
+    "task_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d"
+  },
+  "tasks": [
+    {"instance_id": "pytest-dev__pytest-7205", "difficulty": "easy", "purpose": "稳定正常链路"},
+    {"instance_id": "sympy__sympy-20590", "difficulty": "medium", "purpose": "较长真实 trajectory"}
+  ]
+}

@@ -13,9 +13,11 @@ CodeAgent Runtime `0.5.0` 已形成可执行、可恢复、可自动评测的本
 - Context 由 append-only Event 按每次 API 调用确定性投影，不再维护隐式 Active Code；
 - DeepSeek 与 GLM 通过同一 OpenAI-compatible gateway 接入；provider usage 会写入独立审计事件；
 - SWE-bench 已跑通 source preparation、Docker execution projection、gold preflight、单题运行、official grader
-  和首批十题基线。
+  和首批十题基线；
+- 正式 batch/resume、run manifest、usage/cost accounting 与 deterministic trajectory analyzer 已形成闭环；
+- context overflow Event 会记录有界的 minimum-set 分类估算与最大 Observation 来源。
 
-当前自动化基线为 `212 passed, 3 skipped`；其中真实 Bubblewrap/Docker 测试按环境显式启用。
+当前自动化基线为 `226 passed, 3 skipped`；其中真实 Bubblewrap/Docker 测试按环境显式启用。
 
 ## Benchmark 结论
 
@@ -30,14 +32,17 @@ CodeAgent Runtime `0.5.0` 已形成可执行、可恢复、可自动评测的本
 32k/22k usable context 配置终止；GLM 的行动收敛和完成状态明显更稳定。完整评测口径、数据位置和
 复现边界见 [BENCHMARKING](BENCHMARKING.md)。
 
+两题 GLM 5.2 L4 smoke 已通过正式 batch 运行：两题均正常完成并由 official grader resolved，46/46 次
+provider response usage 完整，总计 585,988 token，价格快照成本为 ¥3.556160。
+
 ## 当前开放问题
 
-下一阶段不再建设 benchmark 接入本身，而是把评测变成可比较的工程反馈：
+评测基础设施已经收口。下一阶段使用现有确定性证据驱动优化：
 
-1. 汇总每题和每批请求数、input/output/cache/reasoning token 与价格快照成本；
-2. 统计 context termination、首次编辑步骤、无效重复读取、验证语义和测试修改越界；
-3. 修复已确认的 Runtime/harness 缺陷并重跑固定题集；
-4. 只有数据证明确定性 Context reduction 不足时，再实施 condensation；
+1. 用固定 selection 对 Runtime/context 改动做可复现对照；
+2. 根据 context breakdown、post-edit steps、重复读取和 validation 事实定位收敛问题；
+3. 先优化 deterministic reduction、Observation bounding 和预算分配；
+4. 只有数据证明最低集合仍频繁超限时，再设计 semantic condensation；
 5. Working Set cache、LangGraph 和通用容器 Workspace backend 继续暂缓。
 
 ## 阅读顺序

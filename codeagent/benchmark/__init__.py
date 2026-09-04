@@ -25,6 +25,9 @@ from codeagent.benchmark.swebench_preflight import (
     SWEbenchTaskRepository,
     SWEbenchTaskRepositoryError,
 )
+from codeagent.benchmark.accounting import PriceSnapshot, aggregate_usage, calculate_cost
+from codeagent.benchmark.batch import BatchCompatibilityError, SWEbenchBatchRunner, SWEbenchSelection
+from codeagent.benchmark.trajectory import analyze_trajectory, load_events, save_trajectory
 
 __all__ = [
     "PreparedSWEbenchSource",
@@ -44,4 +47,7 @@ __all__ = [
     "SWEbenchTaskRecord",
     "SWEbenchTaskRepository",
     "SWEbenchTaskRepositoryError",
+    "PriceSnapshot", "aggregate_usage", "calculate_cost",
+    "BatchCompatibilityError", "SWEbenchBatchRunner", "SWEbenchSelection",
+    "analyze_trajectory", "load_events", "save_trajectory",
 ]

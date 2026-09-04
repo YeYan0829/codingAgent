@@ -1,0 +1,14 @@
+{
+  "snapshot_id": "glm-5.2-standard-api-cny-2026-09-04",
+  "provider": "glm",
+  "model": "glm-5.2",
+  "effective_date": "2026-09-04",
+  "currency": "CNY",
+  "unit_tokens": 1000000,
+  "rates": {
+    "input": "8",
+    "output": "28",
+    "cached_input": "2"
+  },
+  "source": "https://bigmodel.cn/pricing（GLM-5.2 标准 API：输入 8 元/百万 tokens、输出 28 元/百万 tokens、缓存命中 2 元/百万 tokens；访问于 2026-09-04）"
+}
