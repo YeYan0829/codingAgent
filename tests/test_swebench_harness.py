@@ -90,3 +90,26 @@ def test_cli_grader_uses_fixed_argv_and_explicit_report(tmp_path):
     assert result.status == "completed" and result.resolved is True
     assert calls[0][0][-6:] == ["--predictions_path", str(prediction), "--instance_ids", "owner__repo-1", "--run_id", "run-1"]
     assert calls[0][1]["shell"] is False
+
+
+def test_fixed_benchmark_budget_still_terminates_and_exports_patch(tmp_path):
+    from codeagent.config import RuntimeConfig
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init")
+    git(repo, "config", "user.email", "x@y")
+    git(repo, "config", "user.name", "x")
+    path = repo / "bug.py"
+    path.write_text("BROKEN = True\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "base")
+    result = SWEbenchHarness(SourcePreparer(repo), Grader()).run(
+        SWEbenchTask("owner__repo-1", "example/image:latest", git(repo, "rev-parse", "HEAD"), "fix"),
+        EditModel(hashlib.sha256(path.read_bytes()).hexdigest()), ModelConfig(), tmp_path / "runs",
+        runtime_config=RuntimeConfig(max_steps_per_turn=1, max_model_steps_per_user_turn=1),
+    )
+    assert result.agent_status == "model_step_budget_exhausted"
+    assert result.patch_present and result.oracle_passed
+    events = [json.loads(line) for file in (tmp_path / "runs").rglob("events.jsonl") for line in file.read_text().splitlines()]
+    assert any(e["type"] == "turn_terminated" and e["payload"]["reason"] == "model_step_budget_exhausted" for e in events)
+    assert not any(e["type"] == "turn_budget_increased" for e in events)

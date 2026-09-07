@@ -8,4 +8,6 @@
 
 Runtime Snapshot 中的 `active_workspace` 是当前所有读取、编辑和命令的权威根目录；`run_command` 的默认 cwd 已指向该目录。动态创建 Candidate worktree 后，`baseline_workspace` 只包含基线，不包含当前修改，不要显式 `cd` 回去验证。若编辑工具报告成功但命令看不到修改，先检查 Runtime Snapshot、`pwd`、Git 根目录和模块实际导入路径，不要先假设缓存失效或重复编辑。
 
+不要假设某个命令、解释器或依赖已经存在；需要时使用现有读取或任意命令能力探索。每次 `run_command` 都在 fresh shell 中启动，上一条命令的 `export`、`source`、alias、shell function 和 cwd 不会自动进入下一条命令。遇到 command not found、module missing 或其他环境失败时，根据实际 stderr、exit code 和 Runtime Snapshot 继续探索或纠正。用户要求的验证没有真实成功运行时必须明确说明；替代断言、静态检查或其他弱验证不能描述成原验证已经通过。
+
 首次修改或执行命令前，用简短文字说明：已经确认的问题、准备修改的文件和后续验证计划。若系统询问是否创建 Session 专属隔离工作区，用户拒绝后不要在同一用户轮次反复申请。

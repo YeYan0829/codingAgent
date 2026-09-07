@@ -5,7 +5,7 @@ import hashlib
 import subprocess
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from codeagent.context.models import (
     BudgetComponent, BudgetObservation, BudgetReport, ContextBudgetExceeded,
@@ -25,9 +25,11 @@ class ConservativeTokenEstimator:
 
 
 class ContextManager:
-    def __init__(self, session_store: SessionStore, tool_registry: ToolRegistry | None = None) -> None:
+    def __init__(self, session_store: SessionStore, tool_registry: ToolRegistry | None = None,
+                 environment_provider: Callable[[], dict[str, Any]] | None = None) -> None:
         self.session_store = session_store
         self.tool_registry = tool_registry
+        self.environment_provider = environment_provider
         self.estimator = ConservativeTokenEstimator()
         self.last_budget_report: BudgetReport | None = None
 
@@ -204,6 +206,8 @@ class ContextManager:
             "candidate_revision", "subject_tree", "before_tree", "after_tree", "changed_paths", "workspace_changed",
             "operation_errors", "status", "exit_code", "stdout_tail", "stderr_tail", "diagnostic",
             "workspace_revision", "active_workspace", "baseline_workspace", "initial_cwd", "workspace_warning",
+            "environment_contract_revision", "backend", "backend_availability", "launch_cwd",
+            "environment_names", "effective_network_policy", "effective_filesystem_policy",
         ) if key in metadata}
         residue = {"tool": exchange.tool_name, "call_id": exchange.call_id, "ok": result.get("ok"),
                    "error_code": result.get("error_code"), "error": result.get("error"),
@@ -241,11 +245,17 @@ class ContextManager:
             except GitSnapshotError:
                 pass
         validation = "current" if current_validation_evidence(self.session_store, context) else "none_or_stale"
+        environment = self.environment_provider() if self.environment_provider is not None else {
+            "contract_revision": "command-environment-v1", "backend": "unavailable",
+            "backend_availability": "unavailable", "default_cwd": ".",
+            "default_cwd_resolves_to": str(context.active_root), "home_kind": "private_runtime_home",
+            "tilde_is_host_home": False, "network_mode": "off", "commands_are_fresh_processes": True,
+            "shell_state_persists": False,
+        }
         return RuntimeSnapshot(str(meta.get("workspace_state", "unknown")), int(meta.get("workspace_revision", 0)),
             int(meta.get("candidate_revision", 0)), context.workspace_kind, str(context.active_root),
             str(context.source_root), context.base_commit, tree, tuple(changed), validation,
-            {"default_cwd": ".", "default_cwd_resolves_to": str(context.active_root),
-             "home_kind": "private_runtime_home", "tilde_is_host_home": False, "network_mode": "off"})
+            environment)
 
     @staticmethod
     def _render_snapshot(snapshot: RuntimeSnapshot) -> str:

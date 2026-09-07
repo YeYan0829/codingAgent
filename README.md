@@ -1,203 +1,239 @@
-# CodeAgent Runtime
+# CodeAgent
 
-CodeAgent Runtime 是一个本地运行、以不覆盖用户代码为首要约束的最小 Coding Agent Runtime。当前用户流程是：
+**在 VS Code 中运行的本地 Coding Agent。修改先隔离，过程可查看，交付由你决定。**
 
-```text
-创建 Session → 读取 source → 首次受保护操作时审批并创建 Agent worktree
-→ 搜索 / 编辑 / 受控验证 → 查看当前修改 → 采纳或丢弃
-→ 保留同一 worktree，在同一 Session 中继续
+CodeAgent 可以搜索代码、编辑文件、运行项目命令并执行测试。
+
+修改不会直接写入你正在使用的目录。CodeAgent 会先创建独立的 Git worktree。
+
+执行过程显示在 VS Code 右侧栏。任务完成后，你可以查看 Diff 和测试结果。
+然后再选择 Accept 或 Discard。
+
+Accept 会把修改应用到源仓库。
+
+Discard 会清空这次尚未交付的修改。
+
+VS Code Extension 提供界面。
+
+Python Runtime 是负责调用模型和工具的本地进程。
+
+当前 `0.5.0` 仍处于发布候选开发阶段，支持 Linux 和 WSL2。主截图、演示视频和正式 50 题评测仍待完成。
+进度见[发布验收](docs/RELEASE_VALIDATION.md)。
+
+> **主截图待补：** 左侧 Explorer、中央原生 Diff、右侧 CodeAgent 执行时间线。
+
+## 为什么做 CodeAgent
+
+让模型写出一段代码，只是 Coding Agent 的一部分。真实任务还要运行项目命令、处理长时间执行，
+并保护用户正在工作的仓库。
+
+CodeAgent 关注任务如何安全运行。项目命令只有在明确权限内才能执行。
+
+CodeAgent 也会控制模型看到的历史，避免工具输出无限增长。
+
+测试结果会跟随对应的代码修改，避免旧结果被误用。
+
+用户可以看到任务为何等待或停止。最终修改只有在用户审查后，才会应用到源仓库。
+
+## 一次任务如何完成
+
+```mermaid
+flowchart LR
+    Task[提交任务] --> Explore[搜索和读取代码]
+    Explore --> Worktree[批准创建 Git worktree]
+    Worktree --> Iterate[编辑、运行命令、执行测试]
+    Iterate --> Review[查看 Diff 和测试结果]
+    Review --> Accept[Accept：应用到源仓库]
+    Review --> Discard[Discard：丢弃修改]
 ```
 
-当前支持 Linux/WSL2 和本地 Git 仓库。Git worktree 隔离当前修改，Bubblewrap 对每条命令强制主机资源边界。
+源仓库需要有 Git commit，并且工作目录必须干净。
 
-第一次接管项目，请先读 [System Vision](docs/系统目标.md) 和[当前设计上下文](docs/PROJECT_GUIDE.md)。
+第一次需要修改时，CodeAgent 会请求创建隔离 worktree。
+第一次运行项目命令时，也会触发这个请求。
 
-## 当前能力
+命令默认不能联网，也只能写入为任务准备的目录。确实需要额外权限时，界面会显示单独的审批请求。
 
-- 使用 Fake、DeepSeek 或 GLM provider 探索本地代码；
-- 使用遵守 repository ignore 的 ripgrep literal/regex 搜索和文件查找，可显式包含非敏感 hidden 文件；
-- 严格读取 UTF-8 文本，并通过固定只读 Git 工具查看 status、diff stat 和实际 diff；
-- 首次需要编辑或受控验证时，经批准按需创建 Session 专属 detached worktree；
-- 使用唯一的 `apply_workspace_edit` 原子创建、修改、删除和移动多个 UTF-8 文本文件；
-- 通过单一 `run_command` 在 Bubblewrap 中执行 pipeline、redirect、命令链和项目自定义工具；
-- 额外文件写入与 WSL host network 由 Agent 显式申请，Policy 决定允许、询问或拒绝；
-- 验证结果绑定 exact command、Candidate revision、Git tree 和 Sandbox Policy，后续编辑或命令会使旧证据失效；
-- 查看、采纳或丢弃当前 pending changes；
-- accept 时使用 accepted baseline、Agent worktree 和当前 source 做 Git 三方合并；
-- 非冲突 source 并发修改可以合并，真实冲突保留双方现场并拒绝写 source；
-- accept 后 worktree HEAD 前移为内部 checkpoint，用户 source branch 不会被自动 commit；
-- Atomic Edit 与沙盒命令产生的变化都是合法当前修改；只有命令结束后无法建立可信 workspace 边界才进入 `workspace_tainted`；
-- resume 时恢复 source-only、active 或 tainted workspace，`recovery_required` 始终 fail closed。
-- 使用官方 prepared `/testbed`、per-command Docker projection 和 official grader 运行 SWE-bench；
-- 将 provider 返回的 input/output/cache/reasoning token 记录为可审计 Session Event。
+每个请求还有模型调用上限。达到上限后，CodeAgent 会等待用户决定是否继续。
 
-## 快速使用
+项目还使用 SWE-bench 检查真实修复任务。SWE-bench 是一个开源代码修复基准。
 
-### 1. WSL2 系统依赖与项目安装
+## Engineering Highlights
 
-Ubuntu/WSL2：
+### 1. 在受控环境中运行项目命令
+
+真实编码任务常常需要组合 shell 命令。如果直接给 Agent 宿主机 shell，一条错误命令就可能修改用户文件，
+或把项目数据发送到网络。
+
+CodeAgent 先用 Git worktree 隔离代码修改。每条命令再通过 Bubblewrap sandbox 运行。
+命令默认断网，并且只能写入指定范围。
+额外的网络或文件写入需要用户批准。
+
+因此，Agent 可以运行真实的构建和测试命令。它不会默认获得整个宿主机的写权限。
+如果 sandbox 无法启动，命令会被拒绝。
+
+宿主文件仍可能被只读访问。当前也没有 CPU 或内存配额。完整边界见[安全模型](docs/SECURITY.md)。
+
+### 2. 控制长任务的上下文大小
+
+一次编码任务可能产生大量搜索结果、文件内容和测试输出。如果全部历史一直加入模型请求，
+上下文会越来越大，也更容易包含过期信息。
+
+CodeAgent 会在每次调用模型前重新整理上下文。它保留当前请求和近期工具结果，
+并重新读取当前修改与测试状态。较早的工具正文会逐步缩减。
+
+因此，长任务不会只是不断追加完整聊天记录。模型每一步都能看到当前工作区的关键事实。
+
+当前没有语义压缩。输入仍可能超过模型上限；发生这种情况时，任务会停止并保留现场。
+详细规则见[当前架构](docs/ARCHITECTURE.md)。
+
+### 3. 让测试结果对应当前代码
+
+Agent 跑完测试后还可能继续修改代码。此时刚才的“测试通过”已经不能证明当前代码仍然正确。
+
+CodeAgent 会把测试结果和当时那份修改绑定。代码继续变化后，界面会把旧结果标记为过期，
+并要求重新测试。
+
+因此，用户在 Accept 前可以看到当前 Diff。旁边的测试状态也对应这份修改。
+系统不会拿旧版本的成功记录代表新版本。
+
+CodeAgent 只能证明指定命令成功退出，不能判断测试是否充分。用户合入并发修改后，也应按需重新测试。
+详见[产品使用流程](docs/PRODUCT.md)。
+
+### 4. 让执行过程可见、可停止
+
+长任务如果只显示“正在运行”，用户就不知道 Agent 正在做什么。
+它可能在读文件、跑命令，或等待权限。
+任务失控时，用户也需要一个明确的停止入口。
+
+CodeAgent 在 VS Code 中展示消息和工具调用。命令、审批和测试也有各自的状态。
+每个请求还有明确的模型步骤上限；到达上限后，需要用户决定是否增加预算。
+
+因此，用户能看到任务为什么停住。用户可以拒绝权限、停止任务，或明确允许它继续运行。
+
+Stop 会在当前模型调用或工具操作结束后生效。它不会立即中断已经运行的命令。
+状态说明见[产品使用流程](docs/PRODUCT.md)。
+
+### 5. 记录可复查的 SWE-bench 评测
+
+如果每次评测使用不同题目或环境，两次结果就很难直接比较。
+只报告一个通过率，也无法解释失败来自模型还是运行环境。
+
+CodeAgent 每次固定 SWE-bench 题集和官方 Docker 镜像。
+运行时还会记录模型版本、代码版本、token 用量和成本。最后由官方评分程序（grader）判断结果。
+
+因此，评测结果可以追溯到明确的运行条件。模型完成、测试通过和 grader 通过会分别记录。
+
+当前还没有完整的重试账本和分阶段时延报告。正式固定 50 题运行保持 **pending**。
+详见[评测方法](docs/BENCHMARKING.md)和[评测结果](docs/EVALUATION_RESULTS.md)。
+
+## Quick Start：源码体验
+
+### 1. 安装 Runtime
+
+Ubuntu / WSL2：
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y bubblewrap ripgrep python3-venv
+sudo apt-get install -y bubblewrap ripgrep python3-venv git
+
+git clone https://github.com/YeYan0829/codingAgent.git
+cd codingAgent
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/codeagent --help
 ```
 
-确认 `bwrap` 的 namespace smoke test 能通过；版本字符串存在并不等于当前 WSL/kernel 允许 namespace：
+Python 需要 3.11 或更高版本。完整界面需要 VS Code 1.106 或更高版本。
+Docker 只用于 SWE-bench。
+
+### 2. 验证 Runtime
+
+Fake provider 是用于安装检查的固定响应程序。下面的命令不需要 API Key 或网络。
 
 ```bash
-bwrap --ro-bind / / --unshare-user --unshare-pid --unshare-net \
-  --new-session --die-with-parent --proc /proc --dev /dev -- /bin/true
+.venv/bin/codeagent ask . "只读取 README，并用三句话概括项目"
 ```
 
-安装 CodeAgent 开发版本：
+Fake provider 不能修改代码，也不代表真实模型能力。
+
+### 3. 体验 VS Code 流程
+
+先创建离线演示仓库：
 
 ```bash
-python -m pip install -e ".[dev]"
+.venv/bin/codeagent-product-demo --root /tmp/codeagent-product-demo
+cd /tmp/codeagent-product-demo
+python3 verify.py
 ```
 
-搜索工具要求 `rg`；命令工具要求 `bwrap`。缺失或 probe 失败时命令 fail closed，不会裸执行。
+`verify.py` 应以 `ZeroDivisionError` 失败。这个步骤不需要网络。
 
-### 2. 配置 DeepSeek API
+然后用 VS Code 打开 CodeAgent 源码仓库。按 `F5`，选择 **Run CodeAgent Extension**。
+随后会打开新的 VS Code 窗口。这个窗口叫 Extension Development Host。
+在其中打开 `/tmp/codeagent-product-demo`。
 
-Runtime 当前读取环境变量 `DEEPSEEK_API_KEY`，不会读取仓库 `.env`，也不要把 Key 写入 Git、任务 prompt 或 Agent command。当前默认模型是 `deepseek-v4-flash`，API endpoint 是 `https://api.deepseek.com`；模型名应以 [DeepSeek 官方 Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/) 为准。
-
-只在当前 WSL shell 临时配置：
-
-```bash
-read -rsp "DeepSeek API Key: " DEEPSEEK_API_KEY
-echo
-export DEEPSEEK_API_KEY
-test -n "$DEEPSEEK_API_KEY" && echo "DEEPSEEK_API_KEY is set"
-```
-
-关闭该 shell 后变量消失。若使用 shell profile、密码管理器或 `direnv` 持久配置，请确保密钥文件不在 repository 内、权限至少为 `0600`。不要在 issue、日志或截图中打印变量值。
-
-模型 API 请求由 Runtime 宿主进程发起，不属于 Candidate 内的 `run_command`，因此不需要 Agent 申请 sandbox NETWORK。Candidate 命令仍默认断网。当前 DeepSeek adapter 明确关闭 thinking mode，以避免尚未持久化 `reasoning_content` 的多轮 tool-call 协议；本轮人工测试评估的是现有 non-thinking adapter。
-
-可先做一次只读 API smoke test：
-
-```bash
-codeagent ask . "只读取 README，并用三句话概括项目，不要编辑或执行命令" \
-  --provider deepseek \
-  --model deepseek-v4-flash \
-  --session-root ~/.codeagent/smoke-sessions
-```
-
-这会产生真实 API 费用。先用小任务观察 token 消耗，并在 DeepSeek 控制台设置合理余额；价格可能变化，请查看上述官方页面。
-
-### 2.1 配置 GLM-5.2
-
-GLM provider 使用 `GLM_API_KEY`，默认模型为 `glm-5.2`，默认使用智谱标准 OpenAI-compatible endpoint `https://open.bigmodel.cn/api/paas/v4`。Runtime 初始采用 128k context 实验上限，而不是复用 DeepSeek 的 32k/22k 配置；该值仍显著低于模型官方容量，用于控制尚无 semantic condensation 时的单次请求成本：
-
-```bash
-read -rsp "GLM API Key: " GLM_API_KEY
-echo
-export GLM_API_KEY
-
-codeagent start . --provider glm --model glm-5.2
-```
-
-如果使用 GLM Coding Plan Key，需要改用套餐专属 endpoint：
-
-```bash
-export GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
-```
-
-标准 API Key 与 Coding Plan Key/额度不可混用。Runtime 不读取仓库 `.env`，不要把 Key 写入 Git。当前 adapter 关闭 thinking mode，因为 Runtime 尚未持久化 reasoning content；本轮对比重点是 non-thinking tool-use 的行动收敛性。接口参数以[智谱 OpenAI API 兼容文档](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)和 [Coding Plan 接入说明](https://docs.bigmodel.cn/cn/coding-plan/tool/others)为准。
-
-### 3. 创建交互 Session
-
-创建 Session：
-
-```bash
-codeagent start . --provider deepseek --model deepseek-v4-flash
-```
-
-不再需要 `--mode readonly/execution`。Agent 初始直接读取 source，首次调用编辑或受控命令时 Runtime 才请求权限并创建 worktree。
-
-查看和处理当前修改：
-
-```bash
-codeagent show-changes <session-id>
-codeagent accept-changes <session-id>
-codeagent discard-changes <session-id>
-```
-
-Session 与诊断数据：
-
-```bash
-codeagent list-sessions
-codeagent resume <session-id>
-codeagent cleanup <session-id>
-```
-
-如果创建 Session 时使用了 `--session-root`，后续命令也需要传入相同值，或统一设置 `CODEAGENT_SESSION_ROOT`。
-
-### 4. 真实仓库人工任务
-
-`examples/eval-repos` 是没有嵌套 `.git` 的上游快照，不能直接作为 execution workspace。已经准备了三个可重复任务、环境脚本和 workspace 外 oracle：
-
-```bash
-examples/eval-tasks/prepare.sh itsdangerous-strict-base64
-sed -n '1,200p' examples/eval-tasks/tasks/itsdangerous-strict-base64.md
-
-codeagent start ~/codeagent-evals/workspaces/itsdangerous-strict-base64 \
-  --provider deepseek \
-  --model deepseek-v4-flash \
-  --session-root ~/.codeagent/eval-sessions
-```
-
-完成后运行独立验收：
-
-```bash
-examples/eval-tasks/verify.sh itsdangerous-strict-base64 \
-  <session-id> ~/.codeagent/eval-sessions
-```
-
-任务列表、推荐顺序和人工记录项见 [真实 LLM 人工评估任务](examples/eval-tasks/README.md)。
-
-## Session、worktree 与当前修改
-
-- Session 固定绑定用户 source workspace，不建立额外 Task 实体；
-- Session 初始为 `source_only`，不创建 worktree；
-- worktree 创建后，读取、搜索、编辑和验证都切换到该 active workspace；
-- worktree HEAD 表示最近 accepted baseline；`git diff HEAD` 表示当前 pending changes；
-- accept 只同步 pending changes到 source，不结束 Session 或 worktree；
-- discard 只把 pending changes恢复到 baseline，不修改 source；
-- frozen patch 只在一次 accept 审查窗口临时存在。
-
-## 持久化
-
-正常 Session 主要保存：
+在右侧 CodeAgent 中配置模型和 API Key，再发送：
 
 ```text
-session.json       当前 Session/workspace 状态
-events.jsonl       对话、审批和关键结果摘要
-Git worktree       当前代码和 accepted baseline
+修复零数量时的错误，运行仓库中的验证脚本并总结修改。
 ```
 
-成功 Atomic Edit 不永久保存 request、plan、patch 和 rollback backup。成功且没有 workspace side effect 的命令会清理完整 stdout/stderr 和 runtime HOME/TMP。失败、timeout、workspace side effect、未完成事务或 `recovery_required` 才在 `diagnostics/` 保留必要材料。项目不再同时维护 transcript/events 或 worktree/current.patch 两份权威事实。
+任务完成后，查看测试状态和原生 Diff。然后选择 Accept 或 Discard。
+真实模型请求可能产生费用。
 
-## 安全与功能边界
+当前 VSIX 不包含 Python Runtime。独立安装方式见[安装与运行](docs/INSTALLATION.md)。
 
-- `run_command` 接受任意 shell string，但默认无网络、host root 只读，额外资源必须显式申请；
-- 原子编辑不支持非 UTF-8、二进制、symlink、敏感路径、mode 变更、copy、case-only rename 或目录删除；
-- Git 三方合并冲突不会由 Agent 自动解决；
-- Runtime 不判断 validation command 是否充分；`purpose=validation` 且成功只形成“存在当前验证证据”；
-- 当前没有 cgroup CPU/内存/进程数限制、domain/port 网络 ACL 或通用 secret 文件名扫描；
-- bind mask 只能遮罩 sandbox 构造时已经存在的确定敏感路径，不能保证未来才出现的同名路径。
+## 架构概览
 
-## 文档职责
+```mermaid
+flowchart LR
+    UI[VS Code] <-->|本地 JSON-RPC| Runtime[Python Runtime]
+    Runtime <--> Model[DeepSeek / GLM]
+    Runtime --> Tools[搜索、编辑、命令]
+    Tools --> Worktree[Git worktree]
+    Tools --> Sandbox[Bubblewrap]
+    Worktree --> Review[Diff 与测试结果]
+    Review -->|Accept| Source[源仓库]
+    Bench[SWE-bench] --> Runtime
+    Bench --> Docker[官方 Docker 环境]
+```
 
-- [System Vision](docs/系统目标.md)：长期目标、原则和非目标；
-- [当前设计上下文](docs/PROJECT_GUIDE.md)：当前状态、下一步和文档导航；
-- [近期实践计划](docs/NEXT_PHASE_PLAN.md)：实施顺序和验收层次；
-- [当前 Runtime 实现](docs/ARCHITECTURE.md)：已经实现的数据流和安全边界；
-- [Benchmark 说明](docs/BENCHMARKING.md)：SWE-bench 边界、结果语义、token 审计和当前基线；
-- [当前有效决策](docs/DECISIONS.md)：跨阶段产品级约束；
-- [测试说明](docs/TESTING.md) 与 [CLI Dogfood](docs/MANUAL_TEST.md)：自动化和正式 CLI 验收。
+更详细的数据流见[当前架构](docs/ARCHITECTURE.md)。
 
-历史路线和已归档调研位于 `docs/archive/`，不作为当前实现依据。
+## 示例与评测
 
-SWE-bench 固定题集的批量运行与中断恢复使用 `codeagent swebench-batch`；selection、run manifest、usage/cost
-以及 trajectory artifact 的参数和语义见 [Benchmark 说明](docs/BENCHMARKING.md)。
+[`examples/showcase/`](examples/showcase/) 提供最小离线示例。
+[`examples/eval-tasks/`](examples/eval-tasks/) 提供三个可重复的真实仓库任务。
+
+这些示例不是 SWE-bench 官方成绩。已有评测仅用于验证运行链路。
+正式固定 50 题尚未运行，也没有预测成绩。
+
+## 当前限制
+
+- 仅支持 Linux、WSL2 和本地 Git 仓库。
+- 源仓库必须有 commit，工作目录必须干净。
+- 本地命令默认断网；额外网络或写入需要审批。
+- Bubblewrap 不可用时，命令功能不可用。
+- 当前没有资源配额、域名白名单或通用 secret 扫描。
+- Runtime 不会判断测试是否充分，也不会自动解决 Git 冲突。
+
+更多限制见[安全模型](docs/SECURITY.md)。
+
+## 文档
+
+| 文档 | 适合解决的问题 |
+| --- | --- |
+| [安装与运行](docs/INSTALLATION.md) | 如何安装 Runtime 和 Extension |
+| [产品使用流程](docs/PRODUCT.md) | 任务执行时可以看到什么、做什么 |
+| [当前架构](docs/ARCHITECTURE.md) | Runtime 如何管理上下文、工具和修改 |
+| [安全模型](docs/SECURITY.md) | sandbox 能保护什么，不能保护什么 |
+| [Product RPC](docs/RPC.md) | Extension 如何与 Runtime 通信 |
+| [Benchmark 说明](docs/BENCHMARKING.md) | SWE-bench 如何运行和记录证据 |
+| [评测结果](docs/EVALUATION_RESULTS.md) | 哪些结果已经确认，哪些仍 pending |
+| [测试](docs/TESTING.md) | 每组自动化测试证明什么 |
+| [发布验收](docs/RELEASE_VALIDATION.md) | 当前距离发布还缺什么 |
+
+## License
+
+[MIT](LICENSE)

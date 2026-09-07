@@ -7,6 +7,10 @@ import pytest
 from codeagent.context.builder import ConservativeTokenEstimator, ContextManager
 from codeagent.context.models import ContextBudgetExceeded, ModelCapabilities
 from codeagent.context.projector import ContextNotReady, ProjectionError, project_events
+from codeagent.runtime.approval import AutoApprovalGate
+from codeagent.runtime.artifacts import CommandArtifactStore
+from codeagent.runtime.command_service import CommandService
+from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
 from codeagent.session.store import SessionStore
 from codeagent.workspace.workspace import WorkspaceContext
 
@@ -145,6 +149,33 @@ def test_runtime_snapshot_exposes_dynamic_active_workspace_contract(tmp_path):
     assert f'"baseline_workspace": "{root}"' in snapshot
     assert f'"default_cwd_resolves_to": "{active}"' in snapshot
     assert "不要 cd 回该目录验证修改" in snapshot
+
+
+def test_runtime_snapshot_uses_command_service_environment_source(tmp_path, monkeypatch):
+    class DiscoverableBackend:
+        def discover(self, _candidate_root):
+            return Path("/fixture/bwrap")
+
+    monkeypatch.setenv("PATH", "/project-tools:/usr/bin")
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    active = tmp_path / "candidate"
+    active.mkdir()
+    (active / "a.py").write_text("candidate\n", encoding="utf-8")
+    context = WorkspaceContext(root, active, "git_worktree", "base", 1)
+    store.begin_workspace_upgrade(1)
+    store.activate_workspace(context)
+    commands = CommandService(
+        context, AutoApprovalGate(True), SandboxedCommandExecutor(DiscoverableBackend()),
+        store, CommandArtifactStore(store),
+    )
+
+    snapshot = ContextManager(store, environment_provider=commands.environment_snapshot).build()[2]["content"]
+
+    assert '"contract_revision": "command-environment-v1"' in snapshot
+    assert '"path": ["/project-tools", "/usr/bin"]' in snapshot
+    assert '"backend_availability": "executable_available"' in snapshot
+    assert not (CommandArtifactStore(store).runtime_root / "next-command").exists()
 
 
 def test_source_only_snapshot_does_not_claim_worktree_transition(tmp_path):

@@ -16,6 +16,7 @@ from codeagent.model_gateway.base import (
 )
 from codeagent.runtime.approval import ApprovalGate
 from codeagent.runtime.policy import DefaultPolicy, PolicyDecision
+from codeagent.runtime.turn_budget import current_turn_budget
 from codeagent.session.store import SessionStore
 from codeagent.tools.base import ToolResult, ToolSpec
 from codeagent.tools.registry import ToolRegistry
@@ -57,6 +58,7 @@ class AgentRunner:
         command_artifact_store: CommandArtifactStore | None = None,
         dynamic_workspace: bool = False,
         progress_callback: Callable[[dict], None] | None = None,
+        cancellation_callback: Callable[[], bool] | None = None,
     ) -> None:
         self.session_store = session_store
         self.model = model
@@ -73,6 +75,7 @@ class AgentRunner:
         self.command_executor = command_executor
         self.command_artifact_store = command_artifact_store
         self.progress_callback = progress_callback
+        self.cancellation_callback = cancellation_callback or (lambda: False)
         self._workspace_upgrade_denied_this_turn = False
         if command_executor is not None:
             if self.workspace_context is None:
@@ -85,10 +88,26 @@ class AgentRunner:
             self.tools.register(build_atomic_edit_tool(self.atomic_edit_service))
         elif dynamic_workspace:
             self._register_upgrade_tools()
-        self.context_manager = ContextManager(session_store, self.tools)
+        self.context_manager = ContextManager(session_store, self.tools, self._environment_snapshot)
+
+    def _environment_snapshot(self) -> dict:
+        context = self.workspace_context or self.session_store.workspace_context()
+        if self.command_service is None:
+            return {
+                "contract_revision": "command-environment-v1", "backend": "pending_workspace_upgrade",
+                "backend_availability": "not_active", "default_cwd": ".",
+                "default_cwd_resolves_to": str(context.active_root),
+                "home_kind": "private_runtime_home", "tilde_is_host_home": False,
+                "network_mode": "off", "commands_are_fresh_processes": True,
+                "shell_state_persists": False,
+            }
+        return self.command_service.environment_snapshot()
 
     def run_turn(self, message: str) -> RunnerOutput:
-        self.session_store.append_event("user_message", {"message": message})
+        self.session_store.append_event("user_message", {
+            "message": message,
+            "max_model_steps_per_user_turn": self.config.max_model_steps_per_user_turn,
+        })
         return self._run_slice()
 
     def continue_turn(self) -> RunnerOutput:
@@ -98,18 +117,29 @@ class AgentRunner:
 
     def _run_slice(self) -> RunnerOutput:
         steps: list[dict] = []
-        self._workspace_upgrade_denied_this_turn = False
+        if self.cancellation_callback():
+            return self._terminate_stopped(steps)
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        self._workspace_upgrade_denied_this_turn = any(
+            event.turn_id == turn_id and event.type == "approval_decision" and event.payload.get("allowed") is False
+            and (event.payload.get("kind") == "workspace_upgrade" or event.payload.get("reason") == "创建隔离 Agent worktree")
+            for event in events
+        )
         repair_messages: list[dict] = []
         control_messages = self._continuation_messages()
         protocol_failures = 0
         previous_failure: tuple[str, str] | None = None
-        steps_before = self._steps_used_in_current_turn()
-        remaining = self.config.max_model_steps_per_user_turn - steps_before
+        budget = current_turn_budget(self.session_store.read_events(), self.config.max_model_steps_per_user_turn)
+        steps_before = budget.used
+        remaining = budget.limit - steps_before
         if remaining <= 0:
-            return self._terminate_budget(steps, steps_before)
+            return self._wait_for_budget(steps, steps_before)
 
         slice_limit = min(self.config.max_steps_per_turn, remaining)
         for _ in range(slice_limit):
+            if self.cancellation_callback():
+                return self._terminate_stopped(steps)
             try:
                 messages = self.context_manager.build(
                     model_capabilities=ModelCapabilities(
@@ -151,6 +181,8 @@ class AgentRunner:
                 )})
                 continue
             self._record_model_usage(response.usage, response.provider_request_id)
+            if self.cancellation_callback():
+                return self._terminate_stopped(steps)
             if not response.tool_calls:
                 final = response.text or ""
                 self.session_store.append_event("assistant_message", {"message": final})
@@ -164,31 +196,39 @@ class AgentRunner:
             if response.text:
                 self._notify({"type": "assistant_progress", "message": response.text})
             for call in response.tool_calls:
+                if self.cancellation_callback():
+                    return self._terminate_stopped(steps)
                 step = self._handle_tool_call(call)
                 steps.append(step)
                 self._notify({"type": "tool_step", "step": step})
+                if self.cancellation_callback():
+                    return self._terminate_stopped(steps)
 
         used = self._steps_used_in_current_turn()
-        if used >= self.config.max_model_steps_per_user_turn:
-            return self._terminate_budget(steps, used)
+        if used >= budget.limit:
+            return self._wait_for_budget(steps, used)
         meta = self.session_store.read_meta()
         self.session_store.append_event("execution_slice_exhausted", {
             "slice_steps": slice_limit,
             "steps_used_in_turn": used,
-            "max_model_steps_per_user_turn": self.config.max_model_steps_per_user_turn,
+            "max_model_steps_per_user_turn": budget.limit,
             "candidate_revision": int(meta.get("candidate_revision", 0)),
             "workspace_state": meta.get("workspace_state"),
         })
-        text = f"Agent 已执行 {slice_limit} 个模型步骤但尚未完成；可继续同一 UserTurn（已用 {used}/{self.config.max_model_steps_per_user_turn}）。"
+        text = f"内部执行切片结束；继续同一 UserTurn（已用 {used}/{budget.limit}）。"
         return RunnerOutput(final_text=text, steps=steps, status="slice_exhausted", steps_used_in_turn=used)
 
-    def _terminate_budget(self, steps: list[dict], used: int) -> RunnerOutput:
-        text = f"Agent 已耗尽当前 UserTurn 的模型步骤预算（{used}/{self.config.max_model_steps_per_user_turn}），任务未确认完成。"
-        self.session_store.append_event("turn_terminated", {
-            "reason": "model_step_budget_exhausted", "message": text,
-            "steps_used_in_turn": used,
-            "max_model_steps_per_user_turn": self.config.max_model_steps_per_user_turn,
-        })
+    def _wait_for_budget(self, steps: list[dict], used: int) -> RunnerOutput:
+        budget = current_turn_budget(self.session_store.read_events(), self.config.max_model_steps_per_user_turn)
+        text = f"本轮已使用 {used}/{budget.limit} 个模型步骤。可提高本轮预算后继续；当前修改与原始请求已保留。"
+        events = self.session_store.read_events()
+        # 达到预算是等待用户决策，不是 UserTurn 终止；重复 Continue 不产生重复等待事件。
+        if not any(event.type == "turn_budget_exhausted" and event.turn_id == budget.turn_id
+                   and event.payload.get("max_model_steps_per_user_turn") == budget.limit for event in events):
+            self.session_store.append_event("turn_budget_exhausted", {
+                "message": text, "steps_used_in_turn": used,
+                "max_model_steps_per_user_turn": budget.limit,
+            })
         return RunnerOutput(final_text=text, steps=steps, status="model_step_budget_exhausted", steps_used_in_turn=used)
 
     def _terminate_context_budget(self, steps: list[dict], exc: ContextBudgetExceeded) -> RunnerOutput:
@@ -214,6 +254,27 @@ class AgentRunner:
         })
         return RunnerOutput(final_text=text, steps=steps, status="context_budget_exceeded", steps_used_in_turn=used)
 
+    def _terminate_stopped(self, steps: list[dict]) -> RunnerOutput:
+        text = "用户已请求停止；Agent 在当前安全边界结束执行。"
+        # 同一次模型响应可声明多个调用；未执行的调用也需闭合协议，才能安全开始后续对话。
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        terminal = {event.payload.get("call_id") for event in events if event.turn_id == turn_id
+                    and event.type in {"tool_result", "tool_denied"}}
+        for event in events:
+            if event.turn_id == turn_id and event.type == "assistant_tool_calls":
+                for call in event.payload.get("tool_calls", []):
+                    if call["call_id"] not in terminal:
+                        self.session_store.append_event("tool_denied", {
+                            "call_id": call["call_id"], "name": call["name"], "reason": "user_stop",
+                        })
+        self.session_store.append_event("turn_terminated", {
+            "reason": "user_stop", "message": text, "boundary": "between_model_or_tool_steps",
+        })
+        return RunnerOutput(
+            final_text=text, steps=steps, status="stopped", steps_used_in_turn=self._steps_used_in_current_turn(),
+        )
+
     def _steps_used_in_current_turn(self) -> int:
         events = self.session_store.read_events()
         turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
@@ -236,11 +297,13 @@ class AgentRunner:
         if latest is None:
             return []
         payload = latest.payload
+        budget = current_turn_budget(events, self.config.max_model_steps_per_user_turn)
         return [{"role": "system", "content": (
+            f"当前本轮总上限为 {budget.limit} 个模型步骤，已使用 {budget.used}。"
             "这是同一 UserTurn 的后续执行切片；原始用户请求和约束仍然有效，不要要求用户重复，也不要从头探索。"
             f"上一切片结束时已使用 {payload.get('steps_used_in_turn')} 个模型步骤，"
             f"candidate_revision={payload.get('candidate_revision')}，workspace_state={payload.get('workspace_state')}。"
-            "请根据现有工具记录、Runtime Snapshot 和 Active Code 继续；已有足够证据时优先编辑和运行用户要求的验证。"
+            "请根据现有工具记录和 Runtime Snapshot 继续；已有足够证据时优先编辑和运行用户要求的验证。"
         )}]
 
     def _notify(self, event: dict) -> None:
@@ -273,9 +336,12 @@ class AgentRunner:
             return self._step(call, "deny", result)
 
         if policy_result.decision == PolicyDecision.ASK:
-            self.session_store.append_event("approval_requested", {"call_id": call.call_id, "name": call.name, "reason": policy_result.reason})
+            managed = bool(getattr(self.approval_gate, "manages_events", False))
+            if not managed:
+                self.session_store.append_event("approval_requested", {"call_id": call.call_id, "name": call.name, "reason": policy_result.reason})
             allowed = self.approval_gate.request(tool, call)
-            self.session_store.append_event("approval_decision", {"call_id": call.call_id, "name": call.name, "allowed": allowed})
+            if not managed:
+                self.session_store.append_event("approval_decision", {"call_id": call.call_id, "name": call.name, "allowed": allowed})
             if not allowed:
                 result = ToolResult(ok=False, error="user denied approval", error_code="approval_denied")
                 self.session_store.append_event("tool_denied", {"call_id": call.call_id, "name": call.name,
@@ -316,9 +382,12 @@ class AgentRunner:
                 error_code="approval_denied",
                 error="本轮创建隔离 Agent worktree 的请求已被拒绝；不再重复询问",
             )
-        self.session_store.append_event("approval_requested", {"name": tool_name, "reason": "创建隔离 Agent worktree"})
+        managed = bool(getattr(self.approval_gate, "manages_events", False))
+        if not managed:
+            self.session_store.append_event("approval_requested", {"name": tool_name, "reason": "创建隔离 Agent worktree"})
         allowed = self.approval_gate.request_workspace_upgrade(tool_name, arguments)
-        self.session_store.append_event("approval_decision", {"name": tool_name, "allowed": allowed, "reason": "创建隔离 Agent worktree"})
+        if not managed:
+            self.session_store.append_event("approval_decision", {"name": tool_name, "allowed": allowed, "reason": "创建隔离 Agent worktree"})
         if not allowed:
             self._workspace_upgrade_denied_this_turn = True
             return ToolResult(ok=False, error_code="approval_denied", error="用户拒绝创建隔离 Agent worktree；Session 保持只读")

@@ -138,6 +138,12 @@ class SWEbenchHarness:
             output = runner.run_turn(task.problem_statement)
             while output.status == "slice_exhausted":
                 output = runner.continue_turn()
+            if output.status == "model_step_budget_exhausted":
+                # 固定预算评测不等待人工扩额；保留现有终止与 grader 口径。
+                store.append_event("turn_terminated", {
+                    "reason": "model_step_budget_exhausted", "message": output.final_text,
+                    "steps_used_in_turn": output.steps_used_in_turn,
+                })
             patch = CandidateService(context, store).preview_patch()
             patch_hash = hashlib.sha256(patch).hexdigest() if patch else None
             prediction_path = root / "prediction.json"

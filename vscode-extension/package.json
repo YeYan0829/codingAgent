@@ -1,0 +1,58 @@
+{
+  "name": "codeagent",
+  "displayName": "CodeAgent",
+  "description": "可观测、可干预的本地 Coding Agent 产品层。",
+  "version": "0.5.0",
+  "publisher": "local-codeagent",
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onView:codeagent.chat",
+    "onCommand:codeagent.newTask",
+    "onCommand:codeagent.refreshSessions"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {"command": "codeagent.newTask", "title": "CodeAgent: New Task"},
+      {"command": "codeagent.refreshSessions", "title": "CodeAgent: Refresh Sessions"}
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {"id": "codeagent", "title": "CodeAgent", "icon": "media/codeagent.svg"}
+      ]
+    },
+    "views": {
+      "codeagent": [
+        {"id": "codeagent.chat", "name": "CodeAgent", "type": "webview"}
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "codeagent.chat",
+        "contents": "Open CodeAgent to inspect local sessions."
+      }
+    ],
+    "configuration": {
+      "title": "CodeAgent",
+      "properties": {
+        "codeagent.rpcCommand": {
+          "type": "string",
+          "default": "auto",
+          "description": "CodeAgent JSON-RPC 可执行文件；auto 会优先使用仓库 .venv。"
+        },
+        "codeagent.sessionRoot": {
+          "type": "string",
+          "default": "",
+          "description": "可选 Session 根目录；留空时使用 Runtime 默认值。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}

@@ -33,6 +33,19 @@ class CommandService:
         self.context, self.approval_gate, self.executor = context, approval_gate, executor
         self.store, self.artifacts = session_store, artifact_store
 
+    def environment_snapshot(self) -> dict[str, Any]:
+        """返回默认下一条命令的环境；单命令 Approval 后的 effective policy 以结果为准。"""
+        policy = SandboxPolicy(self.context, self.store, self.artifacts.runtime_root)
+        effective = policy.effective(self.store.permission_grants(), ())
+        provider = getattr(self.executor, "environment_snapshot", None)
+        if provider is None:
+            return {
+                "contract_revision": "command-environment-v1", "backend": type(self.executor).__name__,
+                "backend_availability": "unknown", "default_cwd": ".",
+                "default_cwd_resolves_to": str(self.context.active_root), "network_mode": effective.network_mode.value,
+            }
+        return provider(self.context, self.artifacts, effective)
+
     def run_command(self, arguments: dict[str, Any], *, preapproved_workspace: bool = False) -> ToolResult:
         state = self.store.workspace_state()
         if state == SessionWorkspaceState.RECOVERY_REQUIRED:
@@ -155,7 +168,8 @@ class CommandService:
                                     "workspace_warning": workspace_warning,
                                     "stdout_tail": _bounded_tail(result.stdout),
                                     "stderr_tail": _bounded_tail(result.stderr),
-                                    "diagnostic": result.spawn_error})
+                                    "diagnostic": result.spawn_error,
+                                    **_environment_provenance(result)})
 
     def _finalize_diagnostics(self, paths, request, result, workspace_state: str) -> None:
         keep = result.status != CommandExecutionStatus.COMPLETED or result.exit_code != 0 or workspace_state != SessionWorkspaceState.CHANGES_ACTIVE.value
@@ -182,7 +196,20 @@ def _completion_summary(request, result, workspace_state):
             "after_candidate_revision": result.after_candidate_revision, "before_subject_tree": result.before_subject_tree,
             "after_subject_tree": result.after_subject_tree, "changed_paths": list(result.command_induced_changes)[:100],
             "audit_complete": workspace_state == SessionWorkspaceState.CHANGES_ACTIVE.value,
-            "workspace_state": workspace_state, "effective_policy": result.effective_policy}
+            "workspace_state": workspace_state, "effective_policy": result.effective_policy,
+            **_environment_provenance(result)}
+
+
+def _environment_provenance(result) -> dict:
+    return {
+        "environment_contract_revision": result.environment_contract_revision,
+        "backend": result.backend,
+        "backend_availability": result.backend_availability,
+        "launch_cwd": result.launch_cwd,
+        "environment_names": list(result.environment_names),
+        "effective_network_policy": result.effective_network_policy,
+        "effective_filesystem_policy": result.effective_filesystem_policy,
+    }
 
 
 def _valid_evidence(result, workspace_state):

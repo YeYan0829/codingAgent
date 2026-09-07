@@ -1,0 +1,776 @@
+{
+  "schema_version": 1,
+  "selection_id": "verified-eval-50-v1",
+  "dataset": "SWE-bench_Verified",
+  "dataset_identity": {
+    "suite": "SWE-bench_Verified",
+    "task_repository": "https://github.com/SWE-bench/swe-bench-tasks.git",
+    "task_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d",
+    "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0"
+  },
+  "excluded_selection": {
+    "path": "benchmarks/swebench/verified-first-10.json",
+    "sha256": "d5add6940d551629f86a856a7d6e1f007682e1f184db3b268383e5023a0f9679"
+  },
+  "excluded_instance_ids": [
+    "pydata__xarray-3305",
+    "pytest-dev__pytest-7205",
+    "pytest-dev__pytest-7432",
+    "pytest-dev__pytest-7982",
+    "pytest-dev__pytest-8399",
+    "sphinx-doc__sphinx-10323",
+    "sphinx-doc__sphinx-8120",
+    "sphinx-doc__sphinx-9258",
+    "sympy__sympy-19495",
+    "sympy__sympy-20590"
+  ],
+  "seed": 42,
+  "created_at": "2026-09-04T18:05:15.131274+00:00",
+  "difficulty_distribution": {
+    "mother": {
+      "medium": 261,
+      "hard": 45,
+      "easy": 194
+    },
+    "after_exclusion": {
+      "medium": 257,
+      "hard": 45,
+      "easy": 188
+    },
+    "selected": {
+      "easy": 19,
+      "medium": 26,
+      "hard": 5
+    },
+    "targets": {
+      "easy": 19,
+      "medium": 26,
+      "hard": 5
+    }
+  },
+  "repo_distribution": {
+    "astropy/astropy": 3,
+    "django/django": 15,
+    "matplotlib/matplotlib": 2,
+    "psf/requests": 2,
+    "pydata/xarray": 3,
+    "pylint-dev/pylint": 2,
+    "pytest-dev/pytest": 1,
+    "scikit-learn/scikit-learn": 3,
+    "sphinx-doc/sphinx": 4,
+    "sympy/sympy": 15
+  },
+  "repo_concentration_rule": {
+    "max_fraction": "0.30",
+    "max_instances": 15
+  },
+  "preflight_policy": "prepared official image + official gold grader; resolved only",
+  "tasks": [
+    {
+      "instance_id": "psf__requests-1766",
+      "repo": "psf/requests",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:0618949b48408350dfae74d27e47ff9df8192fbf03248aa4f10650e0a36f52eb",
+      "prepared_source": {
+        "image_digest": "sha256:0618949b48408350dfae74d27e47ff9df8192fbf03248aa4f10650e0a36f52eb",
+        "dataset_base_commit": "847735553aeda6e6633f2b32e14ba14ba86887a4",
+        "prepared_head": "4092741a93b8d0f7258a8eb66aa5c278a3f01022",
+        "prepared_tree": "98a2015e490c333e2c7dfd25d19ab1507203478d"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-10914",
+      "repo": "django/django",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:f26f0db931c6c1e785ab8287e1ea4f5f948846267db159deaf90b3fe7adea4e9",
+      "prepared_source": {
+        "image_digest": "sha256:f26f0db931c6c1e785ab8287e1ea4f5f948846267db159deaf90b3fe7adea4e9",
+        "dataset_base_commit": "e7fd69d051eaa67cb17f172a39b57253e9cb831a",
+        "prepared_head": "74cb72320235dc8efe51a21e64e113942f8500fc",
+        "prepared_tree": "51fdefd96ba482a04fc5492e30cd123252d1e658"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-7454",
+      "repo": "sphinx-doc/sphinx",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:97b2228926083de964b14f90e8a9a900be814cfd44f7961fac3dcec3013d1d3f",
+      "prepared_source": {
+        "image_digest": "sha256:97b2228926083de964b14f90e8a9a900be814cfd44f7961fac3dcec3013d1d3f",
+        "dataset_base_commit": "aca3f825f2e4a8817190f3c885a242a285aa0dba",
+        "prepared_head": "90152a3ec6b7cb5cb9acd36f8dfea31fbcfa4594",
+        "prepared_tree": "6e21acb4df2080d16101e00a9dd82e890239168b"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-19637",
+      "repo": "sympy/sympy",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:956f0b8b048011ead5ff6d46007527a4cb4e1007e4f74fd1c935df6420730d8f",
+      "prepared_source": {
+        "image_digest": "sha256:956f0b8b048011ead5ff6d46007527a4cb4e1007e4f74fd1c935df6420730d8f",
+        "dataset_base_commit": "63f8f465d48559fecb4e4bf3c48b75bf15a3e0ef",
+        "prepared_head": "2ee608ba37e3cbab777d38aac39e6c9993c137fe",
+        "prepared_tree": "22a5a470c794f259bf32fb9399cd3ecadb69474f"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-14539",
+      "repo": "django/django",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:f82cf9346e4b4a37db29ad906ca3004b2c333faf00ae7c8b91bcd5621466c3ce",
+      "prepared_source": {
+        "image_digest": "sha256:f82cf9346e4b4a37db29ad906ca3004b2c333faf00ae7c8b91bcd5621466c3ce",
+        "dataset_base_commit": "6a5ef557f80a8eb6a758ebe99c8bb477ca47459e",
+        "prepared_head": "62441af7a4ce616cfc1fa5278806fd6fc97466f8",
+        "prepared_tree": "80710446270fff12b5eac5f9ac3a67043d07830f"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "psf__requests-1921",
+      "repo": "psf/requests",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:2ee0a4c706f04d2926a1622ec51b53d4ce6010b80d3ee10d414ea2a276c26cc9",
+      "prepared_source": {
+        "image_digest": "sha256:2ee0a4c706f04d2926a1622ec51b53d4ce6010b80d3ee10d414ea2a276c26cc9",
+        "dataset_base_commit": "3c88e520da24ae6f736929a750876e7654accc3d",
+        "prepared_head": "040ee8c95a4bd91dde598105d7b12bc83306488a",
+        "prepared_tree": "cf441cdcaa76806a078893bffa79922351a92b0a"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-24177",
+      "repo": "matplotlib/matplotlib",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:901249fde9753b8d559a93f6a279ef1371e06426300c1ea1aa64e1723c82099e",
+      "prepared_source": {
+        "image_digest": "sha256:901249fde9753b8d559a93f6a279ef1371e06426300c1ea1aa64e1723c82099e",
+        "dataset_base_commit": "493d608e39d32a67173c23a7bbc47d6bfedcef61",
+        "prepared_head": "1daf5bcb2eb4a7635f25b86f419c69b4b08aeb98",
+        "prepared_tree": "7c9755d1307c403767cf16ab723163aed2727f24"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-11555",
+      "repo": "django/django",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:e2c6d6293c8ad66c921754ee2bc13206b0f30166465ad71be92703c11ffaa3cb",
+      "prepared_source": {
+        "image_digest": "sha256:e2c6d6293c8ad66c921754ee2bc13206b0f30166465ad71be92703c11ffaa3cb",
+        "dataset_base_commit": "8dd5877f58f84f2b11126afbd0813e24545919ed",
+        "prepared_head": "7a0a18bb66cf87efd99701f3ab628bc31470a369",
+        "prepared_tree": "c219eb0b42d880354e1b8fd7a46bc9d345f4b07f"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-7462",
+      "repo": "sphinx-doc/sphinx",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:b7919ea5c17761c09c474222d5d1141b4bf4a8b5b68bbf78f548f664452fb021",
+      "prepared_source": {
+        "image_digest": "sha256:b7919ea5c17761c09c474222d5d1141b4bf4a8b5b68bbf78f548f664452fb021",
+        "dataset_base_commit": "b3e26a6c851133b82b50f4b68b53692076574d13",
+        "prepared_head": "7f41bdb317a831026a4aab0f4281b4c9b727f1f7",
+        "prepared_tree": "d7d6fba3f9392e6a847c1ebb5ad7876c5afe70f1"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-13512",
+      "repo": "django/django",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:730eab5b64c03ed8e8c94064da483db36fbd79d2465ffa98809acc6282bcfd82",
+      "prepared_source": {
+        "image_digest": "sha256:730eab5b64c03ed8e8c94064da483db36fbd79d2465ffa98809acc6282bcfd82",
+        "dataset_base_commit": "b79088306513d5ed76d31ac40ab3c15f858946ea",
+        "prepared_head": "4ddf423b4008fc344c8bbcc6846367f4ccdb7bab",
+        "prepared_tree": "e384bad39afe191ff65fba937b0f4ff7a3a8c8cb"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-16766",
+      "repo": "sympy/sympy",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:31178dfc1eabbcb5b6b8f569c4cbe60dd0eecf423bbf99223d125e08f3b5444a",
+      "prepared_source": {
+        "image_digest": "sha256:31178dfc1eabbcb5b6b8f569c4cbe60dd0eecf423bbf99223d125e08f3b5444a",
+        "dataset_base_commit": "b8fe457a02cc24b3470ff678d0099c350b7fef43",
+        "prepared_head": "23697eab98c4b7b791893e0c1ea6fb29779c059b",
+        "prepared_tree": "4c654d82f70f123276b6da54d4785f38b807bd31"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-13496",
+      "repo": "scikit-learn/scikit-learn",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:adee9f4911a853e64f9ae4ebd7b1bf32615cbf52c3210873e9a752fb5fb975e6",
+      "prepared_source": {
+        "image_digest": "sha256:adee9f4911a853e64f9ae4ebd7b1bf32615cbf52c3210873e9a752fb5fb975e6",
+        "dataset_base_commit": "3aefc834dce72e850bff48689bea3c7dff5f3fad",
+        "prepared_head": "8aeedb68b06d26bcbd1930ca68359451955ae41b",
+        "prepared_tree": "7584bec3e31e094dbce94709baaa0b218fd30b36"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "pydata__xarray-4075",
+      "repo": "pydata/xarray",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:3d56429d0a07d2b74c0342c12e19f4d7b1510023f87edb6a11cadbfd993de56d",
+      "prepared_source": {
+        "image_digest": "sha256:3d56429d0a07d2b74c0342c12e19f4d7b1510023f87edb6a11cadbfd993de56d",
+        "dataset_base_commit": "19b088636eb7d3f65ab7a1046ac672e0689371d8",
+        "prepared_head": "20b10575ecc2cb1c31c02ce59da7c0fa87618e3d",
+        "prepared_tree": "3bf98cbdbbae631df845ad6b3d3df31beb0cb40f"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-16886",
+      "repo": "sympy/sympy",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:8e68941a90d2b34aaedf409876a2353e3ffc7cb8b70c90bb543bea626c5da085",
+      "prepared_source": {
+        "image_digest": "sha256:8e68941a90d2b34aaedf409876a2353e3ffc7cb8b70c90bb543bea626c5da085",
+        "dataset_base_commit": "c50643a49811e9fe2f4851adff4313ad46f7325e",
+        "prepared_head": "9ba7150ce0b8c4c3b23d6d83e4601210f4289e79",
+        "prepared_tree": "61d840fb805fe61a7c24b6e13f076c1bcb62aed9"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-14787",
+      "repo": "django/django",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:036744f84b6f7323ef6c4cd39aac71778ef8d0ac44ce961cbe19277e529e6626",
+      "prepared_source": {
+        "image_digest": "sha256:036744f84b6f7323ef6c4cd39aac71778ef8d0ac44ce961cbe19277e529e6626",
+        "dataset_base_commit": "004b4620f6f4ad87261e149898940f2dcd5757ef",
+        "prepared_head": "1dca5dd962fbf88ab9fac1251218134ab4b1d11b",
+        "prepared_tree": "3771f8d1a2fbb1fff5fd4bebf644e3850fd89538"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-13297",
+      "repo": "django/django",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:1dca304a4ccd9f39df8794fb807c04a4076b5f35aff7d192dc5e0a14f8bf6f43",
+      "prepared_source": {
+        "image_digest": "sha256:1dca304a4ccd9f39df8794fb807c04a4076b5f35aff7d192dc5e0a14f8bf6f43",
+        "dataset_base_commit": "8954f255bbf5f4ee997fd6de62cb50fc9b5dd697",
+        "prepared_head": "8b27eb2da1e6b47a16de04216849d76f3121dd77",
+        "prepared_tree": "289deb388c46eb5d01aa7141bae90db6867975f1"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-14983",
+      "repo": "scikit-learn/scikit-learn",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:96e1896b74d100457d8d82f3683ea4c6f807235755f89cc61862f0da7f5f5836",
+      "prepared_source": {
+        "image_digest": "sha256:96e1896b74d100457d8d82f3683ea4c6f807235755f89cc61862f0da7f5f5836",
+        "dataset_base_commit": "06632c0d185128a53c57ccc73b25b6408e90bb89",
+        "prepared_head": "e9151419dc9f5dff175c4ab36a5415d86f4e2dfd",
+        "prepared_tree": "9ddc97846945deb99090e7a94a30396c450b8bf2"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-21847",
+      "repo": "sympy/sympy",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:9a45ffe20cac4243930e8c5b2b065adbc08f476c880d7465ca0fbfb9f98c6456",
+      "prepared_source": {
+        "image_digest": "sha256:9a45ffe20cac4243930e8c5b2b065adbc08f476c880d7465ca0fbfb9f98c6456",
+        "dataset_base_commit": "d9b18c518d64d0ebe8e35a98c2fb519938b9b151",
+        "prepared_head": "4058eaa18623751107b510a9b7616f837797b4e6",
+        "prepared_tree": "70686dba3ccda632fd4b2877e549cc709ebe6593"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-18189",
+      "repo": "sympy/sympy",
+      "difficulty": "easy",
+      "official_difficulty": "<15 min fix",
+      "image_digest": "sha256:7f3118533e22d47a19b9784ab86c7b0251cd6fec0acc71f7fe8805809f052724",
+      "prepared_source": {
+        "image_digest": "sha256:7f3118533e22d47a19b9784ab86c7b0251cd6fec0acc71f7fe8805809f052724",
+        "dataset_base_commit": "1923822ddf8265199dbd9ef9ce09641d3fd042b9",
+        "prepared_head": "32537e483e2c24352d01019e86ed5199a9350ae4",
+        "prepared_tree": "cdeb81de0eaea114053d5f2427930110d5c34ad6"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "astropy__astropy-8707",
+      "repo": "astropy/astropy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:9415ee47831f190ea4ee7971dec718e386d064e7c495feca6ba0fef7b0ede715",
+      "prepared_source": {
+        "image_digest": "sha256:9415ee47831f190ea4ee7971dec718e386d064e7c495feca6ba0fef7b0ede715",
+        "dataset_base_commit": "a85a0747c54bac75e9c3b2fe436b105ea029d6cf",
+        "prepared_head": "7b678175afc80be7e98db40c6e44360fc5b437fe",
+        "prepared_tree": "a1021067d1cbeaf94a58f631a49807d7bdd479dd"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-14140",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:240a043512ae9cd079c4de5ff3a488d992265d3f4bc7ab51c81861dbb30c07a7",
+      "prepared_source": {
+        "image_digest": "sha256:240a043512ae9cd079c4de5ff3a488d992265d3f4bc7ab51c81861dbb30c07a7",
+        "dataset_base_commit": "45814af6197cfd8f4dc72ee43b90ecde305a1d5a",
+        "prepared_head": "a49186dd69902e79976e9abd61c2dadd42cb7afe",
+        "prepared_tree": "6ed575690cff1e8b9ba9121a39e79e8b3cbe2b11"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "astropy__astropy-13236",
+      "repo": "astropy/astropy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:dede759cb182b28dc949fe9ee05d6fd09d032df5a802af190121a8f9cec36b9e",
+      "prepared_source": {
+        "image_digest": "sha256:dede759cb182b28dc949fe9ee05d6fd09d032df5a802af190121a8f9cec36b9e",
+        "dataset_base_commit": "6ed769d58d89380ebaa1ef52b300691eefda8928",
+        "prepared_head": "b8aeddf3987b78fd063cddbfb2633c6fe87c882d",
+        "prepared_tree": "d145aa74fd5caa02f45e66a959de846c81584d4c"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-15561",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:a45cf78a1a598052abff8ee976da1877796107e9d6f8f8ed6201aef360ec381b",
+      "prepared_source": {
+        "image_digest": "sha256:a45cf78a1a598052abff8ee976da1877796107e9d6f8f8ed6201aef360ec381b",
+        "dataset_base_commit": "6991880109e35c879b71b7d9d9c154baeec12b89",
+        "prepared_head": "f7d3e402e705efbabd22da07f001d4d85d46a93e",
+        "prepared_tree": "d72cd6cb99624d105652ed16343c7eaa426d3c5d"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-12050",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:34773901589784072af940b29697018dc17b32e37b4ff135a153c99ac2c38dec",
+      "prepared_source": {
+        "image_digest": "sha256:34773901589784072af940b29697018dc17b32e37b4ff135a153c99ac2c38dec",
+        "dataset_base_commit": "b93a0e34d9b9b99d41103782b7e7aeabf47517e3",
+        "prepared_head": "23dc82e2dbd7c4d6bdbc91aaf0293ab8b94224d2",
+        "prepared_tree": "29aab7bdf842b07679acedb57d3add0a992b5ca2"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-13974",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:26a1656436e6c2ff0bd6b4ab1cfc54f083e4cfa255cb0a839bf3ee15eea5ab6c",
+      "prepared_source": {
+        "image_digest": "sha256:26a1656436e6c2ff0bd6b4ab1cfc54f083e4cfa255cb0a839bf3ee15eea5ab6c",
+        "dataset_base_commit": "84c125972ad535b2dfb245f8d311d347b45e5b8a",
+        "prepared_head": "b524588fc2edaf61b9aba1de15acbfdaed5be1cd",
+        "prepared_tree": "662d2a74486c49ea2a751a5f2410f5d663d00bb8"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-20826",
+      "repo": "matplotlib/matplotlib",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:633a9cd8b4ae6e6e82fc6c2b7f1c2b19b72f34c013d9162dd7734b86ad1fdf3a",
+      "prepared_source": {
+        "image_digest": "sha256:633a9cd8b4ae6e6e82fc6c2b7f1c2b19b72f34c013d9162dd7734b86ad1fdf3a",
+        "dataset_base_commit": "a0d2e399729d36499a1924e5ca5bc067c8396810",
+        "prepared_head": "ff9240ef159718098c76dfd53a317259848b135d",
+        "prepared_tree": "9884729686596a531b0df8204e87d59404fa29d2"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "astropy__astropy-13033",
+      "repo": "astropy/astropy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:22f4f193fbf69d61c59e285494be18041934f8b528190dfe8c6c0d8051d8d6de",
+      "prepared_source": {
+        "image_digest": "sha256:22f4f193fbf69d61c59e285494be18041934f8b528190dfe8c6c0d8051d8d6de",
+        "dataset_base_commit": "298ccb478e6bf092953bca67a3d29dc6c35f6752",
+        "prepared_head": "991a1090ab3e27c358cb5e6497e8644d2bd64959",
+        "prepared_tree": "5e7722a78e2dd470dbd8a2cdd40a0ff8a8146d34"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-13158",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:b05beccc82fc00cbc3a3090ebe207b122dd31585aefcf7d9c1fc0c4147c664b6",
+      "prepared_source": {
+        "image_digest": "sha256:b05beccc82fc00cbc3a3090ebe207b122dd31585aefcf7d9c1fc0c4147c664b6",
+        "dataset_base_commit": "7af8f4127397279d19ef7c7899e93018274e2f9b",
+        "prepared_head": "40c9706b3578269915362f9710070fb7f544d0e0",
+        "prepared_tree": "d979b9154b6b3a21cbb632094d5e2074e934f410"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-11206",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:1478ff091b2e702e3eeda873e40054431d9f2b592f8e0f61d9dc6b7ec18455b7",
+      "prepared_source": {
+        "image_digest": "sha256:1478ff091b2e702e3eeda873e40054431d9f2b592f8e0f61d9dc6b7ec18455b7",
+        "dataset_base_commit": "571ab44e8a8936014c22e7eebe4948d9611fd7ce",
+        "prepared_head": "119d1c4c3a96f8844f7156d70993385da8e85d13",
+        "prepared_tree": "198c5703503292a470a39c57b2d575001b3ec04e"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-16527",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:53bc8d6c86cf2387eeea115aa16f98840c22911c5e24eaa42a061ebeccd19331",
+      "prepared_source": {
+        "image_digest": "sha256:53bc8d6c86cf2387eeea115aa16f98840c22911c5e24eaa42a061ebeccd19331",
+        "dataset_base_commit": "bd366ca2aeffa869b7dbc0b0aa01caea75e6dc31",
+        "prepared_head": "00fd143184f28eab788c72fa2af39c4b5f3d7648",
+        "prepared_tree": "35a696ae66b6f479bc7fb798967bb8021ff3fdf8"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-23950",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:3332a07cc5df8ca74a7b48b958155cb8f3ceed2e7ccebde20fcea6930a69562f",
+      "prepared_source": {
+        "image_digest": "sha256:3332a07cc5df8ca74a7b48b958155cb8f3ceed2e7ccebde20fcea6930a69562f",
+        "dataset_base_commit": "88664e6e0b781d0a8b5347896af74b555e92891e",
+        "prepared_head": "648e5504d1ddfdb3ff4af263a56fc77b77651faa",
+        "prepared_tree": "e8b5be0e6f2f196ad0875c3b82ee4ad46d3ee3ac"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-12965",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:0b7b7b2916ab66921ba020ad0356cf968cc4729470000e6c40f641286af3ee6d",
+      "prepared_source": {
+        "image_digest": "sha256:0b7b7b2916ab66921ba020ad0356cf968cc4729470000e6c40f641286af3ee6d",
+        "dataset_base_commit": "437196da9a386bd4cc62b0ce3f2de4aba468613d",
+        "prepared_head": "f30e1569d1e7abdd5278c299af2717a237244b10",
+        "prepared_tree": "e918da85dc926bf4165989fced17fb9aee37de3c"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-21930",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:ac9b1c65d632e5a3d1af240db144ff27ed9a70b5507705d50480ede6899125d1",
+      "prepared_source": {
+        "image_digest": "sha256:ac9b1c65d632e5a3d1af240db144ff27ed9a70b5507705d50480ede6899125d1",
+        "dataset_base_commit": "de446c6d85f633271dfec1452f6f28ea783e293f",
+        "prepared_head": "b7d17e72736ba245d24b87f8f5e8c80565066de4",
+        "prepared_tree": "a8e44f94a63624d1f4af136f7382125a0794eecf"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-23824",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:678693d9a72aa779447ca2d9f0e85d4752e5b28e646edf083cd735aa6144f770",
+      "prepared_source": {
+        "image_digest": "sha256:678693d9a72aa779447ca2d9f0e85d4752e5b28e646edf083cd735aa6144f770",
+        "dataset_base_commit": "39de9a2698ad4bb90681c0fdb70b30a78233145f",
+        "prepared_head": "e260f900aed25938cbe5ebea6670ab853d35cb61",
+        "prepared_tree": "e943975cf67bc4d4cadd9be5082a787dc1d45796"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-11477",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:2a11b9c6bd131e3af00119e975a04f00ed4d9e6c41f8606bc0792459fd538293",
+      "prepared_source": {
+        "image_digest": "sha256:2a11b9c6bd131e3af00119e975a04f00ed4d9e6c41f8606bc0792459fd538293",
+        "dataset_base_commit": "e28671187903e6aca2428374fdd504fca3032aee",
+        "prepared_head": "d0ed637cbc8114065fe62b6973a885f3e8b7db01",
+        "prepared_tree": "752348dce55fb6bb4150bb9e8b1c19a9bcfb092f"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-13091",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:0b025245e81c4ce1d888f3b3088ef220f20661d8241c0c50797ebf3a46d393ac",
+      "prepared_source": {
+        "image_digest": "sha256:0b025245e81c4ce1d888f3b3088ef220f20661d8241c0c50797ebf3a46d393ac",
+        "dataset_base_commit": "d1320814eda6549996190618a21eaf212cfd4d1e",
+        "prepared_head": "6772fd9ed164becd72473811b6711f1537ab09c7",
+        "prepared_tree": "5f10f1fc2ecf5d58cb24cd430364df7e25fae5c0"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "django__django-16485",
+      "repo": "django/django",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:570eb343d44b9ef6ddd5bfffbbe0c80217c926c79f164205cc328b51c5676020",
+      "prepared_source": {
+        "image_digest": "sha256:570eb343d44b9ef6ddd5bfffbbe0c80217c926c79f164205cc328b51c5676020",
+        "dataset_base_commit": "39f83765e12b0e5d260b7939fc3fe281d879b279",
+        "prepared_head": "c7a6b3c4ef723cd4cd2dbf9b4213f04489fef729",
+        "prepared_tree": "83dc8ce09c181c59fbae8d3f67ba3dd04f8089c4"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "pydata__xarray-7393",
+      "repo": "pydata/xarray",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:8d92f63564f3cfa7497bdc9fd4bacb5cfac11459f658621a00ebe3eb55832278",
+      "prepared_source": {
+        "image_digest": "sha256:8d92f63564f3cfa7497bdc9fd4bacb5cfac11459f658621a00ebe3eb55832278",
+        "dataset_base_commit": "41fef6f1352be994cd90056d47440fe9aa4c068f",
+        "prepared_head": "df828cecbfc98eb2dc01a07c667466fbeb95a50a",
+        "prepared_tree": "e30a1f33896a14253d558c6d2d56f16b774ff686"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "pylint-dev__pylint-6386",
+      "repo": "pylint-dev/pylint",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:fda08a7a0a711af33163d53ed09b8401d84b7c9bb76b31e25a81357c98e6aeed",
+      "prepared_source": {
+        "image_digest": "sha256:fda08a7a0a711af33163d53ed09b8401d84b7c9bb76b31e25a81357c98e6aeed",
+        "dataset_base_commit": "754b487f4d892e3d4872b6fc7468a71db4e31c13",
+        "prepared_head": "33c8fc31e41d609f9e42c059e80b672ac22f0679",
+        "prepared_tree": "91f4e7c8112da38aa6b6b012149f867d2b54e58f"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-21379",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:5a10d273b1b5ae6e4d70c0242dc9c9ecb2e111945e6aa8093b7d1e4160b4dc3b",
+      "prepared_source": {
+        "image_digest": "sha256:5a10d273b1b5ae6e4d70c0242dc9c9ecb2e111945e6aa8093b7d1e4160b4dc3b",
+        "dataset_base_commit": "624217179aaf8d094e6ff75b7493ad1ee47599b0",
+        "prepared_head": "66233a5f1263b8869919f534a5b8f040fa0a28af",
+        "prepared_tree": "81910c2c49c2d990c5ea67c500ecab16a6f2849b"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-20428",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:5e4cde96a50b814adfab5f2dc786b2a865ee3b146c18f1f231c467d6f8aeac96",
+      "prepared_source": {
+        "image_digest": "sha256:5e4cde96a50b814adfab5f2dc786b2a865ee3b146c18f1f231c467d6f8aeac96",
+        "dataset_base_commit": "c0e85160406f9bf2bcaa2992138587668a1cd0bc",
+        "prepared_head": "530b9b830ef9942a65cccc44bf71aedc9456ed61",
+        "prepared_tree": "1fe8a6f5951881b8710def43252dda381b045f1a"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-24066",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:ec5b2dae801e4f826626498228a2579a6bf1600fc4b7bf9091670b5dca3343bf",
+      "prepared_source": {
+        "image_digest": "sha256:ec5b2dae801e4f826626498228a2579a6bf1600fc4b7bf9091670b5dca3343bf",
+        "dataset_base_commit": "514579c655bf22e2af14f0743376ae1d7befe345",
+        "prepared_head": "98f86c2d16b3a7c15787a2bd2be025ba1107196a",
+        "prepared_tree": "48c13e4dee33867e023005d021ee6139fe50e1e9"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-20154",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:d05bbd76c08f2d5b444f6f304ed6d4621f7e5a20db97f9fd0c602210068b0f80",
+      "prepared_source": {
+        "image_digest": "sha256:d05bbd76c08f2d5b444f6f304ed6d4621f7e5a20db97f9fd0c602210068b0f80",
+        "dataset_base_commit": "bdb49c4abfb35554a3c8ce761696ffff3bb837fe",
+        "prepared_head": "b5df5d3e3d049f6ae586359931112a33bdea8551",
+        "prepared_tree": "04e30ac6e38389ae71acf8cb2dc5ba1cc72ff067"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sympy__sympy-11618",
+      "repo": "sympy/sympy",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:744c19afa2b657ef131aea81a85d1c9cf86fe934b50db44443a5fdcdc9ac9649",
+      "prepared_source": {
+        "image_digest": "sha256:744c19afa2b657ef131aea81a85d1c9cf86fe934b50db44443a5fdcdc9ac9649",
+        "dataset_base_commit": "360290c4c401e386db60723ddb0109ed499c9f6e",
+        "prepared_head": "b34c6c58b39bfa77ca9116ea5ed01cfbd0948a6b",
+        "prepared_tree": "d0d3281d5418d2ebb12023fccb9cf2785e735366"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-8551",
+      "repo": "sphinx-doc/sphinx",
+      "difficulty": "medium",
+      "official_difficulty": "15 min - 1 hour",
+      "image_digest": "sha256:7ef3c26b1f402bcae518faddbdea62e12496a29b8d49b582a752874df1a5cd57",
+      "prepared_source": {
+        "image_digest": "sha256:7ef3c26b1f402bcae518faddbdea62e12496a29b8d49b582a752874df1a5cd57",
+        "dataset_base_commit": "57ed10c68057c96491acbd3e62254ccfaf9e3861",
+        "prepared_head": "0cdf8278d6ad71b36a49493c17f0fb6482e5aeb8",
+        "prepared_tree": "6bb9cf818959745a55e3b88eb18e1404a5e1d2a2"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-7590",
+      "repo": "sphinx-doc/sphinx",
+      "difficulty": "hard",
+      "official_difficulty": ">4 hours",
+      "image_digest": "sha256:5c86dab7120b83b3bdb4af86743a3910da328029ed92183477fe9865ea76cb2f",
+      "prepared_source": {
+        "image_digest": "sha256:5c86dab7120b83b3bdb4af86743a3910da328029ed92183477fe9865ea76cb2f",
+        "dataset_base_commit": "2e506c5ab457cba743bb47eb5b8c8eb9dd51d23d",
+        "prepared_head": "3f69f85506e8d069fc18ee1f79b0c160321f6440",
+        "prepared_tree": "3e1532444f67959e878a83c500bd60bf5168d895"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "pylint-dev__pylint-8898",
+      "repo": "pylint-dev/pylint",
+      "difficulty": "hard",
+      "official_difficulty": "1-4 hours",
+      "image_digest": "sha256:a78e6034f627c1ae69c67b5a25ae5420192afb7279a4fd032a74095752e707d7",
+      "prepared_source": {
+        "image_digest": "sha256:a78e6034f627c1ae69c67b5a25ae5420192afb7279a4fd032a74095752e707d7",
+        "dataset_base_commit": "1f8c4d9eb185c16a2c1d881c054f015e1c2eb334",
+        "prepared_head": "95d0a5c0c22eae3537f125aad9f66d7c465aa271",
+        "prepared_tree": "ddc0b886ddafd87fdc3d3d0b0fbc77fe012d7df3"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "pytest-dev__pytest-5787",
+      "repo": "pytest-dev/pytest",
+      "difficulty": "hard",
+      "official_difficulty": "1-4 hours",
+      "image_digest": "sha256:48c6ca4406eb36dae43e08dc2137b750239b8ad8f9ccdf2924e8fc2177fca241",
+      "prepared_source": {
+        "image_digest": "sha256:48c6ca4406eb36dae43e08dc2137b750239b8ad8f9ccdf2924e8fc2177fca241",
+        "dataset_base_commit": "955e54221008aba577ecbaefa15679f6777d3bf8",
+        "prepared_head": "b32361f0accbefc2e6200fd85113d404f5ab4907",
+        "prepared_tree": "c34eb7a31b790f8533ad61e6708285a1784b7d0e"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-25102",
+      "repo": "scikit-learn/scikit-learn",
+      "difficulty": "hard",
+      "official_difficulty": "1-4 hours",
+      "image_digest": "sha256:a867569ffda421d052245801f98064f13460291d06f439b2e6a05ab7c3135d57",
+      "prepared_source": {
+        "image_digest": "sha256:a867569ffda421d052245801f98064f13460291d06f439b2e6a05ab7c3135d57",
+        "dataset_base_commit": "f9a1cf072da9d7375d6c2163f68a6038b13b310f",
+        "prepared_head": "f538a4fea9e9b6d1a7487ad20e7534dc4d670fad",
+        "prepared_tree": "6fbeab64df46660b9e9b353cb601620968e2618d"
+      },
+      "gold_preflight": "passed"
+    },
+    {
+      "instance_id": "pydata__xarray-3993",
+      "repo": "pydata/xarray",
+      "difficulty": "hard",
+      "official_difficulty": "1-4 hours",
+      "image_digest": "sha256:701fb2a4aa664b5762bb554652e7557c637bcb498462065688d7d86dfb6aaa2b",
+      "prepared_source": {
+        "image_digest": "sha256:701fb2a4aa664b5762bb554652e7557c637bcb498462065688d7d86dfb6aaa2b",
+        "dataset_base_commit": "8cc34cb412ba89ebca12fc84f76a9e452628f1bc",
+        "prepared_head": "7f06d401b0218fddc8d127a9c13071f8c55ce982",
+        "prepared_tree": "2c5856b5d192ae699f4e68d4586b2aedc61372c0"
+      },
+      "gold_preflight": "passed"
+    }
+  ],
+  "pinned_sources": {
+    "swebench_repository": "https://github.com/SWE-bench/SWE-bench.git",
+    "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0",
+    "task_repository": "https://github.com/SWE-bench/swe-bench-tasks.git",
+    "task_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d"
+  }
+}

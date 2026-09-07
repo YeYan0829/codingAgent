@@ -17,13 +17,15 @@ from rich.prompt import Confirm
 from prompt_toolkit import PromptSession
 
 from codeagent import __version__
-from codeagent.config import ModelConfig
+from codeagent.application.session_runtime import build_agent_runner, build_registry_for_context as build_context_registry
+from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.interface.commands import handle_manual_call, print_tools
 from codeagent.model_gateway.factory import build_model_client
 from codeagent.runtime.approval import AutoApprovalGate, ConsoleApprovalGate
 from codeagent.runtime.artifacts import CommandArtifactStore
 from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
 from codeagent.runtime.runner import AgentRunner
+from codeagent.runtime.turn_budget import increase_turn_budget, store_turn_budget
 from codeagent.runtime.candidate import ApplyStatus, CandidateError, CandidateService
 from codeagent.runtime.current_changes import CurrentChangesError, CurrentChangesService
 from codeagent.runtime.validation import current_validation_evidence
@@ -51,10 +53,7 @@ def build_registry(workspace: Workspace) -> ToolRegistry:
 
 
 def build_registry_for_context(context: WorkspaceContext) -> ToolRegistry:
-    registry = ToolRegistry(workspace_context=context)
-    for tool in build_fs_tools(context) + build_git_tools(context):
-        registry.register(tool)
-    return registry
+    return build_context_registry(context)
 
 
 def build_runner(
@@ -66,19 +65,18 @@ def build_runner(
     execution_allowed: bool = True,
     progress_callback=None,
 ) -> AgentRunner:
-    context = store.workspace_context()
-    execution = context.workspace_kind == "git_worktree" and execution_allowed
-    return AgentRunner(
-        session_store=store,
-        model=build_model_client(model_config),
-        tools=build_registry_for_context(context),
-        approval_gate=ConsoleApprovalGate(context) if interactive else AutoApprovalGate(allow=False),
+    options = store.read_meta().get("runtime_options") or {}
+    return build_agent_runner(
+        store,
         model_config=model_config,
-        workspace_context=context,
-        command_executor=SandboxedCommandExecutor() if execution else None,
-        command_artifact_store=CommandArtifactStore(store) if execution else None,
-        dynamic_workspace=not execution and store.workspace_state() == SessionWorkspaceState.SOURCE_ONLY,
+        approval_gate=ConsoleApprovalGate(store.workspace_context()) if interactive else AutoApprovalGate(allow=False),
+        execution_allowed=execution_allowed,
         progress_callback=progress_callback,
+        model_factory=build_model_client,
+        runtime_config=RuntimeConfig(
+            max_steps_per_turn=int(options.get("max_steps_per_turn", 12)),
+            max_model_steps_per_user_turn=int(options.get("max_model_steps_per_user_turn", 48)),
+        ),
     )
 
 
@@ -197,6 +195,67 @@ def swebench_batch(
         console.print(f"[red]SWE-bench batch failed: {exc}[/red]")
         raise typer.Exit(1) from exc
     console.print(json.dumps(result, ensure_ascii=False, indent=2), markup=False)
+
+
+@app.command("swebench-select")
+def swebench_select(
+    output: Path = typer.Option(..., "--output", help="最终 Agent-facing selection JSON。"),
+    exclude: Path = typer.Option(..., "--exclude", help="需要排除的开发集 selection。"),
+    task_repo: Path = typer.Option(..., "--task-repo", help="固定版本 swe-bench-tasks 仓库。"),
+    source_cache: Path = typer.Option(..., "--source-cache", help="prepared source cache。"),
+    grader_command: str = typer.Option(..., "--grader-command", help="official gold grader 命令前缀。"),
+    size: int = typer.Option(50, "--size", min=1),
+    seed: int = typer.Option(42, "--seed"),
+    selection_id: str = typer.Option("verified-eval-50-v1", "--selection-id"),
+    report: Path | None = typer.Option(None, "--report", help="generation report；默认位于 output 同目录。"),
+    state_root: Path | None = typer.Option(None, "--state-root", help="可恢复 preflight 状态目录。"),
+):
+    """从 SWE-bench Verified 生成仅含 gold-preflight PASS 的固定 selection。"""
+    from codeagent.benchmark import (
+        OfficialCandidatePreflight, SWEbenchGoldPreflight, SWEbenchSourcePreparer,
+        SWEbenchTaskRepository, VerifiedSelectionGenerator, candidates_from_repository,
+        runtime_identity,
+    )
+    excluded_value = json.loads(exclude.read_text(encoding="utf-8"))
+    excluded_ids = {str(item["instance_id"] if isinstance(item, dict) else item)
+                    for item in excluded_value.get("tasks", [])}
+    repository = SWEbenchTaskRepository(task_repo)
+    report_path = report or output.with_name(output.stem + "-generation.json")
+    state_path = state_root or output.parent / "selection-runs" / selection_id
+    task_commit = _git_commit(task_repo)
+    swebench_root = Path("reference/SWE-bench").resolve()
+    swebench_commit = _git_commit(swebench_root) if swebench_root.is_dir() else None
+    command = shlex.split(grader_command)
+    identity = {
+        "selection_id": selection_id,
+        "excluded_selection": {"path": str(exclude.resolve()), "sha256": hashlib.sha256(exclude.read_bytes()).hexdigest()},
+        "dataset_identity": {"suite": "SWE-bench_Verified", "task_repository": str(task_repo.resolve()),
+                             "task_commit": task_commit, "swebench_commit": swebench_commit},
+        "runtime": runtime_identity(Path(__file__).resolve().parents[1]),
+        "preflight": {"grader_command": command, "source_cache": str(source_cache.resolve())},
+    }
+    generator = VerifiedSelectionGenerator(
+        candidates=candidates_from_repository(repository), excluded_ids=excluded_ids,
+        size=size, seed=seed,
+        preflight=OfficialCandidatePreflight(
+            SWEbenchSourcePreparer(source_cache), SWEbenchGoldPreflight(repository, command), state_path / "artifacts"
+        ),
+        output_path=output, report_path=report_path, state_root=state_path, identity=identity,
+    )
+    try:
+        result = generator.run()
+    except Exception as exc:
+        console.print(f"[red]SWE-bench selection generation failed: {exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(json.dumps(result, ensure_ascii=False, indent=2), markup=False)
+
+
+def _git_commit(root: Path) -> str | None:
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+                              text=True, check=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 @app.command("list-sessions")
@@ -401,6 +460,28 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
         if raw == "/log":
             console.print(str(store.events_path))
             continue
+        if raw == "/stop":
+            if not store_turn_budget(store).closed:
+                store.append_event("turn_terminated", {"reason": "user_stop", "message": "用户已结束本轮执行。"})
+            console.print("本轮已停止；可输入新的具体指令。")
+            continue
+        if raw == "/budget" or raw.startswith("/budget "):
+            try:
+                budget = store_turn_budget(store)
+                requested = raw.split(maxsplit=1)[1]
+                increase_turn_budget(
+                    store,
+                    turn_id=budget.turn_id or "",
+                    expected_limit=budget.limit,
+                    additional_steps=int(requested[1:]) if requested.startswith("+") else None,
+                    new_limit=None if requested.startswith("+") else int(requested),
+                )
+                output = runner.continue_turn()
+            except (ValueError, IndexError, RuntimeError) as exc:
+                console.print(Text(f"无法扩额：{exc}。用法：/budget +<追加步数> 或 /budget <新的本轮总上限>"))
+                continue
+            _finish_or_offer_continuation(runner, output)
+            continue
         if raw == "/continue":
             try:
                 output = runner.continue_turn()
@@ -412,21 +493,20 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
         if raw.startswith("/call"):
             handle_manual_call(console, runner, raw)
             continue
+        if not store_turn_budget(store).closed:
+            console.print("本轮尚未结束；使用 /budget +<追加步数> 或 /budget <总上限> 扩额，或 /stop 后输入修正指令。")
+            continue
         output = runner.run_turn(raw)
         _finish_or_offer_continuation(runner, output)
 
 
 def _finish_or_offer_continuation(runner: AgentRunner, output) -> None:
     while output.status == "slice_exhausted":
-        console.print(Panel(Text(output.final_text), title="Execution Paused"))
-        try:
-            allowed = Confirm.ask("继续同一 UserTurn 的下一执行切片？", default=False)
-        except (EOFError, KeyboardInterrupt):
-            allowed = False
-        if not allowed:
-            console.print("已暂停；稍后可输入 /continue，不需要发送新的“继续”消息。")
-            return
         output = runner.continue_turn()
+    if output.status == "model_step_budget_exhausted":
+        console.print(Panel(Text(output.final_text + "\n使用 /budget +<追加步数> 或 /budget <新的总上限> 扩额并继续；/stop 结束本轮。"),
+                            title="Step Budget Reached"))
+        return
     if output.status == "context_budget_exceeded":
         console.print(Panel(
             output.final_text + "\n\n"

@@ -71,6 +71,24 @@ class SWEbenchTaskRepository:
         )
         return SWEbenchTaskRecord(task, record)
 
+    def load_metadata(self, instance_id: str) -> dict[str, object]:
+        """只读取公开 task metadata；selection 阶段不得加载 gold/test 内容。"""
+        if not instance_id or "/" in instance_id or "\\" in instance_id or instance_id in {".", ".."}:
+            raise SWEbenchTaskRepositoryError("instance_id 格式无效")
+        task_dir = (self.tasks_root / instance_id).resolve()
+        if task_dir.parent != self.tasks_root or not task_dir.is_dir():
+            raise SWEbenchTaskRepositoryError(f"task 不存在: {instance_id}")
+        metadata = _parse_task_yaml(task_dir / "task.yaml")
+        missing = sorted(self.REQUIRED_METADATA - metadata.keys())
+        if missing:
+            raise SWEbenchTaskRepositoryError(f"task.yaml 缺少字段: {', '.join(missing)}")
+        if metadata["instance_id"] != instance_id:
+            raise SWEbenchTaskRepositoryError("目录名与 task.yaml instance_id 不一致")
+        return metadata
+
+    def list_metadata(self) -> list[dict[str, object]]:
+        return [self.load_metadata(path.name) for path in sorted(self.tasks_root.iterdir()) if path.is_dir()]
+
     def export_dataset(self, instance_ids: Sequence[str], path: str | Path) -> Path:
         destination = Path(path).expanduser().resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)

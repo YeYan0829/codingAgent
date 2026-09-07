@@ -20,6 +20,8 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 codeagent = "codeagent.cli:app"
+codeagent-rpc = "codeagent.product.rpc:main"
+codeagent-product-demo = "codeagent.product.demo:main"
 
 [tool.setuptools.packages.find]
 include = ["codeagent*"]

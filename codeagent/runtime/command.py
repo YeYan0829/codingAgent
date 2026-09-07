@@ -86,6 +86,12 @@ class CommandResult:
     after_subject_tree: str | None = None
     command_induced_changes: tuple[dict[str, str], ...] = ()
     effective_policy: dict | None = None
+    environment_contract_revision: str | None = None
+    backend: str | None = None
+    backend_availability: str | None = None
+    launch_cwd: str | None = None
+    effective_network_policy: str | None = None
+    effective_filesystem_policy: dict | None = None
 
     def to_dict(self) -> dict:
         data = asdict(self)

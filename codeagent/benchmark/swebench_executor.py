@@ -143,6 +143,7 @@ class SWEbenchDockerCommandExecutor:
     OUTPUT_LIMIT_BYTES = 2 * 1024 * 1024
     CONTAINER_WORKSPACE = Path("/testbed")
     RUNTIME_ROOT = Path("/codeagent-runtime")
+    ENVIRONMENT_CONTRACT_REVISION = "swebench-prepared-environment-v1"
 
     def __init__(
         self,
@@ -211,7 +212,30 @@ class SWEbenchDockerCommandExecutor:
             payload_started=payload_started,
             process_tree_stopped=outcome.process_tree_stopped,
             effective_policy=request.policy.summary(),
+            environment_contract_revision=self.ENVIRONMENT_CONTRACT_REVISION,
+            backend="swebench_docker", backend_availability="available",
+            launch_cwd=str(self.CONTAINER_WORKSPACE / request.command.cwd),
+            effective_network_policy="off",
+            effective_filesystem_policy=_filesystem_policy(request.policy.summary()),
         )
+
+    def environment_snapshot(self, context, artifacts, policy) -> dict:
+        return {
+            "contract_revision": self.ENVIRONMENT_CONTRACT_REVISION,
+            "backend": "swebench_docker", "backend_availability": "prepared",
+            "shell": "/bin/bash --noprofile --norc", "default_cwd": ".",
+            "default_cwd_resolves_to": str(self.CONTAINER_WORKSPACE),
+            "path_source": "prepared_image_default",
+            "environment_names": [
+                "GIT_OPTIONAL_LOCKS", "HOME", "PYTHONDONTWRITEBYTECODE", "PYTHONIOENCODING",
+                "TMPDIR", "XDG_CACHE_HOME",
+            ],
+            "home_kind": "private_runtime_home", "tilde_is_host_home": False,
+            "tmp_kind": "private_tmp", "network_mode": "off",
+            "commands_are_fresh_processes": True, "shell_state_persists": False,
+            "source_workspace_access": "prepared_backend_policy",
+            "active_workspace_access": "read_write",
+        }
 
     def _create_argv(
         self,
@@ -314,7 +338,18 @@ class SWEbenchDockerCommandExecutor:
             duration_ms=max(0, round((time.monotonic() - started) * 1000)),
             process_tree_stopped=True,
             effective_policy=request.policy.summary(),
+            environment_contract_revision=SWEbenchDockerCommandExecutor.ENVIRONMENT_CONTRACT_REVISION,
+            backend="swebench_docker", backend_availability="unavailable",
+            launch_cwd=str(SWEbenchDockerCommandExecutor.CONTAINER_WORKSPACE / request.command.cwd),
+            effective_network_policy=request.policy.network_mode.value,
+            effective_filesystem_policy=_filesystem_policy(request.policy.summary()),
         )
+
+
+def _filesystem_policy(policy: dict) -> dict:
+    return {key: policy[key] for key in (
+        "policy_revision", "read_grants", "write_grants", "hard_deny_paths", "protected_readonly_paths",
+    )}
 
 
 def _git_path(root: Path, flag: str) -> Path:

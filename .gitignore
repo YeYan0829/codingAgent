@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+docs/.obsidian/
 *.egg-info/
 build/
 dist/
@@ -14,4 +15,6 @@ examples/buggy-repos/QuixBugs/
 reference/*/
 benchmarks/swebench/runs/
 benchmarks/swebench/source-cache/
+benchmarks/swebench/selection-runs/
+benchmarks/swebench/*-generation.json
 logs/evaluation/

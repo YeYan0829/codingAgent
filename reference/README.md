@@ -11,7 +11,7 @@
 | `aider/` | `https://github.com/Aider-AI/aider.git` | `5dc9490bb35f9729ef2c95d00a19ccd30c26339c` |
 
 对应的源码级 Context 调研见
-[`docs/CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md`](../docs/CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md)。
+[`CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md`](../docs/archive/research/CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md)。
 
 重新获取时使用：
 

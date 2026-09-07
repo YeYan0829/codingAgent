@@ -1,0 +1,223 @@
+{
+  "evidence_kind": "development_smoke_excerpt",
+  "limitations": [
+    "dirty runtime; not a frozen release result",
+    "selected local records only; not a complete attempt ledger",
+    "original manifests contain local paths and are not published"
+  ],
+  "run_id": "l4-smoke-glm52-20260904",
+  "selection_id": "verified-smoke-2-v1",
+  "selection_sha256": "cbc2d7936402c885204c085636beb06a653cf4884c8257dcf4f8d8e70638037b",
+  "runtime": {
+    "version": "0.5.0",
+    "git_commit": "7f8dc4019b3838a5f717cff0b3f3a7f5b62f9446",
+    "dirty": true,
+    "max_steps_per_turn": 12,
+    "max_model_steps_per_user_turn": 48,
+    "context_limit": 128000,
+    "generation_reserve": 4000,
+    "continuation_reserve": 4000,
+    "safety_margin": 2000,
+    "context_reduction": "deterministic-v2",
+    "minimum_context": "fail_closed"
+  },
+  "model": {
+    "provider": "glm",
+    "model": "glm-5.2",
+    "endpoint_identity": "https://open.bigmodel.cn/api/paas/v4",
+    "temperature": null,
+    "max_output_tokens": null,
+    "thinking": "disabled",
+    "config_fingerprint": "8e36f7686bde3019c5fb2c1782545eefe4f148a2e8003fab1205fd893398a69d"
+  },
+  "environment": {
+    "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0",
+    "tasks": {
+      "pytest-dev__pytest-7205": {
+        "image_ref": "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-7205:latest",
+        "image_digest": "sha256:1c6124cd5254db8831df455575eff2795b0cbeb849d10846388e30e00870e495",
+        "dataset_base_commit": "5e7f1ab4bf58e473e5d7f878eb2b499d7deabd29",
+        "prepared_head": "8f22e39188fb672175aae9dcca2e1aa3ec725cba",
+        "prepared_tree": "a334b8ee991ddcbfe18c903c61fec06a9b9c593d"
+      },
+      "sympy__sympy-20590": {
+        "image_ref": "swebench/sweb.eval.x86_64.sympy_1776_sympy-20590:latest",
+        "image_digest": "sha256:3a282752833ce34730ee0621e22033501c993f45742775ca57f04c9ff27178a0",
+        "dataset_base_commit": "cffd4e0f86fefd4802349a9f9b19ed70934ea354",
+        "prepared_head": "5efaed257c694e4452b4c8361aae1cd9cdefd6d1",
+        "prepared_tree": "67df329450c30a6d53661f9c01ce3d486df750ba"
+      }
+    }
+  },
+  "started_at": "2026-09-04T12:17:24.509760+00:00",
+  "finished_at": "2026-09-04T12:27:38.181508+00:00",
+  "source_artifact_sha256": {
+    "run-manifest.json": "bdb9f0d9965c5e84b416572f1c1224ca9af9056488a079c7ac5029ee0f55a8ad",
+    "batch-summary.json": "aedb804ab2c971a6bb0ec8061fdfe17a1c197208cdf1c43a5dd300c2e5d50593"
+  },
+  "usage": {
+    "requests": 46,
+    "requests_with_usage": 46,
+    "coverage": "complete",
+    "coverage_ratio": "1",
+    "input_tokens": 577756,
+    "input_tokens_complete": true,
+    "output_tokens": 8232,
+    "output_tokens_complete": true,
+    "total_tokens": 585988,
+    "total_tokens_complete": true,
+    "cached_input_tokens": 216064,
+    "cached_input_tokens_complete": true,
+    "cache_miss_input_tokens": 361692,
+    "cache_miss_input_tokens_complete": true,
+    "reasoning_tokens": 0,
+    "reasoning_tokens_complete": false,
+    "cache_miss_input_tokens_derived": true
+  },
+  "cost": {
+    "snapshot_id": "glm-5.2-standard-api-cny-2026-09-04",
+    "snapshot_fingerprint": "01c77621f64aaba6459efdb2130895b543b5b9bf40ec9b3797fa44f77bf97f0e",
+    "currency": "CNY",
+    "complete": true,
+    "total": "3.556160",
+    "known_subtotal": "3.556160",
+    "components": {
+      "input": "2.893536",
+      "output": "0.230496",
+      "cached_input": "0.432128"
+    },
+    "unpriced_or_unknown": []
+  },
+  "tasks": [
+    {
+      "instance_id": "pytest-dev__pytest-7205",
+      "run_id": "2316a9f5db7d4f41",
+      "agent_status": "completed",
+      "validation_passed": true,
+      "patch_present": true,
+      "patch_sha256": "e21a06f476935570a3b9db0308cc2581a96409fc2cb6b1b6e6353c5312a7c848",
+      "oracle_status": "completed",
+      "oracle_passed": true,
+      "attempt_scope": "recorded run id; prior attempts not certified",
+      "official_report_sha256": "75f5f4a9b3f8a86f19774aea95ebc1c95272f41ac80a2c878afadcd02205a648",
+      "official_report": {
+        "pytest-dev__pytest-7205": {
+          "patch_is_None": false,
+          "patch_exists": true,
+          "patch_successfully_applied": true,
+          "resolved": true,
+          "infra_failure": false,
+          "tests_status": {
+            "FAIL_TO_PASS": {
+              "success": [
+                "testing/test_setuponly.py::test_show_fixtures_with_parameters[--setup-only]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameter_ids[--setup-only]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameter_ids_function[--setup-only]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameters[--setup-plan]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameter_ids[--setup-plan]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameter_ids_function[--setup-plan]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameters[--setup-show]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameter_ids[--setup-show]",
+                "testing/test_setuponly.py::test_show_fixtures_with_parameter_ids_function[--setup-show]",
+                "testing/test_setuponly.py::test_show_fixture_action_with_bytes"
+              ],
+              "failure": []
+            },
+            "PASS_TO_PASS": {
+              "success": [
+                "testing/test_setuponly.py::test_show_only_active_fixtures[--setup-only]",
+                "testing/test_setuponly.py::test_show_different_scopes[--setup-only]",
+                "testing/test_setuponly.py::test_show_nested_fixtures[--setup-only]",
+                "testing/test_setuponly.py::test_show_fixtures_with_autouse[--setup-only]",
+                "testing/test_setuponly.py::test_show_only_active_fixtures[--setup-plan]",
+                "testing/test_setuponly.py::test_show_different_scopes[--setup-plan]",
+                "testing/test_setuponly.py::test_show_nested_fixtures[--setup-plan]",
+                "testing/test_setuponly.py::test_show_fixtures_with_autouse[--setup-plan]",
+                "testing/test_setuponly.py::test_show_only_active_fixtures[--setup-show]",
+                "testing/test_setuponly.py::test_show_different_scopes[--setup-show]",
+                "testing/test_setuponly.py::test_show_nested_fixtures[--setup-show]",
+                "testing/test_setuponly.py::test_show_fixtures_with_autouse[--setup-show]",
+                "testing/test_setuponly.py::test_dynamic_fixture_request",
+                "testing/test_setuponly.py::test_capturing",
+                "testing/test_setuponly.py::test_show_fixtures_and_execute_test",
+                "testing/test_setuponly.py::test_setup_show_with_KeyboardInterrupt_in_test"
+              ],
+              "failure": []
+            },
+            "FAIL_TO_FAIL": {
+              "success": [],
+              "failure": []
+            },
+            "PASS_TO_FAIL": {
+              "success": [],
+              "failure": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "instance_id": "sympy__sympy-20590",
+      "run_id": "72360d66295148a2",
+      "agent_status": "completed",
+      "validation_passed": true,
+      "patch_present": true,
+      "patch_sha256": "1052742a647b0bb28d6ac0820f3771574ceb4eafdef1fa78a5f472f386fe5945",
+      "oracle_status": "completed",
+      "oracle_passed": true,
+      "attempt_scope": "recorded run id; prior attempts not certified",
+      "official_report_sha256": "8b9789cc302b46bed7edeaed0ecc1e0f8af15c9263c46131c34440347f809717",
+      "official_report": {
+        "sympy__sympy-20590": {
+          "patch_is_None": false,
+          "patch_exists": true,
+          "patch_successfully_applied": true,
+          "resolved": true,
+          "infra_failure": false,
+          "tests_status": {
+            "FAIL_TO_PASS": {
+              "success": [
+                "test_immutable"
+              ],
+              "failure": []
+            },
+            "PASS_TO_PASS": {
+              "success": [
+                "test__aresame",
+                "test_structure",
+                "test_equality",
+                "test_matches_basic",
+                "test_has",
+                "test_subs",
+                "test_subs_with_unicode_symbols",
+                "test_atoms",
+                "test_free_symbols_empty",
+                "test_doit",
+                "test_S",
+                "test_xreplace",
+                "test_preorder_traversal",
+                "test_sorted_args",
+                "test_call",
+                "test_rewrite",
+                "test_literal_evalf_is_number_is_zero_is_comparable",
+                "test_as_Basic",
+                "test_atomic",
+                "test_as_dummy",
+                "test_canonical_variables"
+              ],
+              "failure": []
+            },
+            "FAIL_TO_FAIL": {
+              "success": [],
+              "failure": []
+            },
+            "PASS_TO_FAIL": {
+              "success": [],
+              "failure": []
+            }
+          }
+        }
+      }
+    }
+  ]
+}

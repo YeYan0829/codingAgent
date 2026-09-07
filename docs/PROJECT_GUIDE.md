@@ -1,61 +1,51 @@
-# CodeAgent 当前状态
+# CodeAgent 当前状态与文档入口
 
-本文是项目文档入口，只描述当前阶段。长期方向见[系统目标](系统目标.md)，落地结构见
-[当前架构](ARCHITECTURE.md)，近期工作见[下一阶段](NEXT_PHASE_PLAN.md)。
+本文是项目文档总入口，只回答“当前实现到哪里、不同文档分别负责什么”。安装和首次运行从
+[README](../README.md) 开始；发生冲突时，以代码、测试和[当前架构](ARCHITECTURE.md)为准。
 
 ## 当前基线
 
-CodeAgent Runtime `0.5.0` 已形成可执行、可恢复、可自动评测的本地 Coding Agent 基线：
+CodeAgent Runtime `0.5.0` 已形成可执行、可恢复、可审阅的本地 Coding Agent 产品原型：
 
-- Session 初始直接探索 source repository；首次编辑或执行命令时，经批准动态创建专属 Git worktree；
-- Search/Read、原子多文件编辑、Candidate 查看/采纳/丢弃、Session resume 已形成闭环；
-- 正式 CLI 命令在 per-command Bubblewrap 中运行，默认断网且限制宿主写入；
-- Context 由 append-only Event 按每次 API 调用确定性投影，不再维护隐式 Active Code；
-- DeepSeek 与 GLM 通过同一 OpenAI-compatible gateway 接入；provider usage 会写入独立审计事件；
-- SWE-bench 已跑通 source preparation、Docker execution projection、gold preflight、单题运行、official grader
-  和首批十题基线；
-- 正式 batch/resume、run manifest、usage/cost accounting 与 deterministic trajectory analyzer 已形成闭环；
-- context overflow Event 会记录有界的 minimum-set 分类估算与最大 Observation 来源。
+- Session 从 source-only 开始，首次受保护操作经审批后创建专属 Git worktree；
+- Search/Read、原子编辑、Bubblewrap 受控任意命令、Validation、Accept/Discard 和 resume 已闭环；
+- DeepSeek/GLM、确定性 Context 投影、usage 审计与 SWE-bench adapter 已落地；
+- VS Code Chat View 已支持配置、历史、Run/Continue、实时活动、Stop/Approval、原生 Diff 和 Changes 交付；
+- Command Environment v1 已统一实际进程、Runtime Snapshot 与 Event provenance，不引入语言检测器；
+- 离线产品主链路及 environment/network Allow、Reject 分支已经完成人工 dogfood。
 
-当前自动化基线为 `226 passed, 3 skipped`；其中真实 Bubblewrap/Docker 测试按环境显式启用。
+当前 L0 自动化基线为 `274 passed, 3 skipped`。真实 Bubblewrap、Docker 与付费模型评测属于独立证据层，
+不由默认 pytest 结果代替；运行口径见[测试说明](TESTING.md)。
 
-## Benchmark 结论
+## 当前边界与下一步
 
-首批十题使用同一题集和 48-step 总预算：
+当前仍只支持 Linux/WSL2 与满足准入条件的本地 Git 仓库。网络授权是 host network，不是域名/端口白名单；
+命令没有 cgroup 配额；Runtime 不自动配置项目环境、不判断验证充分性，也不解决 Git 合并冲突。
 
-| 模型 | External oracle | 正常完成 | Context 超限 | Step 超限 |
-| --- | ---: | ---: | ---: | ---: |
-| GLM 5.2 | 8/10 | 9/10 | 0 | 1 |
-| DeepSeek V4 Pro | 8/10 | 3/10 | 6 | 1 |
+下一步以 GitHub 展示和真实仓库基线为目标，完成安装包实测、固定版本验收、视频/截图与评测证据整理；
+正式 50 题运行前还需落实恢复身份核对、全部 attempt 计量和结果导出。产品功能已具备录制主链路的条件。
+原系统目标中的调研/设计产物不再属于当前交付范围。详细判断见[展示导向现状梳理](SHOWCASE_READINESS.md)。
+Session 环境复用、环境配置应用流程和环境可见性仍需独立设计，不能混入代码 Accept，也不是当前展示前置条件。
+具体列表见[下一阶段计划](NEXT_PHASE_PLAN.md)。
 
-相同 oracle 分数没有代表相同的 Agent 生命周期质量。DeepSeek 多题在已经生成有效 patch 后仍因当前
-32k/22k usable context 配置终止；GLM 的行动收敛和完成状态明显更稳定。完整评测口径、数据位置和
-复现边界见 [BENCHMARKING](BENCHMARKING.md)。
+## 文档分工
 
-两题 GLM 5.2 L4 smoke 已通过正式 batch 运行：两题均正常完成并由 official grader resolved，46/46 次
-provider response usage 完整，总计 585,988 token，价格快照成本为 ¥3.556160。
-
-## 当前开放问题
-
-评测基础设施已经收口。下一阶段使用现有确定性证据驱动优化：
-
-1. 用固定 selection 对 Runtime/context 改动做可复现对照；
-2. 根据 context breakdown、post-edit steps、重复读取和 validation 事实定位收敛问题；
-3. 先优化 deterministic reduction、Observation bounding 和预算分配；
-4. 只有数据证明最低集合仍频繁超限时，再设计 semantic condensation；
-5. Working Set cache、LangGraph 和通用容器 Workspace backend 继续暂缓。
-
-## 阅读顺序
-
-| 文档 | 用途 |
+| 文档 | 唯一职责 |
 | --- | --- |
-| [README](../README.md) | 安装、provider 配置和 CLI 快速使用 |
-| [ARCHITECTURE](ARCHITECTURE.md) | 当前对象、调用链、安全边界和源码入口 |
-| [BENCHMARKING](BENCHMARKING.md) | SWE-bench 架构、结果语义、基线和复现要求 |
-| [DECISIONS](DECISIONS.md) | 仍约束后续实现的决策 |
-| [NEXT_PHASE_PLAN](NEXT_PHASE_PLAN.md) | 尚未完成的近期工作 |
-| [TESTING](TESTING.md) | 自动化与真实环境测试 |
-| [MANUAL_TEST](MANUAL_TEST.md) | 正式 CLI dogfood |
+| [README](../README.md) | 产品简介、安装、CLI/VS Code 快速入口 |
+| [ARCHITECTURE](ARCHITECTURE.md) | 已落地模块、数据流与安全不变量 |
+| [DECISIONS](DECISIONS.md) | 仍然有效的跨阶段决策 |
+| [PRODUCT_RPC](PRODUCT_RPC.md) | Extension/Runtime 协议、配置和开发调试 |
+| [PRODUCT_ACCEPTANCE](PRODUCT_ACCEPTANCE.md) | VS Code 人工验收步骤与证据口径 |
+| [COMMAND_ENVIRONMENT_CONTRACT](COMMAND_ENVIRONMENT_CONTRACT.md) | 命令环境事实、继承、隔离和 Approval 边界 |
+| [CHAT_TIMELINE_UX_DESIGN](CHAT_TIMELINE_UX_DESIGN.md) | 当前会话时间线与微交互规范 |
+| [TESTING](TESTING.md) | 自动化、真实环境测试层级及其不证明的内容 |
+| [BENCHMARKING](BENCHMARKING.md) | SWE-bench 数据、运行、结果和成本口径 |
+| [NEXT_PHASE_PLAN](NEXT_PHASE_PLAN.md) | 尚未完成且已经排好优先级的工作 |
+| [MANUAL_TEST](MANUAL_TEST.md) | CLI 专项 dogfood，不代替 VS Code 产品验收 |
+| [系统目标](系统目标.md) | 当前产品定位、展示交付范围、完成标准与非目标 |
+| [SHOWCASE_READINESS](SHOWCASE_READINESS.md) | 2026-09-06 展示现状、简历措辞对齐、首页/视频方案与评测差距 |
 
-已完成 TD、阶段调研和历史评测统一保存在 [`archive/`](archive/)，仅用于追溯，不是当前实现依据。
-当前事实冲突时以代码和测试为准。
+[VS Code 产品层 Technical Design](VS_CODE_PRODUCT_TECHNICAL_DESIGN.md)保留 Phase 0～5 的设计推导，当前行为以
+Product RPC、UX 规范和 Product Acceptance 为准。更早的路线、研究与评测位于 [`archive/`](archive/)，只用于
+追溯，不作为当前接口依据。

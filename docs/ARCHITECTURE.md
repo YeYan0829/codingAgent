@@ -1,143 +1,205 @@
-# 当前 Runtime 架构
+# 当前架构
 
-本文只描述已经落地的结构与不变量。产品取舍见 [DECISIONS](DECISIONS.md)，具体行为以源码和测试为准。
+本文描述 `0.5.0` 发布候选代码已经实现的系统。接口事实以源码和自动化测试为准。
 
-## 1. 核心流程
+## 阅读约定
 
-```text
-Session(source_only)
-→ Search / Read
-→ 首次受保护 edit 或 command：审批并创建 Session worktree
-→ Atomic Edit / Command
-→ validation evidence
-→ show changes
-→ accept / discard
-→ 在同一 Session 与 worktree 中继续
+本页需要使用少量内部名称。先给出它们的普通含义：
+
+- **Session**：绑定一个源仓库的持久会话。
+- **Candidate**：Agent worktree 中尚未交付的修改，中文称“待审查修改”。
+- **baseline**：上一次已经接受的代码状态，用来计算下一份 Diff。
+- **validation evidence**：某条测试命令对某一份代码成功执行的记录。
+- **identity**：用于确认文件、仓库或运行配置仍是原来对象的一组客观值。
+- **UserTurn**：一条真实用户请求。
+- **ModelStep**：一次模型响应。
+- **ToolExchange**：一次工具调用，以及对应的成功、失败或拒绝结果。
+- **current / stale**：测试记录仍对应当前修改时为 current；代码变化后为 stale。
+
+后文首次出现其他内部状态时，会在原地说明含义。
+
+## 高层结构
+
+```mermaid
+flowchart TD
+    UI[VS Code Extension\n任务 · 历史 · 审批 · Diff] <-->|逐行 stdio JSON-RPC| Product[产品服务\n界面数据 · 执行监管]
+    CLI[Typer CLI] --> Runner[AgentRunner]
+    Product --> Runner
+    Runner <--> Context[上下文构建\n事件记录 · 当前事实]
+    Runner <--> Model[模型适配\nFake · DeepSeek · GLM]
+    Runner --> Registry[ToolRegistry]
+    Registry --> Guard[权限规则 · 审批 · 路径检查]
+    Guard --> Read[搜索 · 读取 · Git]
+    Guard --> Edit[原子文件编辑]
+    Guard --> Command[命令服务]
+    Edit --> Candidate[Session Git worktree]
+    Command --> Bwrap[Bubblewrap backend]
+    Bwrap --> Candidate
+    Candidate --> Evidence[当前 Diff · 测试记录]
+    Evidence --> Product
+    Product -->|Accept · 状态复检 · 三方合并| Source[源仓库]
+    Bench[SWE-bench Harness] --> Runner
+    Bench --> Docker[Per-command Docker /testbed]
+    Bench --> Grader[Official grader]
 ```
 
-项目没有独立 Task 实体。Session 始终绑定一个 source repository；worktree 是唯一 active workspace。
-worktree HEAD 是最近 accepted baseline，working tree 是尚未处理的当前修改。用户无需在 Session 开始前
-选择读或写模式，权限随实际操作动态升级。
+本地产品和 benchmark 共用 AgentRunner、工具与待审查修改规则。
 
-## 2. 主要模块
+benchmark 只替换命令执行环境。它不替换宿主 Git worktree，也不经过 VS Code 的人工 Accept 流程。
 
-| 模块 | 职责 | 代码入口 |
-| --- | --- | --- |
-| Session | metadata、append-only Event、resume | `codeagent/session/` |
-| Workspace | source/active identity、Git worktree 生命周期 | `codeagent/workspace/` |
-| Tools | Agent schema、ToolRegistry、read/edit/command 入口 | `codeagent/tools/` |
-| Safety | PathGuard、敏感路径与 symlink 边界 | `codeagent/safety/` |
-| Runtime | Agent loop、权限、命令、编辑、Candidate、验证 | `codeagent/runtime/` |
-| Context | Event projection、Runtime Snapshot、budget/reduction | `codeagent/context/` |
-| Model gateway | Fake、DeepSeek、GLM 和 usage 标准化 | `codeagent/model_gateway/` |
-| Benchmark | SWE-bench source、Docker executor、preflight、grader | `codeagent/benchmark/` |
+## 模块职责
 
-所有 Agent 能力必须通过 ToolRegistry。Policy、Approval、Workspace identity 和 executor 边界不能由
-benchmark 或 provider adapter 绕过。
+| 模块 | 当前职责 |
+| --- | --- |
+| `codeagent/session/` | Session metadata、append-only Event、全局索引与恢复 |
+| `codeagent/context/` | 从事件重建模型上下文、加入当前运行事实并控制输入大小 |
+| `codeagent/model_gateway/` | Fake、DeepSeek、GLM adapter 和 usage 标准化 |
+| `codeagent/tools/` | 模型工具 schema、ToolRegistry、search/read/Git 工具 |
+| `codeagent/runtime/` | Agent loop、Policy、Approval、原子编辑、命令、Candidate、validation |
+| `codeagent/workspace/` | source/active identity 和 Git worktree 生命周期 |
+| `codeagent/product/` | Product Application Service、Read Model、执行监管和 stdio RPC |
+| `vscode-extension/` | 右侧栏 UI、SecretStorage、RPC client、原生 Diff document |
+| `codeagent/benchmark/` | SWE-bench source、Docker executor、preflight、batch、grader 与报告事实 |
 
-## 3. Search、Read 与 Edit
+模型发起的工具调用通过 ToolRegistry，再进入对应 Policy 和服务。用户 Accept/Discard 走 Product Service，
+benchmark 的环境准备和 grader 由 harness 调度；这些宿主操作不是模型工具，也不由 Bubblewrap 统一包围。
 
-文件能力只接受 active-workspace-relative path，并复用 PathGuard、SensitivePath 和 symlink 检查。
-Search 使用固定构造的 ripgrep argv；Git status/diff 使用固定只读 argv。`read_file` 返回真实范围、总行数、
-前后剩余标记和完整 bytes SHA。
+## 从用户请求到执行状态
 
-唯一编辑工具 `apply_workspace_edit` 支持 UTF-8 文本的 create/replace/delete/move。对已有文件的操作必须携带
-最近读取得到的 SHA；整个 operations 数组先 prepare，再作为一个事务提交。失败会回滚；无法证明恢复时
-Session 进入 `recovery_required`。
+一个 Session 保存模型配置、事件和工作区状态。一条用户请求可以包含多次模型调用。
 
-## 4. Workspace 与 Candidate
+每次模型调用又可能发起多个工具。持久化层用以下名称关联它们，产品 UI 不要求用户理解这些对象。
 
-第一次受保护操作触发：
+```text
+Session
+└── UserTurn：一条真实用户请求
+    ├── ModelStep：一次 provider 响应
+    └── ToolExchange：模型工具调用及其 terminal result/denial
+```
+
+Event 是一条持久化事件记录，同时保存 `turn_id` 和 `model_step_id`。
+
+只有真实用户输入创建 UserTurn。内部执行切片的自动续跑不会新增用户消息。
+
+每个切片默认最多 12 个 ModelStep。每个 UserTurn 默认总上限为 48。
+总上限耗尽后，Runtime 等待用户明确扩额或 Stop。
+
+## Agent Runtime 与上下文
+
+`AgentRunner` 在每个 ModelStep 前从当前事实重新构建请求：
+
+```text
+events.jsonl
+→ UserTurn / ModelStep / ToolExchange projection
+→ 当前 Workspace、Candidate、validation、command environment snapshot
+→ 最近有界 Tool Observation 与历史 residue
+→ token budget reduction
+→ provider request
+```
+
+每轮保留当前用户请求，用 Git 和 Session metadata 更新 active workspace、changed paths、baseline、validation
+和实际命令环境。预算由 Runtime 单独执行；后续内部切片通过临时控制消息告知模型已用步骤和当前上限，
+并非 Runtime Snapshot 自带全部预算字段。
+
+预算估算同时计算消息和工具 schema，并预留输出、续跑和安全余量。先减少保留正文的近期工具步骤，再整轮移除
+已完成的旧请求；工具调用和 terminal result 始终配对。旧正文降级为访问记录，源码需要时再次读取。
+当前轮的工具调用参数仍然保留，长参数或过长用户输入仍可能撑满最低集合；旧轮次被移除后也不保证保留其全部约束。
+估算器按 UTF-8 大小估计 token，并非 provider 的精确 tokenizer。最低必需集合仍超限时，Runtime 写入
+`context_budget_exceeded` 并保留 Session 与 workspace。当前没有 semantic condensation、自动 Working Set、
+RepoMap 或 RAG。
+
+每个 provider 响应另写 `model_usage` Event，记录可获得的 token 和 provider request id。usage 不进入后续模型
+上下文，也不计作一个 ModelStep。
+
+## 工具与工作区升级
+
+Session 从 `source_only` 开始。Search、Read 和只读 Git 工具针对 active workspace；第一次编辑或受控命令触发
+workspace approval：
 
 ```text
 source_only → preparing_workspace → changes_active
 ```
 
-Runtime 创建 detached Git worktree并重新构建工具服务。之后的读取、编辑、命令和验证全部针对 active
-worktree，source 只是 baseline。Atomic Edit 和命令产生的文件变化都是合法 Candidate 修改，并统一推进
-`candidate_revision`。
+允许后，Runtime 检查源目录是 Git 根目录、有 HEAD 且没有 tracked 修改或 untracked 文件，
+再创建 detached Git worktree 并重新构建工具服务。ignored 文件不随 Git worktree 自动复制。后续读取、编辑、命令和验证都针对该 worktree。
+拒绝时 source 保持不变，本轮不会反复申请同一次 workspace upgrade。
 
-`accept` 冻结当前 patch并复检 identity，通过 Git 三方合并应用到用户 source；冲突时拒绝覆盖并保留现场。
-成功后 worktree HEAD 前移为内部 checkpoint。`discard` reset/clean 到 accepted baseline，不能证明恢复则
-fail closed。
+`apply_workspace_edit` 是唯一通用编辑入口，支持受约束的 UTF-8 create/replace/delete/move。已有文件操作需要最近
+读取的 SHA，整个 operations 数组先 prepare 后事务提交；无法证明回滚时进入 `recovery_required`。
 
-## 5. 命令执行边界
+## Command execution
 
-`run_command` 接受一个 shell string，但宿主始终以 `shell=False` 启动固定 shell；字符串只在隔离执行域中
-解释。Runtime 不分析 shell AST、不猜测缺失权限，也不自动重放失败命令。
-
-正式 CLI 使用 per-command Bubblewrap：
-
-- host root 只读，Candidate 和 Runtime 临时目录按 Policy 可写；
-- source、Git metadata 和确定敏感路径受到保护；
-- private `/tmp`，网络默认关闭；
--额外 host write 或 WSL host network 必须显式申请；
-- sandbox 不可用时 fail closed，不回退裸执行。
-
-SWE-bench 使用另一种 `CommandExecutor`：每条命令创建一次性 Docker container，把同一个 host Candidate
-投影到 `/testbed`。容器是 execution backend，不建立新的 Workspace/Session/Candidate identity。详见
-[BENCHMARKING](BENCHMARKING.md)。
-
-每个真正启动的命令都有 before/after Git audit。exit nonzero 或 timeout 不自动 taint；只有进程或 after
-boundary 无法确认时进入 `workspace_tainted` 或更严格的 `recovery_required`。
-
-## 6. Validation
-
-Runtime 不判断测试命令是否充分。`run_command(purpose="validation")` 成功且对应当前 Candidate tree 时形成
-validation evidence；后续文件变化会使它失效。Agent final、validation evidence、patch 和 external oracle
-是四个独立状态。
-
-## 7. Context 与模型调用
-
-`events.jsonl` 是持久历史，每次 API 请求的 Context 是临时投影视图：
+`run_command` 接受 shell string，但宿主以 `shell=False` 启动固定的：
 
 ```text
-append-only Events
-→ UserTurn / ModelStep / ToolExchange projection
-→ Runtime Snapshot
-→ recent bounded Tool Observation + historical typed residue
-→ token budget reduction
-→ provider request
+/bin/bash --noprofile --norc -c <command>
 ```
 
-Context 不维护 Active Code 或自动 Working Set。源码是可重新获取的环境事实，只通过真实 search/read
-Observation 进入输入；旧 Observation 在预算压力下退化为访问记录，需要精确内容时由 Agent 重新读取。
-裁剪只发生在合法的已闭合 ToolExchange/ModelStep 边界，不制造不完整 provider 协议。
+每次调用都有新的 Bubblewrap 和 fresh shell。`EffectiveCommandEnvironment` 同时驱动真实进程环境、Runtime
+Snapshot 和结果 provenance。Runtime 不解析 shell 语义、不自动修正命令、不自动安装依赖。
 
-默认 DeepSeek context limit 为 32k：预留 generation、continuation/tool 和 safety 后 usable input 为 22k；
-GLM 实验配置为 128k/118k。最低集合仍超限时写入明确的 `context_budget_exceeded` 终止事件，保留 Session
-和 workspace。新事件同时保存最终 minimum set 的分类 token 估算、分项数量、最大的有界 Observation
-来源（tool/call/path）和整体估算 residual，不复制 prompt、源码或工具输出正文。历史事件缺少这些字段时保持
-unavailable。当前没有 semantic condensation。
+每条真实启动的命令都有 before/after Git audit。非零退出或 timeout 本身不会 taint；只有进程边界或执行后
+workspace 状态无法确认时才进入 `workspace_tainted` 或 `recovery_required`。详细权限见[安全模型](SECURITY.md)。
 
-每个 provider 响应还写入独立 `model_usage` Event。它包含标准化 token usage 和 provider request id，
-不进入后续 Context，也不计为模型步骤。
+## Candidate、validation 与 Accept
 
-## 8. 持久化与恢复
+worktree HEAD 是最近 accepted baseline，working tree 是当前 pending changes。原子编辑和命令产生的文件变化都会
+推进 `candidate_revision`。
 
-正常状态只有三个权威来源：
+`run_command(purpose="validation")` 成功时记录执行证据。`current_validation_evidence` 查找状态为 passed、
+workspace revision、base commit 与当前 subject tree 相同的记录，不以 `candidate_revision` 单独判定新鲜度。
+文件树不同则旧证据 stale；恢复到同一树且其他身份相同，底层可再次使用旧成功证据。
+Product Read Model 另以最近 validation 命令及其 candidate_revision 展示状态和控制按钮，口径并不完全相同；
+UI 可用性不能代替 Accept 的实际树检查。Runtime 不判断测试选择是否充分。
+
+Accept 时，Runtime 检查 worktree HEAD 与基线、当前 validation，临时冻结 patch 并记录修改序号和树身份，
+再以 accepted baseline、Agent worktree、当前 source 做 Git 三方合并。非冲突的 source 并发修改可以保留；冲突
+时拒绝覆盖并保留现场。成功后 worktree HEAD 前移为内部 checkpoint，用户 source branch 不会被自动 commit。
+Discard 将 Candidate 恢复到 accepted baseline，并清理 worktree 中未跟踪和 ignored 文件，不修改 source。
+
+Diff 展示的是 baseline 到当前 Agent 文件，Accept 时才计算与 source 的合并结果。冻结后的 source tree 会在应用前
+再次比较，patch 进行 hash 与 apply-check 检查，应用后复核 merged tree。但 RPC 不携带“用户看过的 Diff 指纹”，
+也没有跨进程文件锁；不应宣称能杜绝所有外部并发写入竞态。成功 validation 验证的是 Agent 文件树，
+不会自动重跑用户并发修改合入后的结果。
+
+## Product 与 Event timeline
+
+Extension 只通过 `codeagent-rpc` 读取 Product Read Model，不直接读取 Session 文件或 worktree。Product Service
+提供 Session、执行、Approval 和 Changes 操作；Execution Supervisor 保证一个 Session 同时只有一个 active job。
+
+执行过程通过 `session/event`、`approval/requested` 和 `session/executionStateChanged` notification 更新 UI。完整
+Event 保存在 `events.jsonl`，UI 只投影有界摘要。Approval bridge 只存在于当前 Runtime 进程和 job；Runtime
+重启后不会恢复待处理审批；已经持久化的 session-scope grant 与待处理 Approval 不同，仍按 Policy 复检。
+
+## 持久化与恢复
+
+正常业务状态的权威来源是：
 
 ```text
-session.json   当前 Session/workspace/revision/grants
-events.jsonl   对话、模型 usage、审批与关键执行摘要
-Git worktree   accepted baseline 与当前文件内容
+session.json   Session、workspace、revision 和非 secret 配置
+events.jsonl   对话、工具 terminal 结果、审批、usage 和控制事件
+Git worktree   accepted baseline 与当前 Candidate 文件
 ```
 
-完整命令输出、runtime HOME/TMP、事务备份和冻结 patch不是长期权威状态。成功后尽量清理；失败、超时、
-tainted 或 recovery 场景才保留有界 diagnostics。Resume 从 metadata、Event 和 Git 客观状态重建服务，
-不信任历史对话中的旧 workspace 描述。
+成功命令的完整 stdout/stderr、Runtime HOME/TMP、事务备份和 frozen patch 不作为长期权威状态。失败、timeout、
+tainted 或 recovery 场景可以保留有界 diagnostics。Resume 从 metadata、Event 和 Git 客观状态重建服务，不恢复
+崩溃前正在执行的 Python、shell 或 provider 调用。
 
-## 9. 当前限制
+## SWE-bench backend
 
-- 只支持 Linux/WSL2 本地运行；
-- source 必须是满足当前准入约束的 Git repository；
-- 无 cgroup CPU/内存/进程数限制、复杂 seccomp 或 domain/port 网络控制；
-- 原子编辑不支持 binary、encoding 猜测、mode、copy、目录递归操作和 case-only rename；
-- Runtime 不自动安装依赖、不判断 validation 质量、不解决 Git 合并冲突；
-- 无 semantic condensation、Working Set cache、RepoMap、RAG、LangGraph 或多 Agent；
-- SWE-bench Docker executor 是 benchmark adapter，不是通用产品 Workspace backend。
+SWE-bench source preparer 从固定 digest 的官方 instance image 导出 prepared `/testbed`，验证 base commit、HEAD 和
+tree 后建立宿主 Candidate worktree。每条 Agent 命令创建一次性 Docker container，把同一 Candidate bind mount
+到 `/testbed`；文件变化回到宿主 worktree。完成后导出 patch，交给 official grader 判定 resolved。
 
-## 10. 测试入口
+Gold patch、FAIL_TO_PASS 和 PASS_TO_PASS 不被 harness 注入 Agent prompt 或 ToolRegistry；它们用于 preflight/grader。
+这是评测数据流隔离，不是面对 Docker daemon 或宿主管理员的独立防泄漏边界。完整口径
+见 [Benchmark 说明](BENCHMARKING.md)。
 
-模块行为由 `tests/` 中对应测试约束；完整运行方式见 [TESTING](TESTING.md)。历史设计推导、阶段调研和
-旧评测位于 [`archive/`](archive/)，不作为当前接口依据。
+## 当前限制
+
+- 仅支持 Linux/WSL2 本地运行和满足准入约束的 Git repository；
+- 本地执行没有 cgroup CPU/内存/进程数限制、复杂 seccomp 或 domain/port 网络 ACL；
+- 编辑不支持二进制、编码猜测、任意 mode/copy、递归目录操作和 case-only rename；
+- Runtime 不判断 validation 质量、不自动解决 merge conflict；
+- SWE-bench Docker executor 不是通用产品 workspace backend；
+- 当前没有多 Agent、长期语义记忆或通用环境自动准备。

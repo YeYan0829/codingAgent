@@ -124,3 +124,32 @@ def test_runner_persists_usage_for_every_model_request(tmp_path):
             "cached_input_tokens": None, "cache_miss_input_tokens": None, "reasoning_tokens": None,
         },
     }
+
+
+def test_runner_stop_after_model_return_does_not_start_tool_call(tmp_path):
+    stopped = False
+
+    class StopDuringModel(BaseModelClient):
+        def complete(self, request: ModelRequest) -> LLMResponse:
+            nonlocal stopped
+            stopped = True
+            return LLMResponse(tool_calls=[
+                LLMToolCall(call_id="must-not-run", name="read_file", arguments={"path": "README.md"}),
+            ])
+
+    (tmp_path / "README.md").write_text("secret", encoding="utf-8")
+    ws = Workspace(tmp_path)
+    store = SessionStore(ws.root, session_root=tmp_path / "sessions").create()
+    registry = ToolRegistry(ws.context)
+    for tool in build_fs_tools(ws.context):
+        registry.register(tool)
+    runner = AgentRunner(
+        store, StopDuringModel(), registry, AutoApprovalGate(False),
+        cancellation_callback=lambda: stopped,
+    )
+
+    output = runner.run_turn("stop safely")
+
+    assert output.status == "stopped"
+    assert "tool_requested" not in [event.type for event in store.read_events()]
+    assert store.read_events()[-1].payload["reason"] == "user_stop"

@@ -1,7 +1,10 @@
 import os
+import shlex
 import socket
 import sys
 import threading
+import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -56,6 +59,15 @@ def test_real_bubblewrap_existing_toolchains_and_approved_host_network(tmp_path)
         "purpose": "utility",
     })
     assert not pytest_result.ok and "1 failed" in pytest_result.content
+    assert pytest_result.metadata["environment_contract_revision"] == "command-environment-v1"
+    assert pytest_result.metadata["backend"] == "bubblewrap"
+    assert pytest_result.metadata["launch_cwd"] == str(context.active_root)
+
+    exported = service.run_command({"command": "export CODEAGENT_EPHEMERAL=1; cd /; ephemeral() { :; }"})
+    fresh = service.run_command({
+        "command": "test -z \"${CODEAGENT_EPHEMERAL-}\" && test \"$PWD\" = \"$(git rev-parse --show-toplevel)\" && ! type ephemeral",
+    })
+    assert exported.ok and fresh.ok, fresh.content
 
     make_result = service.run_command({
         "command": "printf 'generated-by-make.txt:\\n\\tprintf made > generated-by-make.txt\\n' > Makefile && make generated-by-make.txt",
@@ -87,4 +99,61 @@ def test_real_bubblewrap_existing_toolchains_and_approved_host_network(tmp_path)
         "permissions": [{"capability": "network", "reason": "integration localhost", "scope": "once"}],
     })
     assert host.ok, host.content
+    assert host.metadata["effective_network_policy"] == "host"
+    assert service.environment_snapshot()["network_mode"] == "off"
     assert accepted.wait(2)
+
+
+def test_real_bubblewrap_host_root_is_readonly(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    service = CommandService(
+        context, AutoApprovalGate(True), SandboxedCommandExecutor(_backend()),
+        store, CommandArtifactStore(store),
+    )
+    host_dir = Path("/var/tmp") / f"codeagent-bwrap-{uuid.uuid4().hex}"
+    host_dir.mkdir()
+    sentinel = host_dir / "sentinel.txt"
+    sentinel.write_text("original\n")
+    try:
+        result = service.run_command({
+            "command": f"printf hacked > {shlex.quote(str(sentinel))}",
+        })
+        assert not result.ok
+        assert sentinel.read_text() == "original\n"
+    finally:
+        sentinel.unlink(missing_ok=True)
+        host_dir.rmdir()
+
+
+def test_real_bubblewrap_timeout_stops_children_and_cleans_runtime_home(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    artifacts = CommandArtifactStore(store)
+    service = CommandService(
+        context, AutoApprovalGate(True), SandboxedCommandExecutor(_backend()),
+        store, artifacts,
+    )
+
+    result = service.run_command({
+        "command": "(sleep 2; printf leaked > timeout-leak.txt) & wait",
+        "timeout_seconds": 1,
+    })
+    assert not result.ok and result.error_code == "execution_timed_out"
+    assert result.metadata["workspace_state"] == "changes_active"
+    time.sleep(2)
+    assert not (context.active_root / "timeout-leak.txt").exists()
+    assert not artifacts.runtime_root.exists() or not any(artifacts.runtime_root.iterdir())
+
+
+def test_missing_bubblewrap_fails_closed_without_running_payload(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    missing = tmp_path / "missing-bwrap"
+    service = CommandService(
+        context, AutoApprovalGate(True),
+        SandboxedCommandExecutor(BubblewrapBackend(missing)),
+        store, CommandArtifactStore(store),
+    )
+
+    result = service.run_command({"command": "printf launched > should-not-exist.txt"})
+
+    assert not result.ok and result.error_code == "sandbox_unavailable"
+    assert not (context.active_root / "should-not-exist.txt").exists()

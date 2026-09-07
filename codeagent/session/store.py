@@ -5,6 +5,7 @@ import json
 import os
 import re
 import uuid
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,16 @@ from codeagent.workspace.workspace import SessionWorkspaceState, WorkspaceContex
 
 class SessionStoreError(RuntimeError):
     pass
+
+
+_LOCKS_GUARD = threading.Lock()
+_STORE_LOCKS: dict[str, threading.RLock] = {}
+
+
+def _store_lock(path: Path) -> threading.RLock:
+    key = str(path)
+    with _LOCKS_GUARD:
+        return _STORE_LOCKS.setdefault(key, threading.RLock())
 
 
 class SessionStore:
@@ -34,7 +45,15 @@ class SessionStore:
         self.events_path = self.session_dir / "events.jsonl"
         self.diagnostics_dir = self.session_dir / "diagnostics"
 
-    def create(self, *, provider: str = "fake", model: str = "fake", title: str | None = None) -> "SessionStore":
+    def create(
+        self,
+        *,
+        provider: str = "fake",
+        model: str = "fake",
+        title: str | None = None,
+        model_options: dict[str, Any] | None = None,
+        runtime_options: dict[str, Any] | None = None,
+    ) -> "SessionStore":
         now = _now()
         self.session_dir.mkdir(parents=True, exist_ok=False)
         context = WorkspaceContext.source(self.workspace_root)
@@ -49,6 +68,8 @@ class SessionStore:
             "last_active_at": now,
             "provider": provider,
             "model": model,
+            "model_options": model_options or {},
+            "runtime_options": runtime_options or {},
             "workspace_state": SessionWorkspaceState.SOURCE_ONLY.value,
             "workspace_state_reason": "",
             "candidate_revision": 0,
@@ -209,6 +230,10 @@ class SessionStore:
         self._write_state(meta)
 
     def append_event(self, event_type: str, payload: dict[str, Any] | None = None) -> SessionEvent:
+        with _store_lock(self.meta_path):
+            return self._append_event(event_type, payload)
+
+    def _append_event(self, event_type: str, payload: dict[str, Any] | None = None) -> SessionEvent:
         meta = self.read_meta()
         if "event_seq" in meta:
             seq = int(meta["event_seq"]) + 1

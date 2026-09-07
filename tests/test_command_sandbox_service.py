@@ -16,17 +16,22 @@ from test_candidate_loop import execution_session
 class FakeSandboxExecutor:
     def __init__(self, mutate=None, result=None):
         self.mutate = mutate
-        self.result = result or CommandResult(
-            exit_code=0, status=CommandExecutionStatus.COMPLETED,
-            stdout="ok", payload_started=True, process_tree_stopped=True,
-        )
+        self.result = result
         self.calls = []
 
     def execute(self, request, context, artifacts):
         self.calls.append(request)
         if self.mutate:
             self.mutate(context.active_root)
-        return self.result
+        return self.result or CommandResult(
+            exit_code=0, status=CommandExecutionStatus.COMPLETED,
+            stdout="ok", payload_started=True, process_tree_stopped=True,
+            environment_names=("HOME", "PATH"), environment_contract_revision="command-environment-v1",
+            backend="fixture", backend_availability="available", launch_cwd=str(context.active_root / request.command.cwd),
+            effective_network_policy=request.policy.network_mode.value,
+            effective_filesystem_policy={"policy_revision": request.policy.policy_revision},
+            effective_policy=request.policy.summary(),
+        )
 
 
 def service(store, context, executor, approval=None):
@@ -138,6 +143,52 @@ def test_external_write_asks_and_session_grant_persists(tmp_path):
     result = service(store, context, FakeSandboxExecutor(), gate).run_command(command)
     assert result.ok and len(gate.permission_requests) == 1
     assert store.permission_grants()[0].resolved_resource == external
+
+
+def test_network_once_records_effective_environment_without_persisting_grant(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    gate = FakeApprovalGate(True)
+    result = service(store, context, FakeSandboxExecutor(), gate).run_command({
+        "command": "network-client", "permissions": [{
+            "capability": "network", "reason": "fetch fixture", "scope": "once",
+        }],
+    })
+
+    completed = [event.payload for event in store.read_events() if event.type == "command_completed"][-1]
+    assert result.ok and result.metadata["effective_network_policy"] == "host"
+    assert result.metadata["environment_contract_revision"] == "command-environment-v1"
+    assert completed["effective_network_policy"] == "host"
+    assert completed["environment_names"] == ["HOME", "PATH"]
+    assert store.permission_grants() == ()
+
+
+def test_network_reject_never_executes_or_creates_grant(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    executor = FakeSandboxExecutor()
+    gate = FakeApprovalGate(False)
+
+    result = service(store, context, executor, gate).run_command({
+        "command": "network-client", "permissions": [{
+            "capability": "network", "reason": "fetch fixture", "scope": "once",
+        }],
+    })
+
+    assert not result.ok and result.error_code == "approval_denied"
+    assert executor.calls == [] and store.permission_grants() == ()
+    assert not any(event.type == "command_completed" for event in store.read_events())
+
+
+def test_network_session_grant_changes_default_snapshot(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    commands = service(store, context, FakeSandboxExecutor(), FakeApprovalGate(True))
+    result = commands.run_command({
+        "command": "network-client", "permissions": [{
+            "capability": "network", "reason": "session service", "scope": "session",
+        }],
+    })
+
+    assert result.ok
+    assert commands.environment_snapshot()["network_mode"] == "host"
 
 
 def test_process_tree_uncertainty_enters_recovery_required(tmp_path):

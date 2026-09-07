@@ -28,6 +28,11 @@ from codeagent.benchmark.swebench_preflight import (
 from codeagent.benchmark.accounting import PriceSnapshot, aggregate_usage, calculate_cost
 from codeagent.benchmark.batch import BatchCompatibilityError, SWEbenchBatchRunner, SWEbenchSelection
 from codeagent.benchmark.trajectory import analyze_trajectory, load_events, save_trajectory
+from codeagent.benchmark.selection import (
+    Candidate, OfficialCandidatePreflight, PreflightEvidence, SelectionGenerationError,
+    VerifiedSelectionGenerator, candidate_queues, candidates_from_repository,
+    proportional_targets, runtime_identity,
+)
 
 __all__ = [
     "PreparedSWEbenchSource",
@@ -50,4 +55,7 @@ __all__ = [
     "PriceSnapshot", "aggregate_usage", "calculate_cost",
     "BatchCompatibilityError", "SWEbenchBatchRunner", "SWEbenchSelection",
     "analyze_trajectory", "load_events", "save_trajectory",
+    "Candidate", "OfficialCandidatePreflight", "PreflightEvidence", "SelectionGenerationError",
+    "VerifiedSelectionGenerator", "candidate_queues", "candidates_from_repository",
+    "proportional_targets", "runtime_identity",
 ]
