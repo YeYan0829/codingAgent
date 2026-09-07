@@ -2,30 +2,32 @@
 
 执行日期：2026-09-07。
 
-本记录对应 Git HEAD `7faf6ff55eea99d1cfeb90ced02c67d13b9b880c` 和当时的未提交工作区。
-工作区有 63 条 `git status --porcelain=v1` 记录。因此，以下结果不能由该 HEAD 单独复现。
+发行内容冻结 commit 为 `4406f1947031e8435fe139e39aea2970f09b0735`。
+冻结后 working tree clean。以下 clean clone、构建和发行包 smoke 均以该 commit 为输入。
 
 ## 版本与产物
 
 Python 包、`codeagent.__version__` 和 VS Code Extension 的版本均为 `0.5.0`。
 README 将其声明为发布候选开发阶段。`docs/RELEASE_VALIDATION.md` 的目标是 `v0.5.0-rc.1`，尚未创建 tag。
 
-本轮使用独立目录 `/tmp/codeagent-phase1-20260907-pAhNtr`。该目录不属于项目源码。
+clean clone 位于 `/tmp/codeagent-clean-install-4406f194/repository`。
+发行产物和独立 wheel venv 位于 `/tmp/codeagent-v0.5.0-4406f194`。
 
 | 产物 | 结果 | SHA-256 |
 | --- | --- | --- |
-| `codeagent_runtime-0.5.0-py3-none-any.whl` | 构建成功，160921 bytes | `4088fc4c0f24f41724238f02be3a853d0e040aa2f488a379d000f7d49c3500bf` |
-| `codeagent-0.5.0.vsix` | 构建成功，21916 bytes，8 个文件 | `d4cb14cad10689ec7fed47f0714c300d24e749f82b234966d8aa4ce01e24b8d3` |
+| `codeagent_runtime-0.5.0-py3-none-any.whl` | 构建成功，160921 bytes | `df8dfbc549d1e3d17265aa99c306136c50329f8d377236ce00d1947582d499d5` |
+| `codeagent-0.5.0.vsix` | 构建成功，8 个文件 | `23a06613a59b0177df10ad3b954c8a4bf4a9137b10cf6aa1c1c55d54cc5e7261` |
 
 VSCE 报告 `package.json` 没有 `repository` 字段。它没有影响构建、安装内容或 Runtime 连接，因此记录为非阻断发布元数据问题。
 
 ## Wheel 构建与独立安装
 
-构建命令：
+构建命令在 clean clone 中执行：
 
 ```bash
-.venv/bin/python -m pip wheel --no-cache-dir --no-deps \
-  --wheel-dir /tmp/codeagent-phase1-20260907-pAhNtr/wheelhouse .
+/tmp/codeagent-clean-install-4406f194/source-venv/bin/python \
+  -m pip wheel --no-cache-dir --no-deps \
+  --wheel-dir /tmp/codeagent-v0.5.0-4406f194/wheelhouse .
 ```
 
 wheel 包含全部 `codeagent` Python package、两个 Markdown prompt、MIT License 和 dist-info。
@@ -53,13 +55,13 @@ codeagent-rpc = codeagent.product.rpc:main
 
 ## VSIX 内容与 Runtime 连接
 
-打包前执行了 `node --check extension.js` 和 `npm test`。打包命令为：
+打包前执行了 `node --check extension.js` 和 `npm test`。打包命令在 clean clone 中执行：
 
 ```bash
 npx --yes @vscode/vsce package \
-  --out /tmp/codeagent-phase1-20260907-pAhNtr/release/codeagent-0.5.0.vsix \
-  --baseContentUrl https://github.com/YeYan0829/codingAgent/blob/main/vscode-extension/ \
-  --baseImagesUrl https://github.com/YeYan0829/codingAgent/raw/main/vscode-extension/
+  --out /tmp/codeagent-v0.5.0-4406f194/release/codeagent-0.5.0.vsix \
+  --baseContentUrl https://github.com/YeYan0829/codingAgent/blob/4406f1947031e8435fe139e39aea2970f09b0735/vscode-extension/ \
+  --baseImagesUrl https://github.com/YeYan0829/codingAgent/raw/4406f1947031e8435fe139e39aea2970f09b0735/vscode-extension/
 ```
 
 VSIX 只包含 manifest、`extension.js`、`rpcClient.js`、README、License 和图标。
@@ -108,7 +110,7 @@ CODEAGENT_TEST_BWRAP=/usr/bin/bwrap \
   .venv/bin/python -m pytest -q tests/test_bubblewrap_integration.py
 ```
 
-结果为 `5 passed in 6.13s`。真实检查覆盖：
+结果为 `5 passed in 6.21s`。测试代码从 clean clone 导入。真实检查覆盖：
 
 - bwrap 发现、feature probe 和 namespace smoke；
 - Candidate/worktree 写入；
@@ -131,34 +133,42 @@ CODEAGENT_RUN_SWEBENCH_DOCKER=1 \
   .venv/bin/python -m pytest -q tests/test_swebench_docker_integration.py
 ```
 
-结果为 `1 passed in 18.08s`。它验证 `/testbed` 映射、容器内写入回传和 source 不变。
+结果为 `1 passed in 14.13s`。测试代码从 clean clone 导入。它验证 `/testbed` 映射、容器内写入回传和 source 不变。
 本轮没有运行正式 SWE-bench 50 题。
 
 ## 自动测试
 
 | Command | Result |
 | --- | --- |
-| `.venv/bin/python -m pytest -q` | `303 passed, 5 skipped in 24.02s` |
-| 产品与 RPC 定向测试 | `33 passed in 3.48s` |
+| clean clone 中 `python -m pytest -q` | `302 passed, 6 skipped in 24.11s` |
+| 产品与 RPC 定向测试 | `33 passed in 2.42s` |
 | `cd vscode-extension && npm test` | `1 passed` |
 | `node --check vscode-extension/extension.js` | exit 0 |
 | `git diff --check` | exit 0 |
 
-默认跳过项包含四个 opt-in bwrap 用例和一个 opt-in Docker 用例。这些用例已在上面单独开启并通过。
+默认跳过项包含四个 opt-in bwrap 用例、一个 opt-in Docker 用例和一个需要本地固定任务仓库的用例。
+bwrap 与 Docker 用例已在上面单独开启并通过。
 
-## 尚未完成
+## Clean clone 结果
 
-当前未提交工作区无法由 HEAD clean clone 重建。因此源码 clean install 的最终结论是 `BLOCKED`，
-不能用旧 HEAD 的 clone 结果代替。
-
-冻结 commit 后运行：
+执行命令：
 
 ```bash
 bash docs/evidence/clean-install-smoke.sh \
-  https://github.com/YeYan0829/codingAgent.git \
-  <完整冻结 commit> \
-  /tmp/codeagent-clean-install-<commit>
+  /home/a1872/projects/code-agent \
+  4406f1947031e8435fe139e39aea2970f09b0735 \
+  /tmp/codeagent-clean-install-4406f194
 ```
+
+结果为 `PASS`。脚本确认：
+
+- clone 的 HEAD 与冻结 commit 完全一致；
+- 安装前后没有未忽略的工作区修改；
+- fresh venv 使用 `--no-cache-dir` 完成源码开发安装；
+- `codeagent --help`、`codeagent-rpc --help` 和 Fake provider smoke 成功；
+- `codeagent` 从 clean clone 导入，没有引用原开发仓库。
+
+## 尚未完成
 
 真实 VS Code 中的 VSIX 安装、界面连接、Approval、Diff、Accept、Discard、Stop、Budget 和 History
 仍为 `MANUAL PENDING`。
