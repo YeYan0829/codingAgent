@@ -1,9 +1,49 @@
 # Release Validation Phase 1 证据
 
-执行日期：2026-09-07。
+首次执行日期：2026-09-07。重新冻结日期：2026-09-08。
 
-发行内容冻结 commit 为 `4406f1947031e8435fe139e39aea2970f09b0735`。
-冻结后 working tree clean。以下 clean clone、构建和发行包 smoke 均以该 commit 为输入。
+当前发行内容冻结 commit 为 `44ce5d1396d5b17d12d5293a614f1cedc968d95e`。
+冻结后 working tree clean。
+
+## 人工验收发现与重新冻结
+
+用户在上一候选上确认人工清单 A 通过。人工操作 History 时发现：点击当前仓库的历史会话后，
+Runtime 已加载所选会话，但界面仍停留在历史列表。用户必须再点击返回，才能看到所选会话。
+
+新冻结提交会在点击历史会话时关闭历史列表。所选会话数据返回后，界面会直接显示该会话。
+扩展回归测试新增了这一场景。
+
+新冻结提交的验证结果：
+
+- clean clone 与 fresh venv source install：`PASS`；
+- 默认 Python 测试：`302 passed, 6 skipped in 21.80s`；
+- Extension 渲染测试：`9 passed`；
+- fresh venv 安装 wheel，`codeagent --help` 和 `codeagent-rpc --help`：`PASS`；
+- VSIX 内容检查：8 个预期文件，并确认包含 History 修复；
+- VSIX `RuntimeConnection` 与 wheel RPC 的 explicit path、PATH 和缺失 executable 检查：`PASS`。
+
+新 wheel 在 clean clone 中使用以下命令构建：
+
+```bash
+/usr/bin/python3 -m pip wheel --no-cache-dir --no-deps --no-build-isolation \
+  --wheel-dir /tmp/codeagent-v0.5.0-44ce5d1/release .
+```
+
+新 VSIX 使用固定到新冻结提交的 `baseContentUrl` 和 `baseImagesUrl` 构建。
+
+新冻结产物如下：
+
+| 产物 | Path | SHA-256 |
+| --- | --- | --- |
+| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `a1e0e3bcfd055309cec3cf4be560cbf6d11c9e256b2756cd333227adb8d2d4a0` |
+| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `938d1c1fec223b82869c59f06c39f177a3273d55969c4eea6fcd635fe66551c8` |
+
+新 VSIX 的 History 行为仍需真实 VS Code 人工回归。其余人工清单也没有因此标记为完成。
+
+## 首次冻结验证
+
+首次冻结 commit 为 `4406f1947031e8435fe139e39aea2970f09b0735`。以下记录保留首次冻结时的
+clean clone、构建和发行包 smoke 结果。
 
 ## 版本与产物
 
@@ -20,14 +60,15 @@ clean clone 位于 `/tmp/codeagent-clean-install-4406f194/repository`。
 
 VSCE 报告 `package.json` 没有 `repository` 字段。它没有影响构建、安装内容或 Runtime 连接，因此记录为非阻断发布元数据问题。
 
-上述 `/tmp` 产物在 2026-09-08 已被系统清理。为人工 GUI 验收，从同一冻结 commit 重建了持久交付副本：
+上述 `/tmp` 产物在 2026-09-08 已被系统清理。当时曾从同一冻结 commit 重建持久交付副本：
 
 | 产物 | Path | SHA-256 |
 | --- | --- | --- |
 | wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `9ad8a9e06b27edc926348e06e0ce8da90b48569539e95c399119528cf24387a5` |
 | VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `778f18c08af75fbfe7d6639552b133bc388454527fc1c76301fc799a564b0f92` |
 
-重建检查确认 wheel 仍有 86 个条目，VSIX 仍有 8 个条目。两者均未包含开发仓库绝对路径。
+该副本后来已由新冻结提交的产物替换。表中的旧路径和哈希仅保留为历史证据。
+当时的检查确认 wheel 有 86 个条目，VSIX 有 8 个条目。两者均未包含开发仓库绝对路径。
 
 ## Wheel 构建与独立安装
 

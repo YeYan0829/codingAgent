@@ -9,7 +9,7 @@
 | 项目 | 当前值 |
 | --- | --- |
 | Branch | `feature/v0.4-candidate-loop` |
-| 发行内容冻结 commit | `4406f1947031e8435fe139e39aea2970f09b0735` |
+| 发行内容冻结 commit | `44ce5d1396d5b17d12d5293a614f1cedc968d95e` |
 | 冻结时 working tree | clean |
 | Python package | `codeagent-runtime 0.5.0` |
 | Runtime | `codeagent.__version__ == 0.5.0` |
@@ -26,25 +26,25 @@
 
 | 验证目标 | 状态 | 方法 / command | 当前结果 | 对应 commit | Evidence / notes |
 | --- | --- | --- | --- | --- | --- |
-| 源码 clean install | PASS | 从冻结 commit clone；新建 venv；执行 README 的 editable install 和 Fake smoke | clone 保持 clean；Runtime 与 RPC 启动成功；导入只指向新 clone | 冻结 commit | [clean-install-smoke.sh](evidence/clean-install-smoke.sh)；输出目录 `/tmp/codeagent-clean-install-4406f194` |
-| wheel 构建与内容 | PASS | 在 clean clone 中执行 `pip wheel --no-cache-dir --no-deps .`；读取 zip、metadata 和 entry points | wheel 构建成功；86 个条目，prompts、License 和 3 个入口齐全 | 冻结 commit | SHA-256 与文件表见 Phase 1 证据 |
+| 源码 clean install | PASS | 从冻结 commit clone；新建 venv；执行 README 的 editable install 和 Fake smoke | clone 保持 clean；Runtime 与 RPC 启动成功；导入只指向新 clone | 冻结 commit | [clean-install-smoke.sh](evidence/clean-install-smoke.sh)；输出目录 `/tmp/codeagent-clean-install-44ce5d1` |
+| wheel 构建与内容 | PASS | 在 clean clone 中执行 `pip wheel --no-cache-dir --no-deps --no-build-isolation .`；读取 zip、metadata 和 entry points | wheel 构建成功；86 个条目，prompts、License 和 3 个入口齐全 | 冻结 commit | SHA-256 与文件表见 Phase 1 证据 |
 | wheel 独立安装 | PASS | 第二个全新 venv 使用 `pip install --no-cache-dir <wheel>` | import、CLI、stdio RPC 和版本检查通过 | 冻结 commit | 导入来自 fresh venv 的 `site-packages`；没有开发仓库路径依赖 |
 | VSIX 构建与内容 | PASS | 在 clean clone 中执行 `node --check`、`npm test`、`vsce package`；读取 VSIX | 8 个预期文件；版本、engine、activation、commands、views 和 settings 正常 | 冻结 commit | README 链接固定到冻结 commit；missing repository warning 为非阻断元数据问题 |
 | wheel ↔ VSIX 分装连接 | PASS | 解包冻结 VSIX；用真实 `RuntimeConnection` spawn fresh venv 中的 RPC | explicit path 和 PATH 均完成 initialize/create/run/get/list；缺失 executable 被拒绝 | 冻结 commit | [runtime-connection-smoke.js](evidence/runtime-connection-smoke.js)；VS Code API 为 mock |
 | Python 默认测试 | PASS | 在 clean clone 中执行 `python -m pytest -q` | 302 passed，6 skipped | 冻结 commit | opt-in bwrap、Docker 和本地任务仓库用例已分开处理 |
 | 产品、交付与 RPC 定向测试 | PASS | 在 clean clone 中运行 product changes/execution/read model/RPC/demo/manifest 六组测试 | 33 passed | 冻结 commit | 使用临时真实 Git 仓库；模型和部分边界使用测试替身 |
-| Extension 单测 | PASS | 在 clean clone 的 `vscode-extension` 执行 `npm test` | 1 passed | 冻结 commit | 验证渲染逻辑；不等同 GUI 安装 |
-| 真实 Bubblewrap | PASS | 从 clean clone 设置 `CODEAGENT_TEST_BWRAP=/usr/bin/bwrap` 后运行集成测试 | 5 passed | 冻结 commit | 测试解释器位于 private `/tmp` 外；覆盖可写区、只读区、网络、超时清理和 fail closed |
-| 真实 Docker projection | PASS | 从 clean clone 设置 `CODEAGENT_RUN_SWEBENCH_DOCKER=1` 后运行单个集成用例 | 1 passed | 冻结 commit | 不是正式 SWE-bench 50 题 |
+| Extension 单测 | PASS | 在 clean clone 的 `vscode-extension` 执行语法检查和渲染测试 | 9 passed | 冻结 commit | 包含“选择历史会话后立即退出历史页”的回归用例；不等同 GUI 安装 |
+| 真实 Bubblewrap | PASS | 从 clean clone 设置 `CODEAGENT_TEST_BWRAP=/usr/bin/bwrap` 后运行集成测试 | 5 passed | `4406f1947031e8435fe139e39aea2970f09b0735` | 新冻结提交只修改 Extension 和它的测试，Python Runtime 未变化 |
+| 真实 Docker projection | PASS | 从 clean clone 设置 `CODEAGENT_RUN_SWEBENCH_DOCKER=1` 后运行单个集成用例 | 1 passed | `4406f1947031e8435fe139e39aea2970f09b0735` | 新冻结提交只修改 Extension 和它的测试；不是正式 SWE-bench 50 题 |
 | 远端 CI | NOT RUN | push 冻结 commit 后检查 workflow run | 当前没有对应远端 run | 冻结 commit | workflow 文件存在不能代替执行结果 |
-| 真实 VS Code 安装与操作 | MANUAL PENDING | 安装冻结 wheel 和 VSIX，在图形 VS Code 完成人工清单 | 尚未由用户操作 | 冻结 commit | headless 连接不能代替真实 Extension Host |
+| 真实 VS Code 安装与操作 | MANUAL PENDING | 安装冻结 wheel 和 VSIX，在图形 VS Code 完成人工清单 | 上一候选的 A 项已通过；History 缺陷已修复，等待新 VSIX 人工回归 | 冻结 commit | headless 连接不能代替真实 Extension Host |
 
 ## 冻结产物
 
 | 产物 | Path | SHA-256 |
 | --- | --- | --- |
-| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `9ad8a9e06b27edc926348e06e0ce8da90b48569539e95c399119528cf24387a5` |
-| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `778f18c08af75fbfe7d6639552b133bc388454527fc1c76301fc799a564b0f92` |
+| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `a1e0e3bcfd055309cec3cf4be560cbf6d11c9e256b2756cd333227adb8d2d4a0` |
+| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `938d1c1fec223b82869c59f06c39f177a3273d55969c4eea6fcd635fe66551c8` |
 
 ## Runtime 与 VSIX 如何连接
 
@@ -85,12 +85,15 @@ Runtime 找不到或异常退出时，界面显示 `Runtime unavailable`。用�
 
 ## 人工产品验收清单
 
-以下各项状态均为 `MANUAL PENDING`。执行对象必须是冻结 commit 生成的 wheel 和 VSIX。
-证据记录当前使用的 commit、产物 SHA-256、VS Code 版本和实际结果，不要求本轮截图或视频。
+执行对象必须是冻结 commit 生成的 wheel 和 VSIX。证据记录当前使用的 commit、产物 SHA-256、
+VS Code 版本和实际结果，不要求本轮截图或视频。
+
+上一候选的 A 项已由用户确认通过。人工操作还发现一个 History 导航问题：点击会话后，
+界面仍停留在历史列表，必须再点返回。新冻结提交已修复该问题，等待用本页的新 VSIX 复验。
 
 | 步骤 | 验证目标 | 操作与通过条件 | Evidence |
 | --- | --- | --- | --- |
-| A | Runtime ↔ Extension | 在全新 venv 安装 wheel，再安装 VSIX。先设置 `codeagent.rpcCommand` 为绝对路径，再用 PATH 启动。打开目标 Git 仓库后，任务入口可用且 Output 无握手错误。随后配置不存在的路径，确认出现 Runtime unavailable、Retry 和 Open Output | 待填写 |
+| A | Runtime ↔ Extension | 在全新 venv 安装 wheel，再安装 VSIX。先设置 `codeagent.rpcCommand` 为绝对路径，再用 PATH 启动。打开目标 Git 仓库后，任务入口可用且 Output 无握手错误。随后配置不存在的路径，确认出现 Runtime unavailable、Retry 和 Open Output | 上一候选 PASS；安装新 VSIX 后做一次连接快速回归 |
 | B | 基本任务 | 用 `codeagent-product-demo` 创建离线失败示例。新建 Session，发送 bugfix 任务。确认时间线持续更新，模型消息和工具调用可见 | 待填写 |
 | C | Approval | 触发 worktree 或命令审批。确认界面显示原因和权限范围。先 Reject，确认任务不会越权继续；重新触发后 Allow。一次许可不得扩大到无关后续权限 | 待填写 |
 | D | Worktree / source protection | 在任务执行期间检查源仓库。Accept 前，Agent 修改只出现在隔离 worktree，source 文件内容保持不变 | 待填写 |
@@ -99,20 +102,21 @@ Runtime 找不到或异常退出时，界面显示 `Runtime unavailable`。用�
 | G | Accept | Accept 后确认修改进入 source，且没有自动创建额外 commit。分别制造非冲突 source 变化和真实冲突，确认合并或拒绝行为符合界面提示 | 待填写 |
 | H | Discard | 新建任务并产生修改，然后 Discard。确认 source 不变，待交付修改被清空，Session 返回可理解状态 | 待填写 |
 | I | Stop / Budget | 在模型、命令或审批阶段请求 Stop，确认它在当前操作结束后生效。用小预算触发上限，确认提示可理解；显式增加预算后继续同一任务，且权限没有扩大 | 待填写 |
-| J | History | 完成后重载窗口并切换仓库。确认全局 History 能找到 Session；在错误仓库只能看摘要，打开对应仓库后才能恢复 | 待填写 |
+| J | History | 完成后重载窗口并切换仓库。确认全局 History 能找到 Session；点击当前仓库的会话后应立即进入该会话；在错误仓库只能看摘要，打开对应仓库后才能恢复 | 上一候选发现导航缺陷；新候选已自动测试，等待 GUI 复验 |
 
 ## Release blockers
 
-当前没有已确认的实现或安装 blocker。clean clone、wheel 独立安装、VSIX 构建、Runtime discovery、
-RPC handshake 和 Bubblewrap 边界均已对冻结 commit 通过。
+当前没有未修复的已知实现问题。clean clone、wheel 独立安装、VSIX 构建和 Runtime 连接
+已对新冻结提交通过。
 
-真实 GUI 核心流程仍需人工验收。这是尚未完成的发布门禁，不是已经复现的产品错误。
+History 导航缺陷已经修复，但新 VSIX 尚未完成人工回归。真实 GUI 的其余核心流程也仍需人工验收。
+这些是尚未完成的发布门禁。
 
 截图、视频和正式 SWE-bench 50 题没有执行，也不列为本阶段 blocker。
 
 ## Phase 1 建议
 
-**可以进入人工 GUI 验收。**
+**安装新 VSIX，先回归 History，然后继续人工 GUI 验收。**
 
 人工验收使用本页记录的同一 commit、wheel 和 VSIX。完成前不创建 tag 或 Pre-release，
 也不运行正式 SWE-bench 50 题。
