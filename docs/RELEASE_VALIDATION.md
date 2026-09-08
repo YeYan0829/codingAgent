@@ -37,7 +37,7 @@
 | 真实 Bubblewrap | PASS | 从 clean clone 设置 `CODEAGENT_TEST_BWRAP=/usr/bin/bwrap` 后运行集成测试 | 5 passed | `4406f1947031e8435fe139e39aea2970f09b0735` | 新冻结提交只修改 Extension 和它的测试，Python Runtime 未变化 |
 | 真实 Docker projection | PASS | 从 clean clone 设置 `CODEAGENT_RUN_SWEBENCH_DOCKER=1` 后运行单个集成用例 | 1 passed | `4406f1947031e8435fe139e39aea2970f09b0735` | 新冻结提交只修改 Extension 和它的测试；不是正式 SWE-bench 50 题 |
 | 远端 CI | NOT RUN | push 冻结 commit 后检查 workflow run | 当前没有对应远端 run | 冻结 commit | workflow 文件存在不能代替执行结果 |
-| 真实 VS Code 安装与操作 | MANUAL PENDING | 安装冻结 wheel 和 VSIX，在图形 VS Code 完成人工清单 | 上一候选的 A 项已通过；History 缺陷已修复，等待新 VSIX 人工回归 | 冻结 commit | headless 连接不能代替真实 Extension Host |
+| 真实 VS Code 安装与操作 | MANUAL PENDING | 安装冻结 wheel 和 VSIX，在图形 VS Code 完成人工清单 | A、B、D、F、J 已通过；C 只完成 Approval 允许路径 | 冻结 commit | E、G、H、I 和 C 的拒绝/权限范围仍待人工验证 |
 
 ## 冻结产物
 
@@ -88,35 +88,35 @@ Runtime 找不到或异常退出时，界面显示 `Runtime unavailable`。用�
 执行对象必须是冻结 commit 生成的 wheel 和 VSIX。证据记录当前使用的 commit、产物 SHA-256、
 VS Code 版本和实际结果，不要求本轮截图或视频。
 
-上一候选的 A 项已由用户确认通过。人工操作还发现一个 History 导航问题：点击会话后，
-界面仍停留在历史列表，必须再点返回。新冻结提交已修复该问题，等待用本页的新 VSIX 复验。
+用户使用 Quick Start 仓库完成了安装连接、基本任务、source 保护、原生 Diff 和 History 验证。
+History 会话切换修复已通过真实界面回归。Approval 已验证允许路径，拒绝与权限范围仍待验证。
 
 | 步骤 | 验证目标 | 操作与通过条件 | Evidence |
 | --- | --- | --- | --- |
-| A | Runtime ↔ Extension | 在全新 venv 安装 wheel，再安装 VSIX。先设置 `codeagent.rpcCommand` 为绝对路径，再用 PATH 启动。打开目标 Git 仓库后，任务入口可用且 Output 无握手错误。随后配置不存在的路径，确认出现 Runtime unavailable、Retry 和 Open Output | 上一候选 PASS；安装新 VSIX 后做一次连接快速回归 |
-| B | 基本任务 | 用 `codeagent-product-demo` 创建离线失败示例。新建 Session，发送 bugfix 任务。确认时间线持续更新，模型消息和工具调用可见 | 待填写 |
-| C | Approval | 触发 worktree 或命令审批。确认界面显示原因和权限范围。先 Reject，确认任务不会越权继续；重新触发后 Allow。一次许可不得扩大到无关后续权限 | 待填写 |
-| D | Worktree / source protection | 在任务执行期间检查源仓库。Accept 前，Agent 修改只出现在隔离 worktree，source 文件内容保持不变 | 待填写 |
+| A | Runtime ↔ Extension | 在全新 venv 安装 wheel，再安装 VSIX。先设置 `codeagent.rpcCommand` 为绝对路径，再用 PATH 启动。打开目标 Git 仓库后，任务入口可用且 Output 无握手错误。随后配置不存在的路径，确认出现 Runtime unavailable、Retry 和 Open Output | PASS；用户确认人工安装与连接验证成功 |
+| B | 基本任务 | 用 `codeagent-product-demo` 创建离线失败示例。新建 Session，发送 bugfix 任务。确认时间线持续更新，模型消息和工具调用可见 | PASS；Quick Start 仓库完成一次真实任务 |
+| C | Approval | 触发 worktree 或命令审批。确认界面显示原因和权限范围。先 Reject，确认任务不会越权继续；重新触发后 Allow。一次许可不得扩大到无关后续权限 | MANUAL PENDING；Approval 允许路径通过，Reject 与权限范围未验证 |
+| D | Worktree / source protection | 在任务执行期间检查源仓库。Accept 前，Agent 修改只出现在隔离 worktree，source 文件内容保持不变 | PASS；Quick Start 仓库确认 Accept 前 source 不变 |
 | E | Validation | 先运行失败验证，再修复并运行成功验证。成功后继续修改代码，确认旧结果显示过期。重新验证后恢复为当前结果 | 待填写 |
-| F | Diff | 从 Changes 打开原生 Diff。确认文件列表和内容对应当前尚未交付的修改 | 待填写 |
+| F | Diff | 从 Changes 打开原生 Diff。确认文件列表和内容对应当前尚未交付的修改 | PASS；Quick Start 仓库的文件列表与原生 Diff 内容一致 |
 | G | Accept | Accept 后确认修改进入 source，且没有自动创建额外 commit。分别制造非冲突 source 变化和真实冲突，确认合并或拒绝行为符合界面提示 | 待填写 |
 | H | Discard | 新建任务并产生修改，然后 Discard。确认 source 不变，待交付修改被清空，Session 返回可理解状态 | 待填写 |
 | I | Stop / Budget | 在模型、命令或审批阶段请求 Stop，确认它在当前操作结束后生效。用小预算触发上限，确认提示可理解；显式增加预算后继续同一任务，且权限没有扩大 | 待填写 |
-| J | History | 完成后重载窗口并切换仓库。确认全局 History 能找到 Session；点击当前仓库的会话后应立即进入该会话；在错误仓库只能看摘要，打开对应仓库后才能恢复 | 上一候选发现导航缺陷；新候选已自动测试，等待 GUI 复验 |
+| J | History | 完成后重载窗口并切换仓库。确认全局 History 能找到 Session；点击当前仓库的会话后应立即进入该会话；在错误仓库只能看摘要，打开对应仓库后才能恢复 | PASS；修复后点击历史会话可直接进入会话界面 |
 
 ## Release blockers
 
 当前没有未修复的已知实现问题。clean clone、wheel 独立安装、VSIX 构建和 Runtime 连接
 已对新冻结提交通过。
 
-History 导航缺陷已经修复，但新 VSIX 尚未完成人工回归。真实 GUI 的其余核心流程也仍需人工验收。
+History 导航缺陷已经修复，并通过人工回归。C 的拒绝/权限范围以及 E、G、H、I 仍需人工验收。
 这些是尚未完成的发布门禁。
 
 截图、视频和正式 SWE-bench 50 题没有执行，也不列为本阶段 blocker。
 
 ## Phase 1 建议
 
-**安装新 VSIX，先回归 History，然后继续人工 GUI 验收。**
+**继续完成 C、E、G、H、I；已通过页面可开始截取 GitHub 展示素材。**
 
 人工验收使用本页记录的同一 commit、wheel 和 VSIX。完成前不创建 tag 或 Pre-release，
 也不运行正式 SWE-bench 50 题。

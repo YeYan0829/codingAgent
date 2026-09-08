@@ -45,3 +45,6 @@ fixture 和测试命令离线；DeepSeek/GLM 模型请求仍通过 Runtime 访�
 
 更完整的真实仓库任务见 [`../eval-tasks/`](../eval-tasks/)，安装和环境边界见
 [安装与运行](../../docs/INSTALLATION.md)。
+
+需要为 GitHub README 截取产品画面时，使用同一 Quick Start 仓库并按
+[GitHub 展示素材清单](SHOT_LIST.md)准备截图和短 GIF。

@@ -1,12 +1,13 @@
 # 展示导向项目现状梳理
 
-审查日期：2026-09-06。目标以 [系统目标](系统目标.md) 为准。本文件记录当次工作区现状与展示交付差距，
-不是已发布版本声明。Runtime/Product 存在未提交改动；本次不启动付费 50 题评测，不打包发布，不录制 GUI。
+审查日期：2026-09-06；展示方案更新：2026-09-08。目标以 [系统目标](系统目标.md) 为准。
+本文件记录展示交付差距，不是已发布版本声明。当前 GitHub 展示改为真实截图为主、少量短 GIF 补充交互。
+具体素材见 [GitHub 展示素材清单](../examples/showcase/SHOT_LIST.md)。
 
 ## 1. 结论
 
-当前已具备录制完整产品主链路的功能条件。项目最需要补的是视频/截图、面向访客的 README、干净环境安装
-验证，以及冻结版本后的正式评测报告。无需先增加 Planner、共享项目理解或更多 Agent 能力。
+当前已具备展示产品主链路的功能条件。项目最需要补的是截图、少量短 GIF、面向访客的 README，
+以及冻结版本后的正式评测报告。无需先增加 Planner、共享项目理解或更多 Agent 能力。
 
 Runtime + GLM 5.2 跑固定 50 题，能够产生适合简历的真实仓库工程指标；是否取得高 resolved rate 不能提前
 保证。当前 harness 已能运行，但正式报告前仍有恢复身份、attempt 计量、时延和公开证据导出缺口。
@@ -36,13 +37,13 @@ Runtime + GLM 5.2 跑固定 50 题，能够产生适合简历的真实仓库工�
 | 顺序 | 首页内容 | 素材与作用 |
 | --- | --- | --- |
 | 1 | 标题、一句话定位、支持环境 | 清楚写明本地 Runtime + 远程模型 API、Linux/WSL2、Git 仓库 |
-| 2 | 一张主截图 + 演示链接 | 同时看见 Chat、工具活动、当前修改和中央原生 Diff；短 GIF 可选，不必替代完整视频 |
+| 2 | 一张主截图 | 同时看见 Chat、工具活动、当前修改和中央原生 Diff |
 | 3 | 4 个能力摘要 | Runtime/Context、隔离验证、可观测干预、真实仓库评测；每项链接代码/设计 |
 | 4 | 快速安装和首个任务 | 固定版本 Runtime + VSIX；开发 F5 为单独入口；先给成功路径，再链接排错 |
 | 5 | 一张架构图 | 突出事实来源、审批边界和两种执行后端，不画未实现模块 |
 | 6 | 评测结果摘要 | 固定子集名称、模型/配置、resolved 分母、正常结束率、成本/时延，链接完整报告 |
 | 7 | 关键设计与限制 | 为什么 worktree、为何验证会 stale、Stop 保证、支持范围和已知限制 |
-| 8 | 开发与复现入口 | tests、人工验收、benchmark 命令、文档索引、版本与许可 |
+| 8 | 开发与复现入口 | Quick Start、tests、人工验收、benchmark 命令、文档索引、版本与许可 |
 
 可直接用于后续首页的架构骨架：
 
@@ -73,15 +74,15 @@ flowchart TD
 图中审批和交付是不同边界；benchmark 不经过产品人工 Accept 流程。实现细节以
 [ARCHITECTURE](ARCHITECTURE.md) 为准。
 
-## 4. 录制条件与缺口
+## 4. 展示素材条件与缺口
 
-| 项目 | 当前状态 | 录制/发布前工作 |
+| 项目 | 当前状态 | 发布前工作 |
 | --- | --- | --- |
-| 输入任务→读取→编辑→验证→Diff→Accept | 功能已具备，PRODUCT_ACCEPTANCE 记录已完成开发工作区 dogfood | 冻结版本后彩排一次，录制实际 GLM 任务 |
-| 审批 Allow/Reject、Stop、Discard | 已实现，有自动化覆盖；environment/network 两分支有人工记录 | 单独短片，不把所有异常塞进主视频 |
-| History 与重载恢复 | 已实现 | 演示恢复事实，明确旧审批不会变成授权 |
-| 网络/环境任务 | 已有专用 fixture，2026-09-06 Allow/Reject 有记录 | 作为可选进阶演示，不要求主视频安装外部依赖 |
-| 展示素材 | 本次仓库检查未找到产品视频、截图或成套结果图 | 实际录制，不用设计稿或生成图片冒充产品 |
+| 输入任务→读取→编辑→验证→Diff | Quick Start 已完成人工验证 | 截取主图，保留时间线、Current Delivery 和原生 Diff |
+| 审批 Allow/Reject、Stop、Discard | Allow 已人工验证，其余有自动化覆盖 | 先截取 Allow 前的审批；Reject 通过后可补短 GIF |
+| History 与重载恢复 | 已完成人工验证 | 截取列表，并录制 5～8 秒的会话切换 GIF |
+| 网络/环境任务 | 已有专用 fixture，2026-09-06 Allow/Reject 有记录 | 作为可选进阶截图，与离线 Quick Start 分开展示 |
+| 展示素材 | 仓库内还没有产品截图或 GIF | 使用真实 VS Code 画面，不用设计稿或生成图片冒充产品 |
 | 安装分发 | 已有 manifest、RPC 入口、打包说明和 `.vscodeignore` | 干净安装 Runtime、生成 VSIX、验证无开发 `.venv` 兜底；提供版本和实际安装记录 |
 | 自动化展示 | 当前工作区实跑 300 passed、3 skipped；Node render 测试通过 | 冻结 commit 重跑并记录；目前未找到仓库级 GitHub Actions workflow，可补 L0 CI |
 | 许可与版本材料 | 扩展 manifest 声明 MIT，但未找到仓库级 LICENSE 或已跟踪发布包 | 确认许可文本与声明一致，准备 changelog/tag/release 材料；不据 manifest 宣称许可材料已完整 |
@@ -89,61 +90,52 @@ flowchart TD
 
 ### 展示素材分层
 
-`codeagent-product-demo` 的零数量缺陷只作为 **60～90 秒快速体验/验收短片**。它离线、确定、容易复现，适合
-展示创建隔离工作区、工具时间线、focused verification、原生 Diff 和 Accept，但一行边界条件修复不足以证明
-真实仓库理解、测试选择或长轨迹执行能力，因此不作为 GitHub 唯一主视频。
+`codeagent-product-demo` 的零数量缺陷用于产品主图和 Quick Start。它离线、确定、容易复现，适合展示
+隔离工作区、工具时间线、验证和原生 Diff。这些画面证明产品链路可用，不代表复杂仓库理解能力。
 
-**GitHub 主视频使用一个随正式 50 题结果公开的真实仓库成功案例，控制在 3～5 分钟：**
+README 首轮只需要三张截图和一张短 GIF：
 
-1. **0:00～0:30：** 给出原始 issue、仓库/基线 commit、模型与固定预算，并先运行或展示可复现的失败测试。
-2. **0:30～1:30：** 展示 Agent 跨目录搜索、读取实现与测试，时间线中至少能看到问题定位所依据的两个代码证据；
-   不展示或声称隐藏推理。
-3. **1:30～2:40：** 展示隔离工作区审批、实际修改，以及从 focused test 到必要回归测试的验证过程。等待可剪辑，
-   画面标注真实耗时、步数和剪辑位置。
-4. **2:40～3:40：** 在 Changes 中检查实际 patch，打开原生 Diff，并确认 validation 仍为 current；随后 Accept，
-   展示 source repository 才发生变化。问题复杂度由定位与验证证据体现，不为视频刻意扩大 patch。
-5. **3:40～5:00：** 展示 official oracle 结果和该题在完整固定 50 题报告中的位置，同时给出本题步骤数、工具调用、
-   token、成本和终止状态，避免让单个成功案例代替总体评测。
+1. 主图同时展示 Explorer、原生 Diff 和 CodeAgent 时间线；
+2. Approval 截图展示受保护操作如何等待用户决定；
+3. History 截图展示本地会话列表；
+4. 5～8 秒 GIF 展示从 History 直接进入所选会话。
 
-主案例优先选择 Medium、定位过程涉及至少两个相关文件或模块、在 48 步内稳定完成且官方 oracle 通过的任务；
-最终 patch 可以只有一个文件。不能只按画面效果临时挑题：应从冻结批次中按预先写明的规则选择，并在 README 链接原始题目、patch、
-轨迹摘要和逐题结果。若正式 50 题尚未完成，可先录快速体验短片；主视频保持待发布状态。
+Validation stale、Permission Reject 和 Accept/Discard 要等对应人工验收通过后再补素材。
+任务执行等待、模型请求和测试过程不制作 GIF，也不需要剪成连续故事。
 
-另录两个 30～60 秒控制能力短片：一个展示 Stop 或 budget waiting 后由用户明确扩额，另一个展示权限 Reject
-或 Discard。History/重载恢复可放入其中，不把所有异常路径压进主视频。
+正式 50 题完成后，选择一个符合预定规则的真实仓库案例制作静态结果页。结果页包含任务来源、
+关键代码位置、最终 Diff、official oracle 和该题在完整批次中的位置。单个案例不能代替总体评测。
 
-不必为了录制增加真正 Pause、运行中插话、逐 token streaming、自动环境安装或更复杂前端。
+完整文件名、配文和采集顺序见 [GitHub 展示素材清单](../examples/showcase/SHOT_LIST.md)。
 
 ### 现有 `examples/` 的使用方式
 
 现有样例可以复用，但不把它们全部当成同一种展示材料：
 
-| 素材 | 建议用途 | 是否适合作为 GitHub 主视频 |
+| 素材 | 建议用途 | 是否适合作为 GitHub 主案例 |
 | --- | --- | --- |
-| `codeagent-product-demo` 离线除零任务 | 60～90 秒快速体验；稳定展示 Session、时间线、验证、Diff 和 Accept | 否，只证明产品链路可用 |
+| `codeagent-product-demo` 离线除零任务 | 产品主图、Approval、History 和 Quick Start | 否，只证明产品链路可用 |
 | `examples/buggy-repos/tiny-sort-bug` | readonly exploration 或开发冒烟；问题和仓库都过小 | 否 |
-| `itsdangerous-strict-base64` | 首次真实模型彩排、截图和安装后验证；任务短且 oracle 明确 | 可作补充案例，不优先作为唯一主视频 |
-| `click-short-help-sentences` | 中等复杂度完整流程；适合展示阅读现有实现、边界测试和最小 patch | 可作为正式评测前的临时主案例 |
-| `httpx-no-proxy-cidr` | 跨函数定位、IPv4/IPv6 边界和较完整回归；最能体现仓库理解 | 成功稳定时可作主案例候选 |
+| `itsdangerous-strict-base64` | 真实模型截图和安装后验证；任务短且 oracle 明确 | 可作补充静态案例 |
+| `click-short-help-sentences` | 中等复杂度完整流程；适合展示阅读现有实现、边界测试和最小 patch | 可作真实仓库静态案例 |
+| `httpx-no-proxy-cidr` | 跨函数定位、IPv4/IPv6 边界和较完整回归；最能体现仓库理解 | 成功稳定时可作静态案例候选 |
 
-`examples/eval-repos` 是上游快照，不直接在其中录制修改。继续通过 `examples/eval-tasks/prepare.sh` 生成独立 Git
-workspace，并在视频中明确任务来源、基线和独立 oracle。三个任务属于项目自建真实仓库任务，不能表述成
-SWE-bench 官方成绩。最终 GitHub 主视频仍优先从冻结的 50 题正式批次中，按前述规则选择 oracle 通过的案例；
-这样视频、逐题报告和简历指标可以指向同一份证据。若正式评测尚未完成，可暂时使用 Click 或 HTTPX 案例，
+`examples/eval-repos` 是上游快照，不直接在其中制作修改。继续通过 `examples/eval-tasks/prepare.sh` 生成独立 Git
+workspace，并在静态案例中明确任务来源、基线和独立 oracle。三个任务属于项目自建真实仓库任务，不能表述成
+SWE-bench 官方成绩。最终 GitHub 静态案例仍优先从冻结的 50 题正式批次中，按前述规则选择 oracle 通过的任务；
+这样案例、逐题报告和简历指标可以指向同一份证据。若正式评测尚未完成，可暂时使用 Click 或 HTTPX 案例，
 并准确标注为 real-repository dogfood。
 
-### 录制前的执行顺序
+### 素材制作顺序
 
-1. 现在冻结素材规划：确定每条视频证明什么、使用哪个任务、必须出现的画面与证据，不实际录制成片；
-2. 先将旧 TD 的有效内容并入正式文档，完成 README/文档链接检查，并收口右侧栏、初始页和 History 等会直接
-   出现在视频中的界面；
-3. 构建候选 wheel/VSIX，在干净环境完成安装和 Product Acceptance，修复演示阻塞后冻结 commit；
-4. 用 `itsdangerous-strict-base64` 彩排一次，确认字体、窗口布局、命令时长、敏感信息遮挡和录屏节奏；
-5. 在同一候选 commit 上录制快速体验及控制能力短片；主视频使用正式 50 题案例，或在评测前暂用稳定通过的
-   Click/HTTPX 案例；
-6. 最后截取 README 主截图、剪辑视频并生成字幕。README 中引用固定 commit、任务、patch 和验证结果。
+1. 完成剩余人工验收，只为已经通过的行为制作素材；
+2. 复用 Quick Start Session 截取主图和 History；
+3. 新建 Session，停在 worktree Approval 截取审批图；
+4. 录制 5～8 秒 History 切换 GIF，不录完整任务；
+5. 把素材加入 README，并在正常 GitHub 页面宽度检查可读性；
+6. 正式评测完成后再制作真实仓库静态案例页。
 
-不要在文档和 UI 尚未收口时录制正式成片，否则右侧栏布局、按钮名称、安装命令或文档路径变化会迫使重录。
+不要把未通过人工验收的状态放入展示，也不要用设计稿或生成图代替真实产品画面。
 
 ## 5. 50 题评测是否值得做
 
@@ -214,7 +206,7 @@ SWE-bench Verified 官方集合为 500 题；官方 Docker harness 对提交的 
 
 1. 收准项目经历措辞和 README 信息结构；本次先完成目标与现状文档。
 2. 准备候选发布版本，完成干净安装/VSIX 体验、L0/真实 Bubblewrap/产品主链路验收；修复实际阻塞后冻结版本。
-3. 基于稳定版本录制主视频、补充短片与截图；安装步骤和演示材料可先公开，不等待 50 题成绩。
+3. 基于稳定版本补充截图和短 GIF；安装步骤和 Quick Start 材料可先公开，不等待 50 题成绩。
 4. 在正式付费运行前完成第 6 节准备；若修改了代码，冻结新的评测 commit 并明确与演示版本的关系。
 5. 运行固定 50 题并生成可公开结果包，再把实际指标回填 README 与简历。
 

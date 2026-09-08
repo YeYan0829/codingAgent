@@ -44,7 +44,7 @@ Session 环境复用、环境配置应用流程和环境可见性仍需独立设
 | [NEXT_PHASE_PLAN](NEXT_PHASE_PLAN.md) | 尚未完成且已经排好优先级的工作 |
 | [MANUAL_TEST](MANUAL_TEST.md) | CLI 专项 dogfood，不代替 VS Code 产品验收 |
 | [系统目标](系统目标.md) | 当前产品定位、展示交付范围、完成标准与非目标 |
-| [SHOWCASE_READINESS](SHOWCASE_READINESS.md) | 2026-09-06 展示现状、简历措辞对齐、首页/视频方案与评测差距 |
+| [SHOWCASE_READINESS](SHOWCASE_READINESS.md) | 展示现状、简历措辞、GitHub 首页素材与评测差距 |
 
 [VS Code 产品层 Technical Design](VS_CODE_PRODUCT_TECHNICAL_DESIGN.md)保留 Phase 0～5 的设计推导，当前行为以
 Product RPC、UX 规范和 Product Acceptance 为准。更早的路线、研究与评测位于 [`archive/`](archive/)，只用于

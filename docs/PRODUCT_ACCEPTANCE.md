@@ -16,11 +16,11 @@ python3 -m venv .venv
 
 命令只创建指定的空目录；目录非空时拒绝覆盖。随后在 Extension Development Host 打开该 demo 目录。
 
-## 2. 60～90 秒快速体验与产品验收链路
+## 2. Quick Start 与产品验收链路
 
-该离线除零任务用于稳定复现产品交互和安全交付边界，不承担真实仓库理解或模型能力证明。GitHub 主视频应使用
-正式固定评测中的真实仓库案例，选择与披露规则见 [展示导向现状梳理](SHOWCASE_READINESS.md#展示素材分层)。
-60～90 秒短片只录制下列第 1～3、5～7 项；Stop、History 和 budget waiting 是完整验收及补充短片内容。
+该离线除零任务用于稳定复现产品交互和安全交付边界，不承担真实仓库理解或模型能力证明。
+GitHub 首页使用它截取产品主图、Approval 和 History。短 GIF 只补充会话切换等状态变化。
+素材范围见 [GitHub 展示素材清单](../examples/showcase/SHOT_LIST.md)。
 
 1. 在齿轮配置页选择 DeepSeek 或 GLM，保存 API Key、模型和预算。
 2. New task，发送：`Fix the zero-count behavior, run the repository focused verification, and summarize the change.`

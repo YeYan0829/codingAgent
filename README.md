@@ -2,25 +2,18 @@
 
 **在 VS Code 中运行的本地 Coding Agent。修改先隔离，过程可查看，交付由你决定。**
 
-CodeAgent 可以搜索代码、编辑文件、运行项目命令并执行测试。
+CodeAgent 可以搜索和编辑代码。它也可以运行项目命令和测试。
 
-修改不会直接写入你正在使用的目录。CodeAgent 会先创建独立的 Git worktree。
+执行过程显示在 VS Code 右侧栏。
 
-执行过程显示在 VS Code 右侧栏。任务完成后，你可以查看 Diff 和测试结果。
-然后再选择 Accept 或 Discard。
+- 修改先进入独立的 Git worktree，不会直接写入源仓库。
+- 任务中的消息、工具调用和测试状态可以随时查看。
+- 完成后先审查原生 Diff，再选择 Accept 或 Discard。
 
-Accept 会把修改应用到源仓库。
+VS Code Extension 提供界面。Python Runtime 在本地调用模型和工具。
 
-Discard 会清空这次尚未交付的修改。
-
-VS Code Extension 提供界面。
-
-Python Runtime 是负责调用模型和工具的本地进程。
-
-当前 `0.5.0` 仍处于发布候选开发阶段，支持 Linux 和 WSL2。主截图、演示视频和正式 50 题评测仍待完成。
+当前 `0.5.0` 仍处于发布候选开发阶段，支持 Linux 和 WSL2。正式 50 题评测仍待完成。
 进度见[发布验收](docs/RELEASE_VALIDATION.md)。
-
-> **主截图待补：** 左侧 Explorer、中央原生 Diff、右侧 CodeAgent 执行时间线。
 
 ## 为什么做 CodeAgent
 
@@ -205,6 +198,9 @@ flowchart LR
 
 [`examples/showcase/`](examples/showcase/) 提供最小离线示例。
 [`examples/eval-tasks/`](examples/eval-tasks/) 提供三个可重复的真实仓库任务。
+
+截图和短 GIF 的页面位置、文件名与采集顺序见
+[GitHub 展示素材清单](examples/showcase/SHOT_LIST.md)。
 
 这些示例不是 SWE-bench 官方成绩。已有评测仅用于验证运行链路。
 正式固定 50 题尚未运行，也没有预测成绩。

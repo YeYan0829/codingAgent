@@ -41,9 +41,9 @@ Extension 与大量测试仍未纳入提交，因此这是第一优先级。
 
 - 在同一个候选 commit 上完成 [Product Acceptance](PRODUCT_ACCEPTANCE.md)：主链路、Stop、budget waiting/扩额、
   Approval Reject、Discard、History 重载和 stale validation；
-- 录制 60～90 秒确定性快速体验，截取右侧 Agent、左侧 Explorer、中央 Diff 同时可见的真实界面；
-- 录制 Stop/budget 与 Reject/Discard 两个短片；正式真实仓库主视频可在固定评测产生合适案例后补充；
-- README 首屏加入截图、快速体验链接、架构图、安装命令、当前限制和验证记录。
+- 截取右侧 Agent、左侧 Explorer、中央 Diff 同时可见的真实主图；
+- 补充 Approval、History 截图和一个 History 切换短 GIF；其他 GIF 只在对应人工验收通过后制作；
+- README 首屏加入主图、Quick Start 链接、架构图、安装命令、当前限制和验证记录。
 
 退出条件：访问者能够在几分钟内理解用途、安全边界和实际完成度，并能回到 commit、命令与证据。
 
@@ -58,7 +58,7 @@ Extension 与大量测试仍未纳入提交，因此这是第一优先级。
 ### Gate E：评测与正式展示
 
 - 完成下节评测准备后冻结独立评测 commit，运行固定 SWE-bench Verified 50 题自定义子集；
-- 发布逐题结果、失败分类、成本/时延、配置与公开证据映射；从冻结批次按既定规则选择真实仓库主视频案例；
+- 发布逐题结果、失败分类、成本/时延、配置与公开证据映射；选择一个真实仓库案例形成静态结果页；
 - 将实际 X/50、Y/50 回填 README 和简历，再发布 `v0.5.0` 或标明评测对应的准确 RC/commit。
 
 退出条件：任何汇报指标都能定位到固定任务、运行身份和原始判定，不以成功案例替代总体结果。

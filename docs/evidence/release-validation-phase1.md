@@ -38,7 +38,8 @@ Runtime 已加载所选会话，但界面仍停留在历史列表。用户必须
 | wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `a1e0e3bcfd055309cec3cf4be560cbf6d11c9e256b2756cd333227adb8d2d4a0` |
 | VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `938d1c1fec223b82869c59f06c39f177a3273d55969c4eea6fcd635fe66551c8` |
 
-新 VSIX 的 History 行为仍需真实 VS Code 人工回归。其余人工清单也没有因此标记为完成。
+用户随后使用 Quick Start 仓库完成人工回归。A、B、D、F、J 通过，History 点击后可直接进入所选会话。
+C 只验证了 Approval 允许路径；Reject、权限范围以及 E、G、H、I 仍待验证。
 
 ## 首次冻结验证
 
