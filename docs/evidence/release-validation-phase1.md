@@ -20,6 +20,15 @@ clean clone 位于 `/tmp/codeagent-clean-install-4406f194/repository`。
 
 VSCE 报告 `package.json` 没有 `repository` 字段。它没有影响构建、安装内容或 Runtime 连接，因此记录为非阻断发布元数据问题。
 
+上述 `/tmp` 产物在 2026-09-08 已被系统清理。为人工 GUI 验收，从同一冻结 commit 重建了持久交付副本：
+
+| 产物 | Path | SHA-256 |
+| --- | --- | --- |
+| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `9ad8a9e06b27edc926348e06e0ce8da90b48569539e95c399119528cf24387a5` |
+| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `778f18c08af75fbfe7d6639552b133bc388454527fc1c76301fc799a564b0f92` |
+
+重建检查确认 wheel 仍有 86 个条目，VSIX 仍有 8 个条目。两者均未包含开发仓库绝对路径。
+
 ## Wheel 构建与独立安装
 
 构建命令在 clean clone 中执行：

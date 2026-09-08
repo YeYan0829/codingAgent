@@ -43,8 +43,8 @@
 
 | 产物 | Path | SHA-256 |
 | --- | --- | --- |
-| wheel | `/tmp/codeagent-v0.5.0-4406f194/wheelhouse/codeagent_runtime-0.5.0-py3-none-any.whl` | `df8dfbc549d1e3d17265aa99c306136c50329f8d377236ce00d1947582d499d5` |
-| VSIX | `/tmp/codeagent-v0.5.0-4406f194/release/codeagent-0.5.0.vsix` | `23a06613a59b0177df10ad3b954c8a4bf4a9137b10cf6aa1c1c55d54cc5e7261` |
+| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `9ad8a9e06b27edc926348e06e0ce8da90b48569539e95c399119528cf24387a5` |
+| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `778f18c08af75fbfe7d6639552b133bc388454527fc1c76301fc799a564b0f92` |
 
 ## Runtime 与 VSIX 如何连接
 
