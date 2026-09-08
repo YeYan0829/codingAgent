@@ -111,6 +111,16 @@ test("message copy uses the extension-host clipboard bridge", () => {
   assert.doesNotMatch(html, /data-copy-text/);
 });
 
+test("selecting a history item closes history before opening the session", () => {
+  const html = renderChat({sessionId: "s1", title: "Current", turns: []}, [
+    {sessionId: "s1", workspace: "/work/current", title: "Current", isCurrentWorkspace: true},
+    {sessionId: "s2", workspace: "/work/current", title: "Previous", isCurrentWorkspace: true},
+  ]);
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+
+  assert.match(script, /el\.onclick=\(\)=>\{historyOpen=false;vscode\.postMessage\(\{type:'selectSession',sessionId:el\.dataset\.session\}\);\}/);
+});
+
 test("budget increase is an explicit control request and cancellation does not run", async () => {
   const calls = [];
   let options;

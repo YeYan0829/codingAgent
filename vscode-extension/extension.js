@@ -468,7 +468,7 @@ function renderChat(detail, sessions, profile = DEFAULT_PROFILE, secretState = {
       const body=groups.filter(group=>group[1].length).map(group=>'<section class="session-group"><div class="group-title">'+esc(group[0])+'<span>'+group[1].length+'</span></div>'+group[1].map(sessionButton).join('')+'</section>').join('');
       return body||(state.sessions.length?'<div class="history-empty"><strong>No matching sessions</strong><span>Try another search or filter.</span></div>':'<div class="history-empty"><strong>No sessions in this Session Root</strong><span>Sessions created with another storage root are kept separate.</span></div>');
     };
-    const renderHistoryResults = () => {const target=document.getElementById('sessions');if(target){target.innerHTML=historyResults();document.querySelectorAll('[data-session]:not([disabled])').forEach(el=>el.onclick=()=>vscode.postMessage({type:'selectSession',sessionId:el.dataset.session}));}};
+    const renderHistoryResults = () => {const target=document.getElementById('sessions');if(target){target.innerHTML=historyResults();document.querySelectorAll('[data-session]:not([disabled])').forEach(el=>el.onclick=()=>{historyOpen=false;vscode.postMessage({type:'selectSession',sessionId:el.dataset.session});});}};
     function relativeTime(value) { const ms = Date.now() - new Date(value).getTime(); if (!Number.isFinite(ms)) return ''; const m=Math.max(0,Math.floor(ms/60000)); return m<1?'now':m<60?m+'m':m<1440?Math.floor(m/60)+'h':Math.floor(m/1440)+'d'; }
     const welcomeView = configured => {
       const workspace = String(state.workspacePath || '').split(/[\\/]/).pop();
