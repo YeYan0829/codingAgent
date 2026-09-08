@@ -2,9 +2,9 @@
 
 ## 展示方式
 
-GitHub 首页以真实截图为主。截图负责说明产品能做什么。GIF 只在人工验收后作为可选补充。
+GitHub 首页以真实截图为主。截图负责说明关键状态。短 GIF 可以补充时间线中的执行过程。
 
-README 的首轮素材控制为三张截图，不要求 GIF。人工验收完成后，可以再补一张验证状态截图或一张权限拒绝 GIF。
+README 的首轮素材控制为三张截图。可选增加一张时间线 GIF，不要求重新运行任务。
 
 ## 当前截图取舍
 
@@ -28,7 +28,7 @@ README 的首轮素材控制为三张截图，不要求 GIF。人工验收完成
 | --- | --- | --- | --- |
 | 1 | 标题与一句话定位 | 无 | CodeAgent 在 VS Code 中运行，修改先隔离，交付由用户决定 |
 | 2 | 产品主图 | `overview.png` | 时间线、原生 Diff 和待交付修改属于同一次任务 |
-| 3 | 三项核心价值 | 主图下的短文字 | 过程可见、命令受控、修改可审查 |
+| 3 | 执行过程 | 可选 `timeline-review.gif` | 从任务、工具活动到验证结果的时间顺序 |
 | 4 | 一次任务如何完成 | 现有 Mermaid 流程图 | 从任务到 Accept/Discard 的完整路径 |
 | 5 | 用户控制 | `approval.png` | 受保护操作会先解释原因并等待用户决定 |
 | 6 | 会话恢复 | `history.png` | 历史会话可以查找，并在对应仓库恢复 |
@@ -45,13 +45,14 @@ README 的首轮素材控制为三张截图，不要求 GIF。人工验收完成
 使用 Quick Start 仓库已经完成的任务。左侧显示 Explorer，中央打开 `calculator.py` 的原生 Diff，
 右侧显示 CodeAgent 时间线和 Current Delivery。
 
-画面中需要同时看见：
+主图只需要同时看见：
 
-- 用户提交的修复任务；
-- 一组已经完成的工具活动；
+- 能说明任务目标的标题；
 - 当前验证已通过；
-- 一个待审查文件；
+- Current Delivery 中的待审查文件；
 - 中央 Diff 中的小范围修改。
+
+用户消息和工具活动不要求塞进同一张图。它们可以由下方的时间线 GIF 或单独截图说明。
 
 README 配文：
 
@@ -80,6 +81,21 @@ README 配文：
 
 All workspaces 截图包含无关测试会话标题，不用于公开首页。跨仓库行为通过文字和验证记录说明。
 
+## 可选时间线 GIF：`timeline-review.gif`
+
+如果希望展示完整过程，可以复用现有 Session 录制 6～10 秒：
+
+1. 中央保持原生 Diff 不动；
+2. 右侧从用户任务缓慢滚到一组已完成的工具活动；
+3. 最后停在验证通过和 Current Delivery。
+
+这段 GIF 不执行模型、不重新运行任务，也不需要拼接多个片段。只裁掉录制开始和结束的空白即可。
+README 仍先放静态主图，保证加载前和暂停阅读时能看到清楚的最终结果。
+
+README 配文：
+
+> 任务中的代码读取、命令和验证按时间显示。完成后，当前修改与对应的测试状态会留在同一会话中。
+
 ## 验收完成后可补的素材
 
 ### 验证状态：`validation-state.png`
@@ -106,6 +122,7 @@ docs/assets/showcase/
 ├── overview.png
 ├── approval.png
 ├── history.png
+├── timeline-review.gif        # 可选
 ├── validation-state.png       # 可选
 ├── approval-reject.gif        # 可选
 └── delivery-actions.png       # 可选
@@ -121,11 +138,12 @@ docs/assets/showcase/
 ## 最省事的采集顺序
 
 1. 复用已经完成的 Quick Start Session，打开 Diff，截取 `overview.png`。
-2. 打开 Current History，截取 `history.png`。
-3. 新建 Quick Start Session，停在 worktree Approval，截取 `approval.png`。
-4. 完成人工清单 E、G、H 后，再决定是否补充可选素材。
+2. 如果需要过程展示，保持 Diff 打开，只录制右侧时间线滚动。
+3. 打开 Current History，截取 `history.png`。
+4. 新建 Quick Start Session，停在 worktree Approval，截取 `approval.png`。
+5. 完成人工清单 E、G、H 后，再决定是否补充其他素材。
 
-前三步不需要重放完整任务，也不需要剪出连续故事。每份素材只证明一个用户可见行为。
+以上步骤不需要重放完整任务，也不需要剪出连续故事。每份素材只证明一个用户可见行为。
 
 ## 发布前检查
 
