@@ -42,7 +42,7 @@ Extension 与大量测试仍未纳入提交，因此这是第一优先级。
 - 在同一个候选 commit 上完成 [Product Acceptance](PRODUCT_ACCEPTANCE.md)：主链路、Stop、budget waiting/扩额、
   Approval Reject、Discard、History 重载和 stale validation；
 - 截取右侧 Agent、左侧 Explorer、中央 Diff 同时可见的真实主图；
-- 补充 Approval、History 截图和一个 History 切换短 GIF；其他 GIF 只在对应人工验收通过后制作；
+- 补充 Approval 和 History 截图；GIF 不是发布前置条件，只在对应人工验收通过后制作；
 - README 首屏加入主图、Quick Start 链接、架构图、安装命令、当前限制和验证记录。
 
 退出条件：访问者能够在几分钟内理解用途、安全边界和实际完成度，并能回到 commit、命令与证据。

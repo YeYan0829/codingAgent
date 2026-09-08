@@ -2,10 +2,25 @@
 
 ## 展示方式
 
-GitHub 首页以真实截图为主。截图负责说明产品能做什么，短 GIF 只补充静态图片无法表达的状态变化。
-不再制作需要旁白、字幕和大量剪辑的完整演示视频。
+GitHub 首页以真实截图为主。截图负责说明产品能做什么。GIF 只在人工验收后作为可选补充。
 
-README 的首轮素材控制为三张截图和一张 GIF。人工验收完成后，可以再补一张验证状态截图和一张权限拒绝 GIF。
+README 的首轮素材控制为三张截图，不要求 GIF。人工验收完成后，可以再补一张验证状态截图或一张权限拒绝 GIF。
+
+## 当前截图取舍
+
+现有图片已经覆盖主任务、Approval、欢迎页和 History。首版 README 只使用其中三类：
+
+- 主任务图：保留 Diff、时间线、验证结果和 Accept/Discard；重新截图时收起终端。
+- Approval：当前画面可以直接使用，它清楚显示了创建隔离工作区的原因和用户操作。
+- History：使用 Current 页面即可；All workspaces 中存在测试会话标题，不放入公开首页。
+
+欢迎页适合安装文档，不进入 README 首屏。它主要说明任务入口，没有提供执行结果。
+
+当前主任务图中的终端同时显示旧失败和右侧新验证通过。这个状态符合 Accept 前 source 不变的设计，
+但陌生读者容易误解。终端还显示本机用户名和设备名，因此公开版本应收起终端后重新截取。
+
+三张竖图都显示了并列的 Codex 和 Chat 标签。如果操作方便，重新截图前隐藏这两个 View，
+避免读者把它们误认为 CodeAgent 的组成部分。这不影响验收结论，也不是产品修复项。
 
 ## README 页面顺序
 
@@ -16,7 +31,7 @@ README 的首轮素材控制为三张截图和一张 GIF。人工验收完成后
 | 3 | 三项核心价值 | 主图下的短文字 | 过程可见、命令受控、修改可审查 |
 | 4 | 一次任务如何完成 | 现有 Mermaid 流程图 | 从任务到 Accept/Discard 的完整路径 |
 | 5 | 用户控制 | `approval.png` | 受保护操作会先解释原因并等待用户决定 |
-| 6 | 会话恢复 | `history-switch.gif` 和 `history.png` | 历史会话可以查找并直接恢复 |
+| 6 | 会话恢复 | `history.png` | 历史会话可以查找，并在对应仓库恢复 |
 | 7 | Quick Start | 安装命令与固定任务文本 | 访客可以复现同一条产品链路 |
 | 8 | 工程亮点 | 现有短段落和 docs 链接 | worktree、sandbox、验证状态和上下文控制解决什么问题 |
 | 9 | 验证与限制 | 自动测试摘要、人工验收链接 | 展示结论有证据，同时保留明确边界 |
@@ -57,29 +72,13 @@ README 配文：
 
 ### 3. 历史会话：`history.png`
 
-打开 History，并让列表中至少出现两个无敏感信息的 Session。当前仓库的会话可以点击，其他仓库只显示摘要。
+打开 Current History，保留至少一个没有敏感信息的 Session。标题应与 Quick Start 任务对应。
 
 README 配文：
 
 > Session 保存在本地。重载窗口后仍可查找历史，并在对应仓库中恢复任务、修改和验证状态。
 
-如果没有合适的跨仓库会话，只截取当前仓库列表。不要为了画面伪造额外仓库或会话结果。
-
-## 必需 GIF
-
-### History 切换：`history-switch.gif`
-
-只录制 5～8 秒：
-
-1. 从当前会话点击 History；
-2. 点击另一个当前仓库的会话；
-3. 界面直接返回，并显示所选会话的标题与时间线。
-
-GIF 用来说明“选择后立即进入会话”这一交互。画面不包含任务执行等待、模型请求或终端输出。
-
-README 配文：
-
-> 在 History 中选择会话后，界面会直接恢复对应时间线。
+All workspaces 截图包含无关测试会话标题，不用于公开首页。跨仓库行为通过文字和验证记录说明。
 
 ## 验收完成后可补的素材
 
@@ -107,30 +106,22 @@ docs/assets/showcase/
 ├── overview.png
 ├── approval.png
 ├── history.png
-├── history-switch.gif
 ├── validation-state.png       # 可选
 ├── approval-reject.gif        # 可选
 └── delivery-actions.png       # 可选
 ```
 
-- PNG 使用 1440×900 或 1600×1000，保持相同窗口比例。
+- 主图 PNG 使用 1440×900 或 1600×1000，保持 VS Code 窗口比例。
+- Approval 和 History 竖图在 README 中以约 420 像素宽度显示；History 截掉下方大块空白。
 - GIF 宽度使用 900～1100 像素，8～10 fps，单个不超过 4 MB。
 - GIF 不带声音，首尾停留约半秒，并保持循环后容易理解。
 - VS Code 使用同一主题、字体大小和侧栏宽度。
 - README 中按页面宽度显示主图。功能截图不要并排压缩成难以阅读的小图。
 
-需要压缩 GIF 时，可以从一段很短的 MP4 直接生成：
-
-```bash
-ffmpeg -i history-switch.mp4 \
-  -vf "fps=8,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer" \
-  -loop 0 docs/assets/showcase/history-switch.gif
-```
-
 ## 最省事的采集顺序
 
 1. 复用已经完成的 Quick Start Session，打开 Diff，截取 `overview.png`。
-2. 打开 History，截取 `history.png`，随后录制 5～8 秒的 `history-switch.gif`。
+2. 打开 Current History，截取 `history.png`。
 3. 新建 Quick Start Session，停在 worktree Approval，截取 `approval.png`。
 4. 完成人工清单 E、G、H 后，再决定是否补充可选素材。
 
@@ -143,5 +134,5 @@ ffmpeg -i history-switch.mp4 \
 - [ ] source、Diff、时间线和验证状态来自同一个真实 Session。
 - [ ] Approval 截图没有把未验证的 Reject 行为写成已通过。
 - [ ] 图片在 GitHub README 的正常宽度下仍能读清按钮与代码。
-- [ ] GIF 离开配文也能看懂开始状态和结束状态。
+- [ ] 如果加入可选 GIF，离开配文也能看懂开始状态和结束状态。
 - [ ] README 链接到 Quick Start、当前验证记录和详细限制。

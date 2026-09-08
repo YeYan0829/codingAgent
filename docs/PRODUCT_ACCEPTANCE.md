@@ -19,7 +19,7 @@ python3 -m venv .venv
 ## 2. Quick Start 与产品验收链路
 
 该离线除零任务用于稳定复现产品交互和安全交付边界，不承担真实仓库理解或模型能力证明。
-GitHub 首页使用它截取产品主图、Approval 和 History。短 GIF 只补充会话切换等状态变化。
+GitHub 首页使用它截取产品主图、Approval 和 History。短 GIF 不是发布前置条件。
 素材范围见 [GitHub 展示素材清单](../examples/showcase/SHOT_LIST.md)。
 
 1. 在齿轮配置页选择 DeepSeek 或 GLM，保存 API Key、模型和预算。

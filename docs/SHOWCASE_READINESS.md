@@ -1,12 +1,12 @@
 # 展示导向项目现状梳理
 
 审查日期：2026-09-06；展示方案更新：2026-09-08。目标以 [系统目标](系统目标.md) 为准。
-本文件记录展示交付差距，不是已发布版本声明。当前 GitHub 展示改为真实截图为主、少量短 GIF 补充交互。
+本文件记录展示交付差距，不是已发布版本声明。当前 GitHub 展示改为真实截图，短 GIF 只作可选补充。
 具体素材见 [GitHub 展示素材清单](../examples/showcase/SHOT_LIST.md)。
 
 ## 1. 结论
 
-当前已具备展示产品主链路的功能条件。项目最需要补的是截图、少量短 GIF、面向访客的 README，
+当前已具备展示产品主链路的功能条件。项目最需要补的是截图、面向访客的 README，
 以及冻结版本后的正式评测报告。无需先增加 Planner、共享项目理解或更多 Agent 能力。
 
 Runtime + GLM 5.2 跑固定 50 题，能够产生适合简历的真实仓库工程指标；是否取得高 resolved rate 不能提前
@@ -80,7 +80,7 @@ flowchart TD
 | --- | --- | --- |
 | 输入任务→读取→编辑→验证→Diff | Quick Start 已完成人工验证 | 截取主图，保留时间线、Current Delivery 和原生 Diff |
 | 审批 Allow/Reject、Stop、Discard | Allow 已人工验证，其余有自动化覆盖 | 先截取 Allow 前的审批；Reject 通过后可补短 GIF |
-| History 与重载恢复 | 已完成人工验证 | 截取列表，并录制 5～8 秒的会话切换 GIF |
+| History 与重载恢复 | 已完成人工验证 | 截取 Current 列表即可 |
 | 网络/环境任务 | 已有专用 fixture，2026-09-06 Allow/Reject 有记录 | 作为可选进阶截图，与离线 Quick Start 分开展示 |
 | 展示素材 | 仓库内还没有产品截图或 GIF | 使用真实 VS Code 画面，不用设计稿或生成图片冒充产品 |
 | 安装分发 | 已有 manifest、RPC 入口、打包说明和 `.vscodeignore` | 干净安装 Runtime、生成 VSIX、验证无开发 `.venv` 兜底；提供版本和实际安装记录 |
@@ -93,12 +93,11 @@ flowchart TD
 `codeagent-product-demo` 的零数量缺陷用于产品主图和 Quick Start。它离线、确定、容易复现，适合展示
 隔离工作区、工具时间线、验证和原生 Diff。这些画面证明产品链路可用，不代表复杂仓库理解能力。
 
-README 首轮只需要三张截图和一张短 GIF：
+README 首轮只需要三张截图：
 
 1. 主图同时展示 Explorer、原生 Diff 和 CodeAgent 时间线；
 2. Approval 截图展示受保护操作如何等待用户决定；
-3. History 截图展示本地会话列表；
-4. 5～8 秒 GIF 展示从 History 直接进入所选会话。
+3. History 截图展示本地会话列表。
 
 Validation stale、Permission Reject 和 Accept/Discard 要等对应人工验收通过后再补素材。
 任务执行等待、模型请求和测试过程不制作 GIF，也不需要剪成连续故事。
@@ -131,9 +130,8 @@ SWE-bench 官方成绩。最终 GitHub 静态案例仍优先从冻结的 50 题�
 1. 完成剩余人工验收，只为已经通过的行为制作素材；
 2. 复用 Quick Start Session 截取主图和 History；
 3. 新建 Session，停在 worktree Approval 截取审批图；
-4. 录制 5～8 秒 History 切换 GIF，不录完整任务；
-5. 把素材加入 README，并在正常 GitHub 页面宽度检查可读性；
-6. 正式评测完成后再制作真实仓库静态案例页。
+4. 把素材加入 README，并在正常 GitHub 页面宽度检查可读性；
+5. 正式评测完成后再制作真实仓库静态案例页。
 
 不要把未通过人工验收的状态放入展示，也不要用设计稿或生成图代替真实产品画面。
 
@@ -206,7 +204,7 @@ SWE-bench Verified 官方集合为 500 题；官方 Docker harness 对提交的 
 
 1. 收准项目经历措辞和 README 信息结构；本次先完成目标与现状文档。
 2. 准备候选发布版本，完成干净安装/VSIX 体验、L0/真实 Bubblewrap/产品主链路验收；修复实际阻塞后冻结版本。
-3. 基于稳定版本补充截图和短 GIF；安装步骤和 Quick Start 材料可先公开，不等待 50 题成绩。
+3. 基于稳定版本补充截图；可选短 GIF 只用于已经验收的状态变化。
 4. 在正式付费运行前完成第 6 节准备；若修改了代码，冻结新的评测 commit 并明确与演示版本的关系。
 5. 运行固定 50 题并生成可公开结果包，再把实际指标回填 README 与简历。
 
