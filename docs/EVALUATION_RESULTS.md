@@ -4,7 +4,7 @@
 
 ## Final：HAL SWE-bench Verified Mini
 
-`v0.5.0-rc.1` 的正式评测使用 HAL 发布的固定 50 题和 GLM-5.3。
+`v0.5.0-rc.2` 的正式评测使用 HAL 发布的固定 50 题和 GLM-5.3。
 
 | 项目 | 冻结设置或当前状态 |
 | --- | --- |
@@ -21,10 +21,13 @@
 正式 selection 见
 [hal-verified-mini-50.json](../benchmarks/swebench/selections/hal-verified-mini-50.json)。
 机器可读运行配置见
-[v0.5.0-rc1-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc1-hal-mini-50.json)。
+[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)。
 
-正式运行会从 `v0.5.0-rc.1` 的干净 checkout 启动。每题结束后立即保存结果，
+正式运行会从 `v0.5.0-rc.2` 的干净 checkout 启动。每题结束后立即保存结果，
 中断后使用同一个 run ID 恢复。
+
+`v0.5.0-rc.1` 的首次运行发现 grader adapter 会把 empty patch 误记为基础设施失败。
+该运行已经停止并作废，不计入正式成绩，也不会与 `rc.2` 的结果合并。
 
 ## Development：GLM-5.3 Provider smoke
 

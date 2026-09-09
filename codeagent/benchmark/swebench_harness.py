@@ -64,8 +64,10 @@ class SWEbenchCLIGrader:
         self.timeout_seconds = timeout_seconds
 
     def grade(self, task: SWEbenchTask, prediction_path: Path, run_id: str) -> OracleResult:
+        report_dir = prediction_path.parent / "grader-report"
         argv = [*self.command_prefix, "--predictions_path", str(prediction_path),
-                "--instance_ids", task.instance_id, "--run_id", run_id]
+                "--instance_ids", task.instance_id, "--run_id", run_id,
+                "--report_dir", str(report_dir)]
         try:
             proc = self.command_runner(argv, capture_output=True, text=True, shell=False,
                                        check=False, timeout=self.timeout_seconds)
@@ -73,13 +75,23 @@ class SWEbenchCLIGrader:
             return OracleResult("environment_failed", None, str(exc))
         if proc.returncode:
             return OracleResult("grader_failed", None, (proc.stderr or proc.stdout)[-4000:])
-        report = Path(self.report_template.format(run_id=run_id, instance_id=task.instance_id)).resolve()
+        summaries = list(report_dir.glob(f"*.{run_id}.json"))
+        if len(summaries) != 1:
+            return OracleResult(
+                "report_invalid", None,
+                f"official batch report count must be 1, got {len(summaries)}",
+            )
+        summary = summaries[0]
         try:
-            value = json.loads(report.read_text(encoding="utf-8"))
-            resolved = _resolved_from_report(value, task.instance_id)
+            value = json.loads(summary.read_text(encoding="utf-8"))
+            status, resolved, detail = _outcome_from_batch_report(value, task.instance_id)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
-            return OracleResult("report_invalid", None, str(exc), str(report))
-        return OracleResult("completed", resolved, "official grader completed", str(report))
+            return OracleResult("report_invalid", None, str(exc), str(summary))
+        instance_report = Path(
+            self.report_template.format(run_id=run_id, instance_id=task.instance_id)
+        ).resolve()
+        evidence = instance_report if instance_report.is_file() else summary
+        return OracleResult(status, resolved, detail, str(evidence))
 
 
 @dataclass(frozen=True)
@@ -180,17 +192,29 @@ class SWEbenchHarness:
                 manager.discard(context)
 
 
-def _resolved_from_report(value: object, instance_id: str) -> bool:
-    if isinstance(value, dict):
-        instance = value.get(instance_id)
-        if isinstance(instance, dict) and isinstance(instance.get("resolved"), bool):
-            return instance["resolved"]
-        if isinstance(value.get("resolved"), bool):
-            return value["resolved"]
-        ids = value.get("resolved_ids")
-        if isinstance(ids, list) and all(isinstance(item, str) for item in ids):
-            return instance_id in ids
-    raise ValueError("official report 不包含可识别的 resolved 结果")
+def _outcome_from_batch_report(value: object, instance_id: str) -> tuple[str, bool | None, str]:
+    if not isinstance(value, dict):
+        raise ValueError("official batch report 顶层不是 object")
+    groups = {
+        key: set(items) for key, items in value.items()
+        if key.endswith("_ids") and isinstance(items, list)
+        and all(isinstance(item, str) for item in items)
+    }
+    if instance_id in groups.get("resolved_ids", set()):
+        return "completed", True, "official grader resolved"
+    if instance_id in groups.get("unresolved_ids", set()):
+        return "completed", False, "official grader unresolved"
+    if instance_id in groups.get("empty_patch_ids", set()):
+        return "completed", False, "official grader reported empty patch"
+    infrastructure = set().union(
+        groups.get("infra_failure_ids", set()),
+        groups.get("ambiguous_failure_ids", set()),
+        groups.get("error_ids", set()),
+        groups.get("incomplete_ids", set()),
+    )
+    if instance_id in infrastructure:
+        return "environment_failed", None, "official grader reported infrastructure/error state"
+    raise ValueError("instance missing from recognizable official batch report groups")
 
 
 def _aggregate_token_usage(store: SessionStore) -> dict[str, object]:

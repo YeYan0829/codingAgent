@@ -76,11 +76,16 @@ def test_single_task_exports_prediction_and_separates_three_states(tmp_path):
 
 
 def test_cli_grader_uses_fixed_argv_and_explicit_report(tmp_path):
-    report = tmp_path / "run-1.json"
-    report.write_text(json.dumps({"resolved_ids": ["owner__repo-1"]}))
     calls = []
     def run(argv, **kwargs):
         calls.append((argv, kwargs))
+        report_dir = Path(argv[argv.index("--report_dir") + 1])
+        report_dir.mkdir(parents=True)
+        (report_dir / "model.run-1.json").write_text(json.dumps({
+            "resolved_ids": ["owner__repo-1"], "unresolved_ids": [],
+            "empty_patch_ids": [], "infra_failure_ids": [],
+            "ambiguous_failure_ids": [], "error_ids": [], "incomplete_ids": [],
+        }))
         return subprocess.CompletedProcess(argv, 0, "ok", "")
     grader = SWEbenchCLIGrader(
         ["python", "-m", "swebench.harness.run_evaluation"],
@@ -88,8 +93,61 @@ def test_cli_grader_uses_fixed_argv_and_explicit_report(tmp_path):
     prediction = tmp_path / "prediction.json"; prediction.write_text("{}")
     result = grader.grade(SWEbenchTask("owner__repo-1", "image", "a" * 40, "bug"), prediction, "run-1")
     assert result.status == "completed" and result.resolved is True
-    assert calls[0][0][-6:] == ["--predictions_path", str(prediction), "--instance_ids", "owner__repo-1", "--run_id", "run-1"]
+    assert calls[0][0][-8:] == [
+        "--predictions_path", str(prediction), "--instance_ids", "owner__repo-1",
+        "--run_id", "run-1", "--report_dir", str(tmp_path / "grader-report"),
+    ]
     assert calls[0][1]["shell"] is False
+
+
+def test_cli_grader_treats_empty_patch_as_completed_unresolved(tmp_path):
+    def run(argv, **kwargs):
+        report_dir = Path(argv[argv.index("--report_dir") + 1])
+        report_dir.mkdir(parents=True)
+        (report_dir / "codeagent__glm.run-empty.json").write_text(json.dumps({
+            "resolved_ids": [], "unresolved_ids": [],
+            "empty_patch_ids": ["owner__repo-1"], "infra_failure_ids": [],
+            "ambiguous_failure_ids": [], "error_ids": [], "incomplete_ids": [],
+        }))
+        return subprocess.CompletedProcess(argv, 0, "ok", "")
+
+    grader = SWEbenchCLIGrader(
+        ["python", "-m", "swebench.harness.run_evaluation"],
+        str(tmp_path / "missing/{instance_id}/report.json"), command_runner=run,
+    )
+    prediction = tmp_path / "prediction.json"
+    prediction.write_text("[]")
+    result = grader.grade(
+        SWEbenchTask("owner__repo-1", "image", "a" * 40, "bug"), prediction, "run-empty"
+    )
+    assert result.status == "completed"
+    assert result.resolved is False
+    assert result.detail == "official grader reported empty patch"
+    assert result.report_path == str(tmp_path / "grader-report/codeagent__glm.run-empty.json")
+
+
+def test_cli_grader_preserves_official_infrastructure_failure(tmp_path):
+    def run(argv, **kwargs):
+        report_dir = Path(argv[argv.index("--report_dir") + 1])
+        report_dir.mkdir(parents=True)
+        (report_dir / "codeagent__glm.run-infra.json").write_text(json.dumps({
+            "resolved_ids": [], "unresolved_ids": [], "empty_patch_ids": [],
+            "infra_failure_ids": ["owner__repo-1"], "ambiguous_failure_ids": [],
+            "error_ids": [], "incomplete_ids": [],
+        }))
+        return subprocess.CompletedProcess(argv, 0, "ok", "")
+
+    grader = SWEbenchCLIGrader(
+        ["python", "-m", "swebench.harness.run_evaluation"],
+        str(tmp_path / "missing/{instance_id}/report.json"), command_runner=run,
+    )
+    prediction = tmp_path / "prediction.json"
+    prediction.write_text("[]")
+    result = grader.grade(
+        SWEbenchTask("owner__repo-1", "image", "a" * 40, "bug"), prediction, "run-infra"
+    )
+    assert result.status == "environment_failed"
+    assert result.resolved is None
 
 
 def test_fixed_benchmark_budget_still_terminates_and_exports_patch(tmp_path):

@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "config_id": "codeagent-v0.5.0-rc2-hal-verified-mini-50-glm-5.3-v1",
+  "status": "release_candidate_frozen",
+  "selection": {
+    "benchmark": "HAL SWE-bench Verified Mini",
+    "path": "benchmarks/swebench/selections/hal-verified-mini-50.json",
+    "selection_id": "hal-swebench-verified-mini-50-7b231a9",
+    "sha256": "852042b05e2a1a95fd8e7dd01448f367aa8e332baf58eadbbd53167c2d90001f",
+    "task_count": 50,
+    "difficulty_affects_runtime_config": false
+  },
+  "model": {
+    "provider": "glm",
+    "model": "glm-5.3",
+    "endpoint_identity": "https://open.bigmodel.cn/api/paas/v4",
+    "temperature": 1.0,
+    "reasoning_enabled": true,
+    "reasoning_effort": "max",
+    "max_output_tokens": 8192
+  },
+  "runtime": {
+    "attempts": 1,
+    "max_steps_per_slice": 12,
+    "max_model_steps_per_task": 72,
+    "context_limit": 128000,
+    "generation_reserve": 8192,
+    "continuation_reserve": 4000,
+    "safety_margin": 2000,
+    "usable_input_budget": 113808,
+    "context_reduction": "deterministic-v2",
+    "minimum_context": "fail_closed"
+  },
+  "execution": {
+    "network_policy": "off",
+    "default_command_timeout_seconds": 120,
+    "maximum_command_timeout_seconds": 1800,
+    "task_wall_clock_timeout_seconds": 10800,
+    "hard_caps": [
+      "max_model_steps_per_task",
+      "context_limit",
+      "max_output_tokens",
+      "maximum_command_timeout_seconds",
+      "task_wall_clock_timeout_seconds"
+    ],
+    "accounting_only": [
+      "input_tokens",
+      "output_tokens",
+      "total_tokens",
+      "cached_input_tokens",
+      "cache_miss_input_tokens",
+      "reasoning_tokens"
+    ],
+    "max_total_tokens_per_task": null
+  },
+  "orchestration": {
+    "execution_order": [
+      "easy",
+      "medium",
+      "hard"
+    ],
+    "order_source": "pinned swe-bench-tasks difficulty metadata; stable HAL official order within each tier",
+    "difficulty_changes_task_config": false,
+    "persist_result": "atomic_after_each_task",
+    "resume": "same_run_id_skips_completed_instances",
+    "normal_unresolved_is_completed": true,
+    "empty_patch_is_unresolved": true,
+    "grader_infrastructure_failure_is_completed": false,
+    "interrupted_task_policy": "rerun_incomplete_task; attempts remains 1 for a completed task",
+    "cost_guard": {
+      "type": "local_estimated_budget",
+      "currency": "CNY",
+      "initial_budget_source": "required --cost-budget-cny value at batch creation",
+      "provider_balance_equivalent": false,
+      "stop_before_task_when_remaining_below": "10",
+      "incomplete_cost_behavior": "stop_before_next_task",
+      "interrupt_started_task": false
+    }
+  },
+  "benchmark": {
+    "swebench_repository_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0",
+    "task_repository_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d",
+    "docker_image_policy": "resolve task image to digest and record prepared source identity before each task",
+    "grader_command": "reference/SWE-bench/.venv/bin/python -m swebench.harness.run_evaluation --max_workers 1 --timeout 1800",
+    "grader_report_template": "logs/evaluation/{run_id}/codeagent__glm-5.3/{instance_id}/report.json",
+    "grader_batch_report_policy": "write each invocation report under its task artifact; use it to classify resolved, unresolved, empty patch, and infrastructure failure"
+  },
+  "pricing": {
+    "path": "benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json",
+    "sha256": "1fe5870151d2601d4414a7c7cfda84e9b9a2d05b0d96488ec3705687465711ff",
+    "snapshot_fingerprint": "048bc476565dae1b2ae42b965db28e752fcb528758ba65e01d593ab157cde731",
+    "reasoning_included_in_output": true
+  },
+  "release": {
+    "tag": "v0.5.0-rc.2",
+    "commit_resolution": "git rev-parse v0.5.0-rc.2^{commit}",
+    "require_clean_checkout": true
+  },
+  "artifacts": {
+    "output_root": "benchmarks/swebench/runs",
+    "development_calibration_result": "benchmarks/swebench/calibration/glm-5.2-hard-1-result.json",
+    "calibration_counts_toward_final_evaluation": false,
+    "counts_toward_fixed_50_evaluation": true
+  }
+}

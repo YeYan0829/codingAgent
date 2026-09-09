@@ -137,10 +137,6 @@ class SWEbenchBatchRunner:
                 if result.source_identity:
                     manifest["benchmark"]["tasks"][instance_id] = result.source_identity
                     write_json_atomic(manifest_path, manifest)
-                state.update({"status": "completed", "outcome": entry["outcome"],
-                              "stop_reason": entry["stop_reason"], "result": entry})
-                write_json_atomic(state_path, state)
-                completed.append(entry)
             except Exception as exc:
                 outcome = _exception_outcome(exc)
                 state.update({"status": "failed", "outcome": outcome, "stop_reason": outcome,
@@ -148,6 +144,21 @@ class SWEbenchBatchRunner:
                 write_json_atomic(state_path, state)
                 self._write_summary(root, manifest, completed, finished=False)
                 raise
+            if entry["outcome"] == "infra_error":
+                state.update({"status": "failed", "outcome": "infra_error",
+                              "stop_reason": "infra_error", "result": entry})
+                write_json_atomic(state_path, state)
+                self._write_summary(
+                    root, manifest, completed, finished=False, stop_reason="infra_error"
+                )
+                raise RuntimeError(
+                    f"SWE-bench grader infrastructure failed: {instance_id}: "
+                    f"{entry['oracle_status']}: {entry['oracle_detail']}"
+                )
+            state.update({"status": "completed", "outcome": entry["outcome"],
+                          "stop_reason": entry["stop_reason"], "result": entry})
+            write_json_atomic(state_path, state)
+            completed.append(entry)
             self._write_summary(root, manifest, completed, finished=False)
         manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
         write_json_atomic(manifest_path, manifest)
@@ -196,7 +207,9 @@ class SWEbenchBatchRunner:
             "instance_id", "attempt", "outcome", "agent_status", "prediction_path",
             "oracle_status", "oracle_report_path", "trajectory_path", "token_usage", "cost",
         }
-        if value.get("status") != "completed" or not isinstance(result, dict) or not required <= result.keys():
+        if (value.get("status") != "completed" or
+                value.get("outcome") not in {"resolved", "unresolved", "budget_exhausted"} or
+                not isinstance(result, dict) or not required <= result.keys()):
             return None
         if not Path(result["prediction_path"]).is_file() or not Path(result["trajectory_path"]).is_file():
             return None

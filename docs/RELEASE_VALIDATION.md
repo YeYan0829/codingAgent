@@ -1,14 +1,14 @@
-# v0.5.0-rc.1 发布验收
+# v0.5.0-rc.2 发布验收
 
-本页记录 `v0.5.0-rc.1` 的冻结条件。正式 HAL 50 题在 tag 创建后运行，因此不属于这里的发布成绩。
+本页记录 `v0.5.0-rc.2` 的冻结条件。正式 HAL 50 题在 tag 创建后运行，因此不属于这里的发布成绩。
 
 ## 冻结基线
 
 | 项目 | 值 |
 | --- | --- |
 | Branch | `feature/v0.4-candidate-loop` |
-| Release tag | `v0.5.0-rc.1` |
-| Commit | 使用 `git rev-parse v0.5.0-rc.1^{commit}` 获取；tag 与 commit 一一对应 |
+| Release tag | `v0.5.0-rc.2` |
+| Commit | 使用 `git rev-parse v0.5.0-rc.2^{commit}` 获取；tag 与 commit 一一对应 |
 | Python package | `codeagent-runtime 0.5.0` |
 | Runtime | `codeagent.__version__ == 0.5.0` |
 | VS Code Extension | `0.5.0` |
@@ -21,15 +21,16 @@ Commit 不能在自身内容中保存自己的哈希，因此本页用注释 tag
 
 | 验证 | 状态 | 结果 |
 | --- | --- | --- |
-| Python full suite | PASS | 发布工作目录：`323 passed, 5 skipped` |
-| Clean clone full suite | PASS | `322 passed, 6 skipped`；clone 不含被忽略的本地 task repository，因此多跳过一个 opt-in 用例 |
-| Benchmark / Provider 定向回归 | PASS | selection、顺序、持久化、恢复、成本保护、GLM、reasoning 和 accounting：`29 passed` |
+| Python full suite | PASS | 发布工作目录：`326 passed, 5 skipped` |
+| Clean clone full suite | PASS | `325 passed, 6 skipped`；clone 不含被忽略的本地 task repository，因此多跳过一个 opt-in 用例 |
+| Benchmark / Provider 定向回归 | PASS | selection、顺序、持久化、恢复、成本保护、grader、GLM、reasoning 和 accounting：`49 passed` |
 | Product / RPC 定向回归 | PASS | `36 passed` |
 | Extension | PASS | `node --check extension.js` 和 `npm test` |
 | 真实 Bubblewrap | PASS | `5 passed`；实际创建 namespace 并检查文件与网络边界 |
 | 真实 Docker projection | PASS | `1 passed`；从 SWE-bench 镜像准备并运行源码 |
 | GLM-5.3 Provider smoke | PASS | reasoning → tool → result → continued reasoning → final；usage 和成本完整 |
 | GLM-5.3 Docker benchmark smoke | PASS | 单题完成、official grader 正常、结果可恢复且没有重复模型调用 |
+| Empty-patch grader smoke | PASS | official batch report 正确保存；empty patch 记为正常 unresolved |
 | Clean clone / source install | PASS | 从 tag commit 建立全新 clone 和 venv；Fake Runtime 与 RPC smoke 通过 |
 | Wheel 独立安装 | PASS | fresh venv 安装后，版本、`codeagent --help` 和 `codeagent-rpc --help` 通过 |
 | VSIX 内容 | PASS | 8 个预期文件；版本、入口、commands、views 和 settings 正常 |
@@ -50,8 +51,8 @@ Accept、Discard、Stop / Budget 和 History。History 导航与最后一轮 UI 
 
 | 产物 | 路径 | SHA-256 |
 | --- | --- | --- |
-| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `c90e812563e86fd0348fd310f1d840aaf2057a94e2d895350b1ff11133cba38c` |
-| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `69caff23683a56ba2f83361a71d09157a628edef4632ca0cba32e66afd99c3a6` |
+| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `52eb7bc579ba1364fce04e560430fa4daa38fd2d02376605139e97f629de18d7` |
+| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `66716af365c65889ef855072b205e0b39cfa8b7de00a90b4294715cf311f869f` |
 
 VSIX 不包含 Python Runtime。目标机器需要分别安装同版本 wheel 和 VSIX。
 
@@ -80,4 +81,6 @@ GLM-5.3 smoke 机器记录见
 
 None。
 
-正式 HAL 50 题仍为 pending。这是 tag 创建后的下一项工作，不阻止 `v0.5.0-rc.1` 冻结。
+`v0.5.0-rc.1` 的首次正式运行发现 grader adapter 会把 empty patch 误记为基础设施失败，
+并让 resume 错误跳过。该运行已停止并作废，不计入成绩。修复进入 `v0.5.0-rc.2` 后，正式 HAL
+50 题仍从头运行。

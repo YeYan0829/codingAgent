@@ -149,6 +149,28 @@ def test_failed_task_records_infra_outcome_and_not_started_count(tmp_path):
     }
 
 
+def test_grader_infra_result_stops_and_is_not_treated_as_complete(tmp_path):
+    class GraderInfraHarness(FakeHarness):
+        def run(self, *args, **kwargs):
+            return replace(
+                super().run(*args, **kwargs), oracle_status="report_invalid",
+                oracle_passed=None, oracle_detail="missing report",
+            )
+
+    with pytest.raises(RuntimeError, match="grader infrastructure failed"):
+        make_runner(tmp_path, GraderInfraHarness()).run("batch-grader-infra")
+    state = next((tmp_path / "out/batch-grader-infra/tasks").glob("0000-*/task-state.json"))
+    value = json.loads(state.read_text())
+    assert value["status"] == "failed"
+    assert value["outcome"] == "infra_error"
+    assert value["result"]["oracle_status"] == "report_invalid"
+
+    resumed = FakeHarness()
+    summary = make_runner(tmp_path, resumed).run("batch-grader-infra")
+    assert resumed.calls == ["one", "two", "three"]
+    assert summary["finished"] is True
+
+
 def test_incomplete_task_reexecutes_and_config_or_selection_mismatch_fails(tmp_path):
     runner = make_runner(tmp_path, FakeHarness()); runner.run("batch-3")
     state = next((tmp_path / "out/batch-3/tasks").glob("0001-*/task-state.json"))

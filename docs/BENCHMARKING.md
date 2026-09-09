@@ -7,7 +7,7 @@ SWE-bench 用真实开源仓库的 bug 修复任务检查 Coding Agent。CodeAge
 
 ## 正式题集
 
-`v0.5.0-rc.1` 的正式题集是 **HAL SWE-bench Verified Mini**。HAL 发布了固定的 50 个 instance ID；
+`v0.5.0-rc.2` 的正式题集是 **HAL SWE-bench Verified Mini**。HAL 发布了固定的 50 个 instance ID；
 CodeAgent 没有替换题目，也没有根据开发结果筛题。
 
 版本控制中的题集是
@@ -80,7 +80,7 @@ ContextBuilder 每次请求仍会控制工具输出大小。单条工具结果�
 不会因为模型上下文较大而无限增长。
 
 机器可读配置见
-[v0.5.0-rc1-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc1-hal-mini-50.json)。
+[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)。
 
 ## GLM-5.3 兼容性 smoke
 
@@ -116,8 +116,11 @@ Easy → Medium → Hard 的顺序；顺序错误会在模型请求前被拒绝�
 official grader 正常完成但没有解决的题属于 `unresolved`。它也是一个完整结果，恢复时会跳过，
 不会因为分数为零而自动重跑。
 
-Provider 或基础设施异常会保存为 failed。使用相同 `--run-id` 恢复时，这道未完成题会重新执行，
-attempt 加一。一个正常完成的题只允许一个完成结果。
+Agent 没有生成 patch 时，official grader 会把该题记录为 empty patch。CodeAgent 将它保存为正常的
+`unresolved`，并保留每题目录中的批次报告。它不是基础设施失败。
+
+Provider 或基础设施异常会保存为 failed，并立即停止 batch，不会标记为 completed。使用相同
+`--run-id` 恢复时，这道未完成题会重新执行，attempt 加一。一个正常完成的题只允许一个完成结果。
 
 当前记录保留最新一次未完成状态和最终完整结果。异常请求在产生完整单题 usage 前中断时，
 其费用可能无法进入批次总成本；正式报告必须说明这种缺口。
@@ -184,7 +187,7 @@ export INITIAL_BUDGET_RMB="<本次批准的批次预算>"
   --price-snapshot benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json \
   --cost-budget-cny "$INITIAL_BUDGET_RMB" \
   --minimum-remaining-cost-cny 10 \
-  --run-id v0.5.0-rc1-hal-mini-50
+  --run-id v0.5.0-rc2-hal-mini-50
 ```
 
 恢复时使用完全相同的命令和 `--run-id`。正式调度器还应对每个 task 应用机器配置中的
