@@ -225,6 +225,8 @@ class ExecutionSupervisor:
         config = ModelConfig(
             provider=str(meta.get("provider", "fake")), model=meta.get("model"),
             temperature=model_options.get("temperature"), max_tokens=model_options.get("max_tokens"),
+            reasoning_enabled=model_options.get("reasoning_enabled") is True,
+            reasoning_effort=model_options.get("reasoning_effort"),
         )
         runtime_config = RuntimeConfig(
             max_steps_per_turn=int(runtime_options.get("max_steps_per_turn", 12)),

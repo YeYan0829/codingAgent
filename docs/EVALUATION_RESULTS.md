@@ -1,83 +1,102 @@
 # 评测结果
 
-本页只列出能够追溯到现有记录的结果。开发过程中的数字不能自动视为正式成绩。
+本页把开发验证和正式成绩分开记录。开发 smoke 用于发现链路问题，不能与正式 50 题合并计算。
 
-正式成绩必须说明使用了哪版代码、哪个模型、哪些题目和什么运行环境。
-尚未运行的评测保持 **pending**，不会填写预测值。
+## Final：HAL SWE-bench Verified Mini
 
-## 正式固定 50 题
+`v0.5.0-rc.1` 的正式评测使用 HAL 发布的固定 50 题和 GLM-5.3。
 
-项目已经选定一个固定的 SWE-bench Verified 50 题子集。
-固定题目可以避免每次运行使用不同样本。
-
-| 项目 | 当前状态 |
+| 项目 | 冻结设置或当前状态 |
 | --- | --- |
-| 题目 | 19 Easy、26 Medium、5 Hard，共 10 个仓库 |
-| 环境检查 | 选题文件记录所有入选题曾通过 gold preflight；本轮未重跑 |
-| 计划模型 | GLM 5.2，最终以正式运行记录为准 |
-| Agent 运行 | **Pending，尚未运行** |
-| 解决题数 | **Pending，不提供预测值** |
-| Token、成本和时延 | Pending |
-| 逐题报告 | Pending |
+| 题集 | HAL SWE-bench Verified Mini，固定 50 题 |
+| 调度 | 20 Easy → 24 Medium → 6 Hard；难度来自固定版本的 `swe-bench-tasks` |
+| 模型 | GLM-5.3，reasoning `max` |
+| 资源 | 全部题目统一使用 72 次模型调用上限和 8,192 单次输出上限 |
+| 尝试 | 每题一个正常完成结果；中断题按恢复规则重跑并增加 attempt |
+| Agent 运行 | **PENDING** |
+| 解决题数 | **PENDING，不提供预测值** |
+| Token 与成本 | **PENDING** |
+| 逐题报告 | **PENDING** |
 
-“Gold preflight”是运行官方答案的环境检查。它只能证明题目和测试环境当时可以工作，
-不能证明 CodeAgent 解决了这些题。
+正式 selection 见
+[hal-verified-mini-50.json](../benchmarks/swebench/selections/hal-verified-mini-50.json)。
+机器可读运行配置见
+[v0.5.0-rc1-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc1-hal-mini-50.json)。
 
-题目列表和 Docker 环境信息见[固定 50 题文件](../benchmarks/swebench/verified-eval-50.json)。
-完整环境检查报告仍待整理为公开证据。
+正式运行会从 `v0.5.0-rc.1` 的干净 checkout 启动。每题结束后立即保存结果，
+中断后使用同一个 run ID 恢复。
 
-## 2026-09-04：GLM 5.2 两题 smoke
+## Development：GLM-5.3 Provider smoke
 
-这次运行只用于检查评测链路。题目只有两个，不能代表模型的整体修复能力。
+2026-09-09 的最小真实请求完成了下面的链路：
 
-运行时的代码目录有未提交修改。因此，这组结果也不是冻结版本的发布成绩。
+```text
+reasoning → read_file → tool result → continued reasoning → final answer
+```
 
 | 指标 | 结果 |
 | --- | ---: |
-| 固定题集 | `verified-smoke-2-v1` |
-| Runtime commit | `7f8dc4019b3838a5f717cff0b3f3a7f5b62f9446`，运行时 dirty |
-| 模型 | GLM 5.2 standard API，thinking disabled |
-| 模型调用上限 | 每个请求 48 次 |
+| 模型请求 | 2 |
+| 工具调用 / 结果 | 1 / 1 |
+| input / output / total token | 6,512 / 76 / 6,588 |
+| reasoning token | 48 |
+| usage 覆盖 | complete |
+| 按价格快照计算的成本 | CNY 0.018128 |
+
+该结果只证明 GLM-5.3 Provider 参数、工具回合、推理回传和计费链路可用。
+它不是 SWE-bench 成绩。机器记录见
+[GLM-5.3 smoke](../benchmarks/swebench/smoke/glm-5.3-tool-roundtrip-2026-09-09.json)。
+
+同日还用 `psf__requests-1766` 完成一次 GLM-5.3 Docker benchmark smoke。源码准备、Agent、patch 导出和
+official grader 均完成；7 次模型请求的 usage 完整，成本为 CNY 0.294200。再次使用同一 run ID 时，
+Runner 跳过了已完成题，没有再次调用模型。该单题仍只算 Development 链路验证。
+
+## Development：GLM-5.2 Hard 校准
+
+历史预算校准使用 GLM-5.2 和 reasoning `max`。`django__django-15629` 在 61 次模型调用后主动结束；
+Agent 的验证通过，official grader 判定 unresolved。
+
+该次运行记录 1,616,580 total token，按当时价格快照计算为 CNY 8.742844。
+它只用于选择所有正式题共用的资源上限。
+
+HAL 官方固定列表也包含 `django__django-15629`。CodeAgent 没有因此替换该题；
+正式选择保持 HAL 原样。历史运行使用不同模型，并明确保留为 Development 证据。
+
+详细记录见
+[glm-5.2-hard-1-result.json](../benchmarks/swebench/calibration/glm-5.2-hard-1-result.json)。
+
+## Development：GLM-5.2 两题 smoke
+
+2026-09-04 的两题运行用于检查 Docker、patch 导出和 official grader 链路。
+它来自 dirty 开发目录，因此不是冻结版本成绩。
+
+| 指标 | 结果 |
+| --- | ---: |
+| 题目 | `pytest-dev__pytest-7205`、`sympy__sympy-20590` |
 | official grader 通过 | 2/2 |
-| Agent 正常结束 | 2/2 |
-| Agent 测试通过 | 2/2 |
-| 有 token 记录的响应 | 46/46 |
-| Token | input 577,756；output 8,232；total 585,988 |
-| 缓存输入 / 非缓存输入 | 216,064 / 361,692 |
-| 按价格快照计算的成本 | CNY 3.556160 |
+| 有 usage 的响应 | 46/46 |
+| input / output / total token | 577,756 / 8,232 / 585,988 |
+| 按历史价格快照计算的成本 | CNY 3.556160 |
 
-两题是 `pytest-dev__pytest-7205` 和 `sympy__sympy-20590`。
+[公开证据摘录](evidence/glm52-smoke-20260904.json)记录了当时的代码版本、题集哈希、Docker 镜像、
+patch 哈希和 grader 报告。
 
-成本使用[2026-09-04 GLM 价格快照](../benchmarks/swebench/prices/glm-5.2-standard-api-2026-09-04.json)计算。
-这是按保存费率推导的结果，不是账单金额。
+## Development：旧自定义题集
 
-[公开证据摘录](evidence/glm52-smoke-20260904.json)记录了代码版本、模型设置、题目文件哈希、Docker 镜像、
-patch 哈希和 official grader 报告。
+早期固定十题和自定义 50 题仍保留，方便复查历史实验。自定义 50 题已经标记为
+`development_custom_selection`，不会作为 `v0.5.0` 正式基线。
 
-这个摘录只能证明列出的两次运行。它没有完整记录之前是否发生过重试，也没有公开完整执行轨迹。
+这些运行不能与 HAL 50 题合并成一条成绩趋势。模型正常结束、Agent 测试通过和 official grader 通过
+也必须分别统计。
 
-## 开发探索不列为成绩
+## 正式报告将补充的内容
 
-开发期间曾用[固定十题](../benchmarks/swebench/verified-first-10.json)比较 GLM 和 DeepSeek。
+完成 50 题后，本页会增加：
 
-这些运行缺少完整的代码版本、重试记录和公开结果文件。因此，本页不再展示原先的成绩表。
+- official grader 解决题数，分母固定为 50
+- `resolved`、`unresolved`、`budget_exhausted`、`provider_error`、`infra_error`、`not_started` 分布
+- 每题 attempt、停止原因和报告路径
+- usage 覆盖率、总 token 和按冻结价格计算的成本
+- release commit、tag、selection SHA 和 Docker image identity
 
-开发运行仍说明了一件事：模型正常结束不等于修复成功。
-Agent 自己的测试和 official grader 也可能给出不同结果。
-正式报告会分别统计它们。
-
-## 正式报告将包含什么
-
-完成 50 题后，本页会增加以下指标：
-
-| 指标 | 含义 |
-| --- | --- |
-| 解决题数 | official grader 通过的题数，分母固定为 50 |
-| 正常结束率 | Agent 在预算内正常给出最终结果的比例 |
-| 完整交付率 | Agent 正常结束、有修改、测试通过且 grader 通过的比例 |
-| 失败分布 | 区分模型预算、Runtime、环境和 grader 失败 |
-| Token 与成本 | 包含所有运行和重试，并说明计量是否完整 |
-| 时延 | 分别报告环境准备、Agent 执行和 grader 时长 |
-| 分组结果 | 按难度和代码仓库展示题数，不从少量题目外推总体表现 |
-
-评测如何固定环境、恢复批次和计算这些指标，见[评测方法](BENCHMARKING.md)。
+运行条件和恢复规则见[评测方法](BENCHMARKING.md)。

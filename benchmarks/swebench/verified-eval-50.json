@@ -772,5 +772,7 @@
     "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0",
     "task_repository": "https://github.com/SWE-bench/swe-bench-tasks.git",
     "task_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d"
-  }
+  },
+  "status": "development_custom_selection",
+  "counts_toward_v0.5.0_final_evaluation": false
 }

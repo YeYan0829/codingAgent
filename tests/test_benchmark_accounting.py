@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 
 from codeagent.benchmark.accounting import PriceSnapshot, aggregate_usage, calculate_cost
 
@@ -42,3 +43,27 @@ def test_unpriced_usage_is_explicit():
     price = PriceSnapshot("x", "p", "m", "2026-01-01", "USD", 1000, {"input": "1"}, "source")
     result = calculate_cost(usage, price)
     assert not result["complete"] and result["total"] is None
+
+
+def test_glm_snapshots_price_reasoning_as_part_of_aggregate_output():
+    root = Path(__file__).parents[1] / "benchmarks/swebench/prices"
+    prices = [PriceSnapshot.from_json(path) for path in (
+        root / "glm-5.2-standard-api-2026-09-04.json",
+        root / "glm-5.3-standard-api-2026-09-09.json",
+    )]
+    aggregate = aggregate_usage([{
+        "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+        "cache_miss_input_tokens": 100, "cached_input_tokens": 0,
+        "reasoning_tokens": None,
+    }])
+    for price in prices:
+        aggregate_cost = calculate_cost(aggregate, price)
+        assert aggregate_cost["complete"] is True
+        assert aggregate_cost["unpriced_or_unknown"] == []
+
+        separate = {**aggregate, "reasoning_tokens": 5, "reasoning_tokens_complete": True}
+        separate_cost = calculate_cost(separate, price)
+        assert separate_cost["complete"] is True
+        assert separate_cost["total"] == aggregate_cost["total"]
+        assert separate_cost["reasoning_included_in_output"] is True
+        assert separate_cost["unpriced_or_unknown"] == []

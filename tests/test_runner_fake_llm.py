@@ -126,6 +126,41 @@ def test_runner_persists_usage_for_every_model_request(tmp_path):
     }
 
 
+def test_runner_preserves_reasoning_across_tool_round_trip_without_exposing_it_as_answer(tmp_path):
+    class ReasoningToolModel(BaseModelClient):
+        def __init__(self):
+            self.requests = []
+
+        def complete(self, request: ModelRequest) -> LLMResponse:
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                return LLMResponse(
+                    text="我先读取。", reasoning_content="内部推理第一步。",
+                    tool_calls=[LLMToolCall(call_id="read", name="read_file", arguments={"path": "README.md"})],
+                )
+            return LLMResponse(text="完成。", reasoning_content="内部推理第二步。")
+
+    (tmp_path / "README.md").write_text("# Demo\n", encoding="utf-8")
+    ws = Workspace(tmp_path)
+    store = SessionStore(ws.root, session_root=tmp_path / "sessions").create()
+    registry = ToolRegistry(ws.context)
+    for tool in build_fs_tools(ws.context):
+        registry.register(tool)
+    model = ReasoningToolModel()
+
+    output = AgentRunner(store, model, registry, AutoApprovalGate(False)).run_turn("inspect")
+
+    assert output.final_text == "完成。"
+    assistant = next(item for item in model.requests[1].messages if item.get("tool_calls"))
+    assert assistant["reasoning_content"] == "内部推理第一步。"
+    tool = next(item for item in model.requests[1].messages if item.get("role") == "tool")
+    assert tool["tool_call_id"] == "read"
+    tool_event = next(event for event in store.read_events() if event.type == "assistant_tool_calls")
+    final_event = next(event for event in store.read_events() if event.type == "assistant_message")
+    assert tool_event.payload["reasoning_content"] == "内部推理第一步。"
+    assert final_event.payload == {"message": "完成。", "reasoning_content": "内部推理第二步。"}
+
+
 def test_runner_stop_after_model_return_does_not_start_tool_call(tmp_path):
     stopped = False
 

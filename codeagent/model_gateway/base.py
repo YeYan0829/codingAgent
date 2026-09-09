@@ -25,6 +25,7 @@ class TokenUsage(BaseModel):
 
 class LLMResponse(BaseModel):
     text: str | None = None
+    reasoning_content: str | None = None
     tool_calls: list[LLMToolCall] = Field(default_factory=list)
     usage: TokenUsage | None = None
     provider_request_id: str | None = None

@@ -22,8 +22,13 @@ Agent 的修改先保存在独立 Git worktree。本文把这份尚未交付的�
 
 Extension 使用 VS Code 中第一个 workspace folder。新建会话时，它会把这个目录作为源仓库。
 
-齿轮页可以设置 provider、model、temperature、最大输出 token 和步骤预算。
+齿轮页可以设置 provider、model、reasoning、temperature、最大输出 token 和步骤预算。
 这些设置只影响之后新建的会话。
+
+GLM-5.2 的 reasoning 档位为 `high`、`max`，默认选择 `max`。DeepSeek V4 的档位为
+`low`、`high`、`max`，默认选择 `high`。关闭 reasoning 时，Runtime 不会发送 reasoning effort。
+
+设置保存到 VS Code 的本地状态。新建会话后，标题栏会显示这次会话使用的 reasoning 状态。
 
 API Key 保存在 VS Code SecretStorage。输入框不会回显已经保存的值。
 
@@ -39,6 +44,11 @@ API Key 保存在 VS Code SecretStorage。输入框不会回显已经保存的�
 ## 3. 查看执行过程
 
 时间线会把连续的工具操作折叠成活动组。你可以看到工具名称、文件路径、命令摘要和执行结果。
+
+工具失败时，活动组会自动展开。命令失败会显示退出状态，以及 stderr 中最关键的一行。
+
+点击 **Show output** 可以查看这次工具调用的详细输出。长输出会保留开头和结尾，
+中间部分会截断，避免撑满时间线。
 
 文件变化和测试结果也会显示在时间线中。界面不会展示或声称展示模型的隐藏推理。
 
@@ -71,9 +81,9 @@ Stop 会在当前操作完成后生效。已经运行的命令不会被立即终
 
 ## 6. 查看 Diff 和测试状态
 
-存在待审查修改时，底部会显示 **Current Delivery**。这里列出修改文件、增删行和最近一次测试状态。
+存在待审查修改时，底部会显示 **Changes ready for review**。这里列出修改文件、增删行和最近一次测试状态。
 
-点击文件会在中央编辑区打开 VS Code 原生 Diff。Diff 是只读视图，关闭它不会改变代码。
+点击 **Review Diff** 会在中央编辑区打开 VS Code 原生 Diff。Diff 是只读视图，关闭它不会改变代码。
 
 测试通过只证明当时那份代码通过了测试。如果 Agent 后来继续改动，界面会把旧测试结果标记为过期。
 
@@ -87,6 +97,18 @@ Stop 会在当前操作完成后生效。已经运行的命令不会被立即终
 出现冲突时，Accept 会失败，并保留现场供你检查。
 
 Accept 不会自动创建 Git commit。并发修改合入后，建议在源仓库中再次运行必要测试。
+
+Accept 后，Changes 卡片会变为 **Applied**。文件列表和 **Review Diff** 入口会继续保留，
+Accept 与 Discard 按钮则不再显示。
+
+Applied Diff 保存的是这次 Agent 实际应用的修改。用户之后继续编辑 source 时，
+这些新改动不会混入该 Session 的历史 Diff。
+
+Applied 卡片显示 **Tests passed at that time**。它只说明应用修改前的测试结果，
+不表示当前 source 仍处于已验证状态。
+
+CodeAgent `0.5.0` 不提供 Accept 后的一键撤销。直接反向应用旧修改可能覆盖用户之后的编辑，
+因此当前版本只提供回看。
 
 **Discard** 会清空 Agent worktree 中尚未交付的修改。它不会修改源仓库。
 
@@ -126,5 +148,7 @@ Retry 会启动新的 Runtime 进程并读取已经保存的会话。它不会�
 | Stopping | 已请求停止 | 等待当前操作结束 |
 | Step budget reached | 当前请求达到步骤上限 | 增加预算或结束请求 |
 | Changes to review | 有待审查修改 | 查看 Diff、Accept、Discard |
+| Applied | 修改已经应用到源仓库 | 回看文件列表和当时的 Diff |
+| Discarded | 尚未交付的修改已丢弃 | 继续任务或开始新任务 |
 | Runtime unavailable | Runtime 无法连接 | Retry 或打开 Output |
 | Recovery required | 工作区状态无法确认 | 保留现场并人工检查 |

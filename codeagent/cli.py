@@ -44,6 +44,11 @@ WORKSPACE_ARG = typer.Argument(Path("."), help="要进入的代码工作区目�
 MESSAGE_ARG = typer.Argument(..., help="本轮要发送给 agent 的用户消息。")
 PROVIDER_OPT = typer.Option("fake", "--provider", help="模型 provider：fake、deepseek 或 glm。默认 fake。")
 MODEL_OPT = typer.Option(None, "--model", help="provider 内的模型编号；deepseek 默认 deepseek-v4-flash，glm 默认 glm-5.2。")
+REASONING_OPT = typer.Option(False, "--reasoning/--no-reasoning", help="启用或关闭 Provider reasoning。默认关闭。")
+REASONING_EFFORT_OPT = typer.Option(
+    None, "--reasoning-effort",
+    help="GLM-5.2：high/max；GLM-5.3 与 DeepSeek：low/high/max。",
+)
 SESSION_ROOT_OPT = typer.Option(None, "--session-root", help="session 数据库根目录；默认使用 CODEAGENT_SESSION_ROOT 或 ~/.codeagent/sessions。")
 WORKSPACE_FILTER_OPT = typer.Option(None, "--workspace", "-w", help="只显示/选择某个 workspace 的 session；省略时使用全部 session。")
 
@@ -87,13 +92,25 @@ def _create_session(
     title: str | None = None,
 ) -> SessionStore:
     store = SessionStore(workspace.root, session_root=session_root)
-    return store.create(provider=model_config.provider, model=model_config.resolved_model, title=title)
+    return store.create(
+        provider=model_config.provider, model=model_config.resolved_model, title=title,
+        model_options={
+            "temperature": model_config.temperature, "max_tokens": model_config.max_tokens,
+            "reasoning_enabled": model_config.reasoning_enabled,
+            "reasoning_effort": model_config.resolved_reasoning_effort,
+        },
+    )
 
 
 @app.command()
-def start(workspace: Path = WORKSPACE_ARG, provider: str = PROVIDER_OPT, model: str | None = MODEL_OPT, session_root: Path | None = SESSION_ROOT_OPT):
+def start(
+    workspace: Path = WORKSPACE_ARG, provider: str = PROVIDER_OPT, model: str | None = MODEL_OPT,
+    reasoning: bool = REASONING_OPT, reasoning_effort: str | None = REASONING_EFFORT_OPT,
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
     """创建新 session 并进入交互 CLI。"""
-    model_config = ModelConfig(provider=provider, model=model)
+    model_config = ModelConfig(provider=provider, model=model, reasoning_enabled=reasoning,
+                               reasoning_effort=reasoning_effort)
     ws = Workspace(workspace)
     store = _create_session(ws, session_root, model_config)
     console.print(
@@ -119,10 +136,13 @@ def ask(
     message: str = MESSAGE_ARG,
     provider: str = PROVIDER_OPT,
     model: str | None = MODEL_OPT,
+    reasoning: bool = REASONING_OPT,
+    reasoning_effort: str | None = REASONING_EFFORT_OPT,
     session_root: Path | None = SESSION_ROOT_OPT,
 ):
     """单次非交互运行，用于 smoke test。"""
-    model_config = ModelConfig(provider=provider, model=model)
+    model_config = ModelConfig(provider=provider, model=model, reasoning_enabled=reasoning,
+                               reasoning_effort=reasoning_effort)
     ws = Workspace(workspace)
     store = _create_session(ws, session_root, model_config, title=SessionStore.title_from_message(message))
     runner = build_runner(store, ws, interactive=False, model_config=model_config)
@@ -155,9 +175,18 @@ def swebench_batch(
     run_id: str | None = typer.Option(None, "--run-id", help="指定已有 run id 即执行兼容性校验并 resume。"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    reasoning: bool = REASONING_OPT,
+    reasoning_effort: str | None = REASONING_EFFORT_OPT,
     max_steps_per_turn: int = typer.Option(12, "--slice-steps"),
     max_model_steps: int = typer.Option(48, "--max-model-steps"),
     price_snapshot: Path | None = typer.Option(None, "--price-snapshot"),
+    cost_budget_cny: str | None = typer.Option(
+        None, "--cost-budget-cny", help="批次可用成本预算；使用价格快照时必须设置。"
+    ),
+    minimum_remaining_cost_cny: str = typer.Option(
+        "10", "--minimum-remaining-cost-cny",
+        help="下一题启动前要求保留的最低 CNY 预算。",
+    ),
 ):
     """串行运行或恢复固定 SWE-bench selection。"""
     from codeagent.benchmark import (
@@ -168,7 +197,10 @@ def swebench_batch(
     from codeagent.config import RuntimeConfig
     selection_value = SWEbenchSelection(selection)
     repository = SWEbenchTaskRepository(task_repo)
-    model_config = ModelConfig(provider=provider, model=model, temperature=temperature, max_tokens=max_tokens)
+    model_config = ModelConfig(
+        provider=provider, model=model, temperature=temperature, max_tokens=max_tokens,
+        reasoning_enabled=reasoning, reasoning_effort=reasoning_effort,
+    )
     runtime_config = RuntimeConfig(max_steps_per_turn=max_steps_per_turn,
                                    max_model_steps_per_user_turn=max_model_steps)
     endpoint = (
@@ -187,6 +219,8 @@ def swebench_batch(
         model_factory=lambda: build_model_client(model_config), model_config=model_config,
         runtime_config=runtime_config, output_root=output_root, endpoint_identity=endpoint,
         price_snapshot=PriceSnapshot.from_json(price_snapshot) if price_snapshot else None,
+        cost_budget_cny=cost_budget_cny,
+        minimum_remaining_cost_cny=minimum_remaining_cost_cny,
         runtime_root=Path(__file__).resolve().parents[1],
     )
     try:
@@ -416,7 +450,13 @@ def resume(
         elif not execution_allowed:
             console.print(f"[yellow]Agent workspace state: {report.state.value}: {report.reason}; 受保护能力已关闭[/yellow]")
     ws = Workspace(context.active_root)
-    model_config = ModelConfig(provider=provider or meta.get("provider", "fake"), model=model or meta.get("model"))
+    model_options = meta.get("model_options") if isinstance(meta.get("model_options"), dict) else {}
+    model_config = ModelConfig(
+        provider=provider or meta.get("provider", "fake"), model=model or meta.get("model"),
+        temperature=model_options.get("temperature"), max_tokens=model_options.get("max_tokens"),
+        reasoning_enabled=model_options.get("reasoning_enabled") is True,
+        reasoning_effort=model_options.get("reasoning_effort"),
+    )
     console.print(Panel(_format_session_overview(store), title="Resumed Session"))
     _interactive_loop(store, ws, model_config, execution_allowed=execution_allowed)
 

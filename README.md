@@ -12,8 +12,44 @@ CodeAgent 可以搜索和编辑代码。它也可以运行项目命令和测试�
 
 VS Code Extension 提供界面。Python Runtime 在本地调用模型和工具。
 
-当前 `0.5.0` 仍处于发布候选开发阶段，支持 Linux 和 WSL2。正式 50 题评测仍待完成。
+当前 `0.5.0` 仍处于发布候选阶段，支持 Linux 和 WSL2。HAL 固定 50 题正式评测仍待完成。
 进度见[发布验收](docs/RELEASE_VALIDATION.md)。
+
+## 产品预览
+
+<p align="center">
+  <a href="docs/assets/showcase/overview.png">
+    <img src="docs/assets/showcase/overview.png" alt="CodeAgent 在 VS Code 中展示修复结果、原生 Diff 和当前验证状态">
+  </a>
+</p>
+
+CodeAgent 在隔离工作区中完成修改和验证。开发者可以查看执行结果与原生 Diff，
+再决定是否把修改应用到源仓库。
+
+<table width="100%">
+  <tr>
+    <td width="33%" valign="top">
+      <a href="docs/assets/showcase/approval.png">
+        <img src="docs/assets/showcase/approval.png" width="100%" alt="CodeAgent 创建隔离工作区前显示 Approval">
+      </a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="docs/assets/showcase/discard.png">
+        <img src="docs/assets/showcase/discard.png" width="100%" alt="CodeAgent 丢弃 Agent 修改并保持源仓库不变">
+      </a>
+    </td>
+    <td width="33%" valign="top">
+      <a href="docs/assets/showcase/history.png">
+        <img src="docs/assets/showcase/history.png" width="100%" alt="CodeAgent 当前仓库的本地会话历史">
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td valign="top"><strong>受保护操作先审批</strong><br>界面说明原因，并等待用户决定。</td>
+    <td valign="top"><strong>修改可以丢弃</strong><br>Discard 后，源仓库保持不变。</td>
+    <td valign="top"><strong>会话保存在本地</strong><br>重载窗口后仍可恢复任务。</td>
+  </tr>
+</table>
 
 ## 为什么做 CodeAgent
 
@@ -46,6 +82,10 @@ flowchart LR
 第一次运行项目命令时，也会触发这个请求。
 
 命令默认不能联网，也只能写入为任务准备的目录。确实需要额外权限时，界面会显示单独的审批请求。
+
+命令失败时，时间线会显示退出状态和关键错误。完整输出可以按需展开。
+
+Accept 后，文件列表和当时的 Diff 仍可查看。之后的手工修改不会混入这份历史 Diff。
 
 每个请求还有模型调用上限。达到上限后，CodeAgent 会等待用户决定是否继续。
 
@@ -117,7 +157,7 @@ CodeAgent 每次固定 SWE-bench 题集和官方 Docker 镜像。
 
 因此，评测结果可以追溯到明确的运行条件。模型完成、测试通过和 grader 通过会分别记录。
 
-当前还没有完整的重试账本和分阶段时延报告。正式固定 50 题运行保持 **pending**。
+当前还没有分阶段时延报告。HAL SWE-bench Verified Mini 50 题运行保持 **pending**。
 详见[评测方法](docs/BENCHMARKING.md)和[评测结果](docs/EVALUATION_RESULTS.md)。
 
 ## Quick Start：源码体验
@@ -168,6 +208,8 @@ python3 verify.py
 
 在右侧 CodeAgent 中配置模型和 API Key，再发送：
 
+模型设置页还可以启用 reasoning，并选择该模型支持的推理档位。这个设置只影响之后新建的会话。
+
 ```text
 修复零数量时的错误，运行仓库中的验证脚本并总结修改。
 ```
@@ -199,11 +241,10 @@ flowchart LR
 [`examples/showcase/`](examples/showcase/) 提供最小离线示例。
 [`examples/eval-tasks/`](examples/eval-tasks/) 提供三个可重复的真实仓库任务。
 
-截图和短 GIF 的页面位置、文件名与采集顺序见
-[GitHub 展示素材清单](examples/showcase/SHOT_LIST.md)。
+README 顶部的截图来自这个离线示例，可以直接复现同一条修复流程。
 
 这些示例不是 SWE-bench 官方成绩。已有评测仅用于验证运行链路。
-正式固定 50 题尚未运行，也没有预测成绩。
+HAL SWE-bench Verified Mini 固定 50 题尚未运行，也没有预测成绩。
 
 ## 当前限制
 
@@ -213,6 +254,7 @@ flowchart LR
 - Bubblewrap 不可用时，命令功能不可用。
 - 当前没有资源配额、域名白名单或通用 secret 扫描。
 - Runtime 不会判断测试是否充分，也不会自动解决 Git 冲突。
+- Accept 后可以回看修改，但当前不提供一键撤销。
 
 更多限制见[安全模型](docs/SECURITY.md)。
 

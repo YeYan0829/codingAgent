@@ -111,6 +111,16 @@ RepoMap 或 RAG。
 每个 provider 响应另写 `model_usage` Event，记录可获得的 token 和 provider request id。usage 不进入后续模型
 上下文，也不计作一个 ModelStep。
 
+GLM 和 DeepSeek 启用 reasoning 后，会把 provider 返回的 `reasoning_content` 保存在对应的模型事件中。
+它不会投影成普通 assistant 消息，也不会显示在产品界面。
+
+带工具调用的 reasoning 会和该次 assistant tool call 一起保留。下一次请求按 Provider 契约原样回传，
+ContextBuilder 缩减历史时也不会拆开 tool call 与 tool result。最低上下文无法同时容纳这组消息时，Runtime 会停止，
+不会发送不完整的消息序列。
+
+DeepSeek V4 开启 reasoning 时不发送 `tool_choice`，让 Provider 使用有 tools 时的默认选择。对应的 assistant
+tool-call 消息始终保留非 null `content`。GLM 继续发送普通 `tool_choice`，并使用 `clear_thinking: false` 保留思考。
+
 ## 工具与工作区升级
 
 Session 从 `source_only` 开始。Search、Read 和只读 Git 工具针对 active workspace；第一次编辑或受控命令触发
@@ -157,6 +167,9 @@ Accept 时，Runtime 检查 worktree HEAD 与基线、当前 validation，临时
 时拒绝覆盖并保留现场。成功后 worktree HEAD 前移为内部 checkpoint，用户 source branch 不会被自动 commit。
 Discard 将 Candidate 恢复到 accepted baseline，并清理 worktree 中未跟踪和 ignored 文件，不修改 source。
 
+Accept 成功时，Session 会保存该次应用的 patch、文件列表和可预览的前后文本。Product Service 从这份只读快照
+重建 Applied Diff，不读取 source 的后续工作区变化。每个文本快照仍受 512 KB 预览上限约束。
+
 Diff 展示的是 baseline 到当前 Agent 文件，Accept 时才计算与 source 的合并结果。冻结后的 source tree 会在应用前
 再次比较，patch 进行 hash 与 apply-check 检查，应用后复核 merged tree。但 RPC 不携带“用户看过的 Diff 指纹”，
 也没有跨进程文件锁；不应宣称能杜绝所有外部并发写入竞态。成功 validation 验证的是 Agent 文件树，
@@ -179,11 +192,13 @@ Event 保存在 `events.jsonl`，UI 只投影有界摘要。Approval bridge 只�
 session.json   Session、workspace、revision 和非 secret 配置
 events.jsonl   对话、工具 terminal 结果、审批、usage 和控制事件
 Git worktree   accepted baseline 与当前 Candidate 文件
+deliveries/    Accept 后用于回看 Diff 的只读交付快照
 ```
 
-成功命令的完整 stdout/stderr、Runtime HOME/TMP、事务备份和 frozen patch 不作为长期权威状态。失败、timeout、
-tainted 或 recovery 场景可以保留有界 diagnostics。Resume 从 metadata、Event 和 Git 客观状态重建服务，不恢复
-崩溃前正在执行的 Python、shell 或 provider 调用。
+成功命令的完整 stdout/stderr、Runtime HOME/TMP、事务备份和临时 frozen patch 不作为长期权威状态。
+失败、timeout、tainted 或 recovery 场景可以保留有界 diagnostics。已应用交付物单独保留用于审查，
+不能重新应用或执行一键撤销。Resume 从 metadata、Event、Git 状态和交付快照重建服务，
+不恢复崩溃前正在执行的 Python、shell 或 provider 调用。
 
 ## SWE-bench backend
 
@@ -201,5 +216,6 @@ Gold patch、FAIL_TO_PASS 和 PASS_TO_PASS 不被 harness 注入 Agent prompt �
 - 本地执行没有 cgroup CPU/内存/进程数限制、复杂 seccomp 或 domain/port 网络 ACL；
 - 编辑不支持二进制、编码猜测、任意 mode/copy、递归目录操作和 case-only rename；
 - Runtime 不判断 validation 质量、不自动解决 merge conflict；
+- Accept 后可以回看 Applied Diff，但不提供 one-click Undo；
 - SWE-bench Docker executor 不是通用产品 workspace backend；
 - 当前没有多 Agent、长期语义记忆或通用环境自动准备。

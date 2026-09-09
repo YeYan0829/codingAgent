@@ -50,7 +50,11 @@ def build_run_manifest(*, run_id: str, selection_path: str | Path, selection_id:
     model_value = {
         "provider": model.provider, "model": model.resolved_model,
         "endpoint_identity": safe_endpoint_identity(endpoint_identity), "temperature": model.temperature,
-        "max_output_tokens": model.max_tokens, "thinking": "disabled",
+        "max_output_tokens": model.max_tokens,
+        "reasoning": {
+            "enabled": model.reasoning_enabled,
+            "effort": model.resolved_reasoning_effort,
+        },
     }
     runtime_value = {
         **asdict(runtime), "context_limit": model.context_limit,

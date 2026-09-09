@@ -7,6 +7,7 @@ from codeagent.config import ModelConfig
 from codeagent.product.execution import ExecutionConflictError, ExecutionSupervisor
 from codeagent.product.read_model import activity_item, build_session_detail, build_session_summary
 from codeagent.runtime.candidate import CandidateError
+from codeagent.runtime.applied_changes import AppliedChangesError, AppliedChangesStore
 from codeagent.runtime.current_changes import CurrentChangesError, CurrentChangesService
 from codeagent.safety.path_guard import PathGuard, PathGuardError
 from codeagent.session.store import SessionStore, SessionStoreError
@@ -90,12 +91,19 @@ class ProductApplicationService:
     def create_session(
         self, workspace: Path | str, *, provider: str = "fake", model: str | None = None, title: str | None = None,
         temperature: float | None = None, max_tokens: int | None = None,
+        reasoning_enabled: bool = False, reasoning_effort: str | None = None,
         max_steps_per_turn: int = 12, max_model_steps_per_user_turn: int = 48,
     ) -> dict[str, Any]:
         root = Path(workspace).expanduser().resolve()
         if not root.is_dir():
             raise ProductServiceError(f"workspace not found: {root}")
-        config = ModelConfig(provider=provider, model=model)
+        try:
+            config = ModelConfig(
+                provider=provider, model=model, reasoning_enabled=reasoning_enabled,
+                reasoning_effort=reasoning_effort,
+            )
+        except ValueError as exc:
+            raise ProductServiceError(str(exc)) from exc
         if provider not in {"fake", "deepseek", "glm"}:
             raise ProductServiceError(f"unknown provider: {provider}")
         if temperature is not None and not 0 <= temperature <= 2:
@@ -108,7 +116,11 @@ class ProductApplicationService:
             raise ProductServiceError("maxModelStepsPerUserTurn must be between maxStepsPerTurn and 1000")
         store = SessionStore(root, session_root=self.session_root).create(
             provider=config.provider, model=config.resolved_model, title=title,
-            model_options={"temperature": temperature, "max_tokens": max_tokens},
+            model_options={
+                "temperature": temperature, "max_tokens": max_tokens,
+                "reasoning_enabled": config.reasoning_enabled,
+                "reasoning_effort": config.resolved_reasoning_effort,
+            },
             runtime_options={
                 "max_steps_per_turn": max_steps_per_turn,
                 "max_model_steps_per_user_turn": max_model_steps_per_user_turn,
@@ -164,9 +176,14 @@ class ProductApplicationService:
     def get_changes(self, session_id: str) -> dict[str, Any]:
         detail = self.get_session(session_id)
         store = self._load(session_id)
-        stats = self._change_stats(store, detail["changesSummary"]["files"])
+        summary = detail["changesSummary"]
+        stats = (
+            {key: summary[key] for key in ("additions", "deletions", "fileStats")}
+            if summary.get("state") == "applied"
+            else self._change_stats(store, summary["files"])
+        )
         return {
-            **detail["changesSummary"],
+            **summary,
             **stats,
             "validation": detail["validationSummary"],
             "canAccept": detail["availableActions"]["canAcceptChanges"],
@@ -176,8 +193,14 @@ class ProductApplicationService:
     def get_change_file(self, session_id: str, path: str) -> dict[str, Any]:
         store = self._load(session_id)
         detail = self.get_session(session_id)
-        if path not in detail["changesSummary"]["files"]:
-            raise ProductServiceError("path is not a current pending change")
+        summary = detail["changesSummary"]
+        if path not in summary["files"]:
+            raise ProductServiceError("path is not part of the available changes")
+        if summary.get("state") == "applied":
+            try:
+                return AppliedChangesStore(store).read_file(str(summary.get("deliveryId")), path)
+            except AppliedChangesError as exc:
+                raise ProductServiceError(str(exc)) from exc
         context = store.workspace_context()
         try:
             target = PathGuard(context.active_root).resolve(path)

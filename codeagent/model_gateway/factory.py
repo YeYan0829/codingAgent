@@ -11,7 +11,9 @@ def build_model_client(config: ModelConfig) -> BaseModelClient:
     if config.provider == "fake":
         return FakeLLM()
     if config.provider == "deepseek":
-        return DeepSeekClient(model=config.resolved_model)
+        return DeepSeekClient(model=config.resolved_model, reasoning_enabled=config.reasoning_enabled,
+                              reasoning_effort=config.resolved_reasoning_effort)
     if config.provider == "glm":
-        return GLMClient(model=config.resolved_model)
+        return GLMClient(model=config.resolved_model, reasoning_enabled=config.reasoning_enabled,
+                         reasoning_effort=config.resolved_reasoning_effort)
     raise ValueError(f"unknown provider: {config.provider}")

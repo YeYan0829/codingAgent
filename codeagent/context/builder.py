@@ -153,10 +153,18 @@ class ContextManager:
                         raise ContextNotReady(
                             f"open ModelStep {step.step_id!r}; Runtime must append terminal tool outcomes before the next model request"
                         )
-                    messages.append({"role": "assistant", "content": step.message if step_index in recent_indexes else None, "tool_calls": [
+                    content = step.message if step_index in recent_indexes else None
+                    # DeepSeek thinking + tools 要求 assistant content 非 null；空串仍可保留缩减语义。
+                    if step.reasoning_content is not None and content is None:
+                        content = ""
+                    assistant = {"role": "assistant", "content": content, "tool_calls": [
                         {"id": item.call_id, "type": "function", "function": {"name": item.tool_name,
                          "arguments": json.dumps(item.arguments, ensure_ascii=False)}} for item in step.exchanges
-                    ]})
+                    ]}
+                    # Provider 要求 reasoning 与对应的工具调用原样回传；不能随正文缩减。
+                    if step.reasoning_content is not None:
+                        assistant["reasoning_content"] = step.reasoning_content
+                    messages.append(assistant)
                     for exchange in step.exchanges:
                         if exchange.terminal_kind is None:
                             raise ProjectionError(f"incomplete tool exchange: {exchange.call_id}")
@@ -170,7 +178,10 @@ class ContextManager:
                     messages.append({"role": "system", "content": "该已完成轮次的历史执行记录（正文已省略）：\n" +
                                      json.dumps(residues, ensure_ascii=False)})
             if turn.final_message is not None:
-                messages.append({"role": "assistant", "content": turn.final_message})
+                final = {"role": "assistant", "content": turn.final_message}
+                if turn.final_reasoning_content is not None:
+                    final["reasoning_content"] = turn.final_reasoning_content
+                messages.append(final)
         return messages
 
     @staticmethod

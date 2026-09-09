@@ -28,12 +28,15 @@ def test_product_service_lists_sessions_and_builds_detail(tmp_path):
         "title": "Inspect parser",
         "provider": "fake",
         "model": "fake",
+        "reasoningEnabled": False,
+        "reasoningEffort": None,
         "workspace": str(workspace.resolve()),
         "workspaceLabel": "workspace",
         "executionState": "idle",
         "attentionSummary": "Ready",
         "lastActiveAt": store.read_meta()["last_active_at"],
         "changedFileCount": 0,
+        "changesState": "none",
     }]
     assert [item["role"] for item in detail["conversation"]] == ["user", "assistant"]
     assert detail["provider"] == "fake"
@@ -206,3 +209,59 @@ def test_timeline_distinguishes_denied_and_cancelled_tool_calls(tmp_path):
     assert [tool["status"] for tool in group["tools"]] == ["denied", "cancelled"]
     assert group["status"] == "denied"
     assert group["summary"] == "2 tool calls · 1 denied · 1 cancelled"
+
+
+def test_failed_command_projects_exit_code_stderr_summary_and_bounded_output(tmp_path):
+    store, session_root, _ = _session(tmp_path)
+    store.append_event("user_message", {"message": "Run verification"})
+    store.append_event("assistant_tool_calls", {"tool_calls": [{
+        "call_id": "command-1", "name": "run_command", "arguments": {"command": "python3 verify.py"},
+    }]})
+    long_output = "stdout\n" + ("detail\n" * 3000) + "ZeroDivisionError: division by zero\n"
+    store.append_event("tool_result", {
+        "call_id": "command-1", "name": "run_command", "result": {
+            "ok": False,
+            "content": long_output,
+            "error": "命令未成功完成",
+            "error_code": "command_exit_nonzero",
+            "metadata": {
+                "status": "completed", "exit_code": 1,
+                "stderr_tail": "Traceback (most recent call last):\nZeroDivisionError: division by zero",
+            },
+        },
+    })
+
+    group = ProductApplicationService(session_root).get_session(store.session_id)["turns"][0]["items"][0]
+    failure = group["tools"][0]["failure"]
+
+    assert group["defaultExpanded"] is True
+    assert failure["kind"] == "command_exit_nonzero"
+    assert failure["title"] == "Command exited with code 1"
+    assert failure["exitCode"] == 1
+    assert failure["summary"] == "ZeroDivisionError: division by zero"
+    assert failure["outputTruncated"] is True
+    assert len(failure["output"]) <= 12_000
+    assert "output truncated" in failure["output"]
+
+
+def test_timeout_and_policy_denial_have_distinct_failure_messages(tmp_path):
+    store, session_root, _ = _session(tmp_path)
+    store.append_event("user_message", {"message": "Try protected commands"})
+    store.append_event("assistant_tool_calls", {"tool_calls": [
+        {"call_id": "timeout", "name": "run_command", "arguments": {"command": "sleep 30"}},
+        {"call_id": "denied", "name": "run_command", "arguments": {"command": "curl example.com"}},
+    ]})
+    store.append_event("tool_result", {"call_id": "timeout", "name": "run_command", "result": {
+        "ok": False, "error": "命令未成功完成", "error_code": "execution_timed_out",
+        "metadata": {"status": "execution_timed_out", "exit_code": -15},
+    }})
+    store.append_event("tool_denied", {"call_id": "denied", "name": "run_command", "result": {
+        "ok": False, "error": "Network access is disabled", "error_code": "policy_denied",
+    }})
+
+    tools = ProductApplicationService(session_root).get_session(store.session_id)["turns"][0]["items"][0]["tools"]
+
+    assert tools[0]["failure"]["kind"] == "timeout"
+    assert tools[0]["failure"]["title"] == "Command timed out"
+    assert tools[1]["failure"]["kind"] == "policy_denied"
+    assert tools[1]["failure"]["title"] == "Operation blocked by policy"

@@ -306,9 +306,12 @@ def test_recent_raw_target_can_degrade_under_hard_budget(tmp_path):
     store.append_event("user_message", {"message": "inspect"})
     for index in range(4):
         call_id = f"read-{index}"
-        store.append_event("assistant_tool_calls", {"tool_calls": [
-            {"call_id": call_id, "name": "read_file", "arguments": {"path": "a.py"}}
-        ]})
+        store.append_event("assistant_tool_calls", {
+            "reasoning_content": f"reason-{index}",
+            "tool_calls": [
+                {"call_id": call_id, "name": "read_file", "arguments": {"path": "a.py"}}
+            ],
+        })
         store.append_event("tool_result", {"call_id": call_id, "result": {
             "ok": True, "content": str(index) * 12_000, "metadata": {"path": "a.py", "sha256": "old"}
         }})
@@ -322,6 +325,41 @@ def test_recent_raw_target_can_degrade_under_hard_budget(tmp_path):
     assert manager.last_budget_report.estimated_tokens <= 5_000
     tool_results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
     assert any(result.get("content_retained") is False for result in tool_results)
+
+
+def test_large_context_budget_keeps_tool_observations_bounded_and_recent(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "inspect"})
+    for index in range(12):
+        call_id = f"read-{index}"
+        store.append_event("assistant_tool_calls", {
+            "reasoning_content": f"reason-{index}",
+            "tool_calls": [
+                {"call_id": call_id, "name": "read_file", "arguments": {"path": "a.py"}}
+            ],
+        })
+        store.append_event("tool_result", {"call_id": call_id, "result": {
+            "ok": True, "content": str(index % 10) * 50_000,
+            "metadata": {"path": "a.py", "sha256": "old"},
+        }})
+
+    manager = ContextManager(store)
+    messages = manager.build(model_capabilities=ModelCapabilities(
+        context_limit=1_000_000, generation_reserve=131_072,
+    ))
+
+    assert manager.last_budget_report
+    assert manager.last_budget_report.reductions == ()
+    assert manager.last_budget_report.estimated_tokens <= manager.last_budget_report.usable_tokens
+    tool_results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
+    assert sum(result.get("content_retained") is False for result in tool_results) == 8
+    raw_results = [result for result in tool_results if "content_retained" not in result]
+    assert len(raw_results) == 4
+    assert all(len(result["content"].encode("utf-8")) <= 16_000 for result in raw_results)
+    assert all(result["context_truncated"] is True for result in raw_results)
+    reasoning = [message.get("reasoning_content") for message in messages if message.get("tool_calls")]
+    assert reasoning == [f"reason-{index}" for index in range(12)]
 
 
 def test_observation_bounding_is_raw_and_preserves_metadata(tmp_path):

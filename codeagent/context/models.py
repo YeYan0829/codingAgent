@@ -30,6 +30,7 @@ class ToolExchange:
 class ModelStepView:
     step_id: str
     message: str = ""
+    reasoning_content: str | None = None
     exchanges: list[ToolExchange] = field(default_factory=list)
     protocol_error: dict[str, Any] | None = None
 
@@ -45,6 +46,7 @@ class UserTurnView:
     user_message: str
     model_steps: list[ModelStepView] = field(default_factory=list)
     final_message: str | None = None
+    final_reasoning_content: str | None = None
 
     @property
     def completed(self) -> bool:

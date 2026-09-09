@@ -174,7 +174,15 @@ class SessionStore:
         meta["permission_grants"] = existing
         self._write_state(meta)
 
-    def finish_accept(self, context: WorkspaceContext, *, candidate_revision: int, patch_sha256: str, changed_files: list[str]) -> None:
+    def finish_accept(
+        self,
+        context: WorkspaceContext,
+        *,
+        candidate_revision: int,
+        patch_sha256: str,
+        changed_files: list[str],
+        delivery_id: str,
+    ) -> None:
         meta = self.read_meta()
         meta.update(context.to_metadata())
         meta["accepted_candidate_revision"] = candidate_revision
@@ -187,6 +195,7 @@ class SessionStore:
             "baseline_commit": context.base_commit,
             "patch_sha256": patch_sha256,
             "changed_files": changed_files,
+            "delivery_id": delivery_id,
         })
 
     def finish_discard(self, *, candidate_revision: int) -> None:

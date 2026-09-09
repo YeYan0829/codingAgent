@@ -7,6 +7,7 @@ from typing import Any
 from codeagent.session.events import SessionEvent
 from codeagent.session.store import SessionStore
 from codeagent.runtime.turn_budget import MAX_USER_TURN_BUDGET, current_turn_budget
+from codeagent.runtime.applied_changes import AppliedChangesError, AppliedChangesStore
 from codeagent.workspace.workspace import SessionWorkspaceState
 
 
@@ -52,22 +53,27 @@ def build_session_summary(meta: dict[str, Any]) -> dict[str, Any]:
             "attentionSummary": "Session data needs attention",
             "lastActiveAt": None,
             "changedFileCount": 0,
+            "changesState": "none",
         }
     store = _store_from_meta(meta)
     events = store.read_events()
     changes = inspect_changes(store)
     source_workspace = str(meta.get("source_workspace") or meta.get("workspace") or "")
+    model_options = meta.get("model_options") if isinstance(meta.get("model_options"), dict) else {}
     return {
         "sessionId": store.session_id,
         "title": str(meta.get("title") or SessionStore.UNTITLED),
         "provider": str(meta.get("provider", "fake")),
         "model": str(meta.get("model", "fake")),
+        "reasoningEnabled": model_options.get("reasoning_enabled") is True,
+        "reasoningEffort": model_options.get("reasoning_effort"),
         "workspace": source_workspace,
         "workspaceLabel": Path(source_workspace).name,
         "executionState": "idle",
         "attentionSummary": attention_summary(meta, events, changes),
         "lastActiveAt": meta.get("last_active_at"),
         "changedFileCount": len(changes["files"]),
+        "changesState": changes["state"],
     }
 
 
@@ -77,6 +83,8 @@ def build_session_detail(store: SessionStore) -> dict[str, Any]:
     changes = inspect_changes(store)
     summary = build_session_summary(meta)
     validation = validation_summary(events, meta)
+    if changes["state"] == "applied" and validation is not None:
+        validation = {**validation, "appliesToCurrentChanges": False, "historical": True}
     actions = available_actions(meta, events, changes)
     return {
         **summary,
@@ -86,11 +94,7 @@ def build_session_detail(store: SessionStore) -> dict[str, Any]:
         "recentActivity": [activity_item(event) for event in events if event.type not in {
             "user_message", "assistant_message", "model_usage",
         }][-50:],
-        "changesSummary": {
-            "fileCount": len(changes["files"]),
-            "files": changes["files"],
-            "available": changes["available"],
-        },
+        "changesSummary": {**changes, "fileCount": len(changes["files"])},
         "validationSummary": validation,
         "deliveryReceipt": delivery_receipt(events),
         "globalAttention": global_attention(meta, events),
@@ -205,7 +209,9 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
                     else "succeeded" if result.get("ok", True) else "failed"
                 )
                 call["result"] = _tool_result_summary(result, event.payload)
-                if call["status"] == "failed" and active_group is not None:
+                if call["status"] in {"failed", "denied"}:
+                    call["failure"] = _tool_failure_details(result, event.payload)
+                if call["status"] in {"failed", "denied"} and active_group is not None:
                     active_group["defaultExpanded"] = True
         elif event.type == "command_completed":
             command = _latest_tool(calls, "run_command")
@@ -341,10 +347,69 @@ def _tool_argument_summary(name: str, arguments: dict[str, Any]) -> str:
 
 
 def _tool_result_summary(result: dict[str, Any], payload: dict[str, Any]) -> str | None:
+    failure = _tool_failure_details(result, payload)
+    if failure is not None:
+        return failure["summary"]
     error = result.get("error") or payload.get("reason")
     if error:
         return _bounded(str(error), 240)
     return None
+
+
+def _tool_failure_details(result: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any] | None:
+    error = str(result.get("error") or payload.get("reason") or "").strip()
+    error_code = str(result.get("error_code") or "").strip()
+    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    status = str(metadata.get("status") or "").strip()
+    exit_code = metadata.get("exit_code")
+    failed = result.get("ok") is False or bool(error) or bool(payload.get("reason"))
+    if not failed:
+        return None
+
+    if error_code == "command_exit_nonzero" or (status == "completed" and exit_code not in {None, 0}):
+        kind = "command_exit_nonzero"
+        title = f"Command exited with code {exit_code}"
+    elif error_code == "execution_timed_out" or status == "execution_timed_out":
+        kind, title = "timeout", "Command timed out"
+    elif error_code == "approval_denied":
+        kind, title = "approval_rejected", "Approval rejected"
+    elif error_code in {"policy_denied", "permission_denied"}:
+        kind, title = "policy_denied", "Operation blocked by policy"
+    elif error_code in {"sandbox_unavailable", "sandbox_setup_failed"} or status in {
+        "sandbox_unavailable", "sandbox_setup_failed",
+    }:
+        kind, title = "sandbox_unavailable", "Sandbox unavailable"
+    else:
+        kind, title = "tool_error", "Tool could not run"
+
+    stderr_tail = str(metadata.get("stderr_tail") or "").strip()
+    diagnostic = str(metadata.get("diagnostic") or "").strip()
+    summary = _important_error_line(stderr_tail or diagnostic or error or title)
+    raw_output = str(result.get("content") or "").strip()
+    if not raw_output:
+        raw_output = "\n".join(value for value in (stderr_tail, diagnostic, error) if value)
+    output, output_truncated = _bounded_output(raw_output)
+    return {
+        "kind": kind,
+        "title": title,
+        "summary": summary,
+        "exitCode": exit_code,
+        "output": output,
+        "outputTruncated": bool(result.get("truncated")) or output_truncated,
+    }
+
+
+def _important_error_line(value: str) -> str:
+    lines = [line.strip() for line in value.splitlines() if line.strip()]
+    return _bounded(lines[-1] if lines else "No error details were reported.", 300)
+
+
+def _bounded_output(value: str, limit: int = 12_000) -> tuple[str, bool]:
+    if len(value) <= limit:
+        return value, False
+    head = value[:4_000].rstrip()
+    tail = value[-7_900:].lstrip()
+    return f"{head}\n\n… output truncated …\n\n{tail}", True
 
 
 def _latest_tool(calls: dict[str, dict[str, Any]], name: str) -> dict[str, Any] | None:
@@ -461,12 +526,12 @@ def available_actions(meta: dict[str, Any], events: list[SessionEvent], changes:
         "canIncreaseBudget": budget["waiting"] and budget["limit"] < MAX_USER_TURN_BUDGET and safe,
         "canStop": not budget["closed"],
         "canResolveApproval": False,
-        "canViewChanges": changes["available"],
+        "canViewChanges": changes["available"] and changes["state"] in {"pending", "applied"},
         "canAcceptChanges": bool(
-            changes["available"] and state == SessionWorkspaceState.CHANGES_ACTIVE.value
+            changes["state"] == "pending" and state == SessionWorkspaceState.CHANGES_ACTIVE.value
             and validation and validation["status"] == "passed" and validation["appliesToCurrentChanges"]
         ),
-        "canDiscardChanges": changes["available"] and state in {
+        "canDiscardChanges": changes["state"] == "pending" and state in {
             SessionWorkspaceState.CHANGES_ACTIVE.value, SessionWorkspaceState.WORKSPACE_TAINTED.value,
         },
     }
@@ -510,34 +575,47 @@ def attention_summary(meta: dict[str, Any], events: list[SessionEvent], changes:
     validation = validation_summary(events, meta)
     if validation and validation["status"] == "failed":
         return "Validation failed"
-    if changes["available"]:
+    if changes["state"] == "pending":
         return "Changes ready for review"
+    if changes["state"] == "applied":
+        return "Changes applied"
     return "Ready"
 
 
 def inspect_changes(store: SessionStore) -> dict[str, Any]:
     meta = store.read_meta()
     context = store.workspace_context()
-    if context.workspace_kind != "git_worktree" or not context.active_root.is_dir():
-        return {"available": False, "files": []}
-    try:
-        proc = subprocess.run(
-            ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-            cwd=context.active_root, capture_output=True, check=False, timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return {"available": False, "files": []}
-    if proc.returncode:
-        return {"available": False, "files": []}
-    files = []
-    for entry in proc.stdout.decode("utf-8", errors="replace").split("\0"):
-        if not entry:
-            continue
-        path = entry[3:] if len(entry) > 3 else entry
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        files.append(path)
-    return {"available": bool(files), "files": sorted(set(files)), "workspaceState": meta.get("workspace_state")}
+    if context.workspace_kind == "git_worktree" and context.active_root.is_dir():
+        try:
+            proc = subprocess.run(
+                ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                cwd=context.active_root, capture_output=True, check=False, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            proc = None
+        if proc is not None and proc.returncode == 0:
+            files = []
+            for entry in proc.stdout.decode("utf-8", errors="replace").split("\0"):
+                if not entry:
+                    continue
+                path = entry[3:] if len(entry) > 3 else entry
+                if " -> " in path:
+                    path = path.split(" -> ", 1)[1]
+                files.append(path)
+            if files:
+                return {
+                    "state": "pending", "available": True, "reviewable": True,
+                    "files": sorted(set(files)), "workspaceState": meta.get("workspace_state"),
+                }
+    latest = next((event for event in reversed(store.read_events())
+                   if event.type in {"changes_accepted", "changes_discarded"}), None)
+    if latest is not None and latest.type == "changes_accepted" and latest.payload.get("delivery_id"):
+        try:
+            return AppliedChangesStore(store).summary(str(latest.payload["delivery_id"]))
+        except AppliedChangesError:
+            pass
+    state = "discarded" if latest is not None and latest.type == "changes_discarded" else "none"
+    return {"state": state, "available": False, "reviewable": False, "files": []}
 
 
 def _store_from_meta(meta: dict[str, Any]) -> SessionStore:

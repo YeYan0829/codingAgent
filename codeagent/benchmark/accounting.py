@@ -47,6 +47,7 @@ class PriceSnapshot:
     unit_tokens: int
     rates: dict[str, str]
     source: str
+    reasoning_included_in_output: bool = False
 
     @classmethod
     def from_json(cls, path: str | Path) -> "PriceSnapshot":
@@ -70,6 +71,8 @@ def calculate_cost(usage: dict[str, object], snapshot: PriceSnapshot) -> dict[st
     missing: list[str] = []
     total = Decimal(0)
     for rate_name, token_name in mapping.items():
+        if rate_name == "reasoning" and snapshot.reasoning_included_in_output:
+            continue
         rate = snapshot.rates.get(rate_name)
         tokens = usage.get(token_name)
         # 无独立 cache-miss 计量时，仅在 cached token 不存在时允许使用完整 input。
@@ -94,5 +97,6 @@ def calculate_cost(usage: dict[str, object], snapshot: PriceSnapshot) -> dict[st
         "total": str(total) if complete else None,
         "known_subtotal": str(total),
         "components": components,
+        "reasoning_included_in_output": snapshot.reasoning_included_in_output,
         "unpriced_or_unknown": sorted(set(missing)),
     }

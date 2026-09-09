@@ -36,7 +36,27 @@ def test_product_accept_requires_current_validation_and_preserves_identity(tmp_p
     assert receipt["status"] == "applied"
     assert "sorted(values)" in (repo / "sort_utils.py").read_text(encoding="utf-8")
     assert store.workspace_context().active_root == context.active_root
-    assert service.get_changes(store.session_id)["available"] is False
+    applied = service.get_changes(store.session_id)
+    assert applied["available"] is True
+    assert applied["state"] == "applied"
+    assert applied["files"] == ["sort_utils.py"]
+    assert applied["fileStats"] == [{
+        "path": "sort_utils.py", "additions": 1, "deletions": 1, "previewAvailable": True,
+    }]
+    assert applied["canAccept"] is False
+    assert applied["canDiscard"] is False
+    assert applied["validation"]["historical"] is True
+    assert applied["validation"]["appliesToCurrentChanges"] is False
+
+    accepted_diff = service.get_change_file(store.session_id, "sort_utils.py")
+    assert "reverse=True" in accepted_diff["before"]
+    assert "reverse=True" not in accepted_diff["after"]
+
+    (repo / "sort_utils.py").write_text("user changed source after Accept\n", encoding="utf-8")
+    reopened = ProductApplicationService(tmp_path / "sessions")
+    reloaded_diff = reopened.get_change_file(store.session_id, "sort_utils.py")
+    assert reloaded_diff == accepted_diff
+    assert reopened.get_session(store.session_id)["changesSummary"]["state"] == "applied"
 
 
 def test_product_discard_and_rpc_changes_methods(tmp_path):
@@ -55,3 +75,12 @@ def test_product_discard_and_rpc_changes_methods(tmp_path):
     assert discarded["result"]["status"] == "discarded"
     assert "reverse=True" in (repo / "sort_utils.py").read_text(encoding="utf-8")
     assert "reverse=True" in (context.active_root / "sort_utils.py").read_text(encoding="utf-8")
+
+    reopened = ProductApplicationService(tmp_path / "sessions")
+    reloaded = reopened.get_changes(store.session_id)
+    detail = reopened.get_session(store.session_id)
+    assert reloaded["state"] == "discarded"
+    assert reloaded["available"] is False
+    assert detail["deliveryReceipt"]["kind"] == "discarded"
+    assert detail["availableActions"]["canAcceptChanges"] is False
+    assert detail["availableActions"]["canDiscardChanges"] is False

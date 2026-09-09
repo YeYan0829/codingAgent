@@ -10,8 +10,7 @@
 | `swe-agent/` | `https://github.com/SWE-agent/SWE-agent.git` | `3ea751c087f32b16e039a2233dd6eefecef325d5` |
 | `aider/` | `https://github.com/Aider-AI/aider.git` | `5dc9490bb35f9729ef2c95d00a19ccd30c26339c` |
 
-对应的源码级 Context 调研见
-[`CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md`](../docs/archive/research/CONTEXT_IMPLEMENTATION_REFERENCE_STUDY_2026-08-31.md)。
+这些外部仓库不进入发布 HEAD。当前实现边界见[架构说明](../docs/ARCHITECTURE.md)。
 
 重新获取时使用：
 

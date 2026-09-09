@@ -92,8 +92,34 @@ def test_rpc_freezes_model_and_runtime_options_on_session_creation(tmp_path):
 
     assert meta["provider"] == "glm"
     assert meta["model"] == "glm-custom"
-    assert meta["model_options"] == {"temperature": 0.3, "max_tokens": 6000}
+    assert meta["model_options"] == {
+        "temperature": 0.3, "max_tokens": 6000,
+        "reasoning_enabled": False, "reasoning_effort": None,
+    }
     assert meta["runtime_options"] == {"max_steps_per_turn": 8, "max_model_steps_per_user_turn": 30}
+
+
+def test_rpc_serializes_reasoning_configuration_and_rejects_unsupported_effort(tmp_path):
+    server, _, _ = _server(tmp_path)
+    workspace = tmp_path / "reasoning-workspace"
+    workspace.mkdir()
+
+    created = server.dispatch({"jsonrpc": "2.0", "id": 10, "method": "session/create", "params": {
+        "workspace": str(workspace), "provider": "glm", "model": "glm-5.2",
+        "reasoningEnabled": True, "reasoningEffort": "max",
+    }})
+    assert created["result"]["reasoningEnabled"] is True
+    assert created["result"]["reasoningEffort"] == "max"
+    meta = SessionStore.find_session(created["result"]["sessionId"], session_root=tmp_path / "sessions")
+    assert meta["model_options"]["reasoning_enabled"] is True
+    assert meta["model_options"]["reasoning_effort"] == "max"
+
+    invalid = server.dispatch({"jsonrpc": "2.0", "id": 11, "method": "session/create", "params": {
+        "workspace": str(workspace), "provider": "glm", "model": "glm-5.2",
+        "reasoningEnabled": True, "reasoningEffort": "low",
+    }})
+    assert invalid["error"]["code"] == -32004
+    assert "high, max" in invalid["error"]["message"]
 
 
 def test_stdio_server_emits_one_json_response_per_request(tmp_path):

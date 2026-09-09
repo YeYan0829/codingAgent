@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "purpose": "GLM-5.3 Provider 与 benchmark Docker 兼容性 smoke；不计入正式成绩",
+  "executed_at": "2026-09-09",
+  "provider": "glm",
+  "model": "glm-5.3",
+  "reasoning": {
+    "enabled": true,
+    "reasoning_effort": "max"
+  },
+  "provider_tool_roundtrip": {
+    "status": "passed",
+    "flow": [
+      "assistant_reasoning",
+      "read_file",
+      "tool_result",
+      "continued_reasoning",
+      "final_answer"
+    ],
+    "requests": 2,
+    "requests_with_usage": 2,
+    "input_tokens": 6512,
+    "output_tokens": 76,
+    "total_tokens": 6588,
+    "cached_input_tokens": 6016,
+    "cache_miss_input_tokens": 496,
+    "reasoning_tokens": 48,
+    "cost_cny": "0.018128"
+  },
+  "docker_benchmark_path": {
+    "status": "passed",
+    "selection_scope": "one development smoke task",
+    "instance_id": "psf__requests-1766",
+    "attempt": 1,
+    "agent_status": "completed",
+    "validation_passed": true,
+    "oracle_status": "completed",
+    "oracle_passed": true,
+    "outcome": "resolved",
+    "model_requests": 7,
+    "requests_with_usage": 7,
+    "input_tokens": 49035,
+    "output_tokens": 2216,
+    "total_tokens": 51251,
+    "cached_input_tokens": 26688,
+    "cache_miss_input_tokens": 22347,
+    "reasoning_tokens": 1215,
+    "cost_cny": "0.294200",
+    "image_digest": "sha256:0618949b48408350dfae74d27e47ff9df8192fbf03248aa4f10650e0a36f52eb",
+    "resume_reused_completed_task_without_model_call": true
+  },
+  "pricing": {
+    "snapshot_id": "glm-5.3-standard-api-cny-2026-09-09",
+    "snapshot_fingerprint": "048bc476565dae1b2ae42b965db28e752fcb528758ba65e01d593ab157cde731",
+    "currency": "CNY",
+    "reasoning_included_in_output": true
+  },
+  "notes": [
+    "本记录不包含 prompt、模型输出、reasoning 正文、API key 或 provider request id。",
+    "Docker 单题只验证正式链路，不计入 HAL SWE-bench Verified Mini 50 题成绩。"
+  ]
+}

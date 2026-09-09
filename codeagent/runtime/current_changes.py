@@ -6,6 +6,7 @@ import subprocess
 from typing import Any, Callable
 
 from codeagent.runtime.candidate import ApplyStatus, CandidateError, CandidateService
+from codeagent.runtime.applied_changes import AppliedChangesError, AppliedChangesStore
 from codeagent.session.store import SessionStore
 from codeagent.workspace.git_worktree import GitWorktreeError
 from codeagent.workspace.workspace import SessionWorkspaceState, WorkspaceContext
@@ -36,6 +37,7 @@ class CurrentChangesService:
         source_applied = False
         try:
             manifest = self.candidate.freeze()
+            _, patch = self.candidate.load(manifest["candidate_id"])
             receipt = self.candidate.apply(manifest["candidate_id"], approve)
             if receipt["status"] != ApplyStatus.APPLIED.value:
                 self._clear_frozen()
@@ -47,15 +49,17 @@ class CurrentChangesService:
                 self.context.source_root, self.context.active_root, "git_worktree",
                 checkpoint, self.context.workspace_revision,
             )
+            AppliedChangesStore(self.store).save(manifest, patch, receipt, updated)
             self._clear_frozen()
             self.store.finish_accept(
                 updated,
                 candidate_revision=int(manifest["candidate_revision"]),
                 patch_sha256=receipt["patch_sha256"],
                 changed_files=list(receipt["changed_files"]),
+                delivery_id=receipt["apply_id"],
             )
             return receipt
-        except (CandidateError, GitWorktreeError, OSError, subprocess.SubprocessError) as exc:
+        except (AppliedChangesError, CandidateError, GitWorktreeError, OSError, subprocess.SubprocessError) as exc:
             self._clear_frozen()
             if source_applied:
                 self.store.mark_recovery_required(f"source 已采纳但内部 checkpoint 失败: {exc}")

@@ -79,6 +79,8 @@ class JsonRpcServer:
                 model=params.get("model"), title=params.get("title"),
                 temperature=_optional_float(params.get("temperature")),
                 max_tokens=_optional_int(params.get("maxTokens")),
+                reasoning_enabled=_optional_bool(params.get("reasoningEnabled"), default=False),
+                reasoning_effort=_optional_string(params.get("reasoningEffort")),
                 max_steps_per_turn=int(params.get("maxStepsPerTurn", 12)),
                 max_model_steps_per_user_turn=int(params.get("maxModelStepsPerUserTurn", 48)),
             )
@@ -158,6 +160,22 @@ def _optional_int(value: Any) -> int | None:
 
 def _optional_float(value: Any) -> float | None:
     return None if value is None else float(value)
+
+
+def _optional_bool(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ValueError("expected boolean")
+    return value
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("expected non-empty string")
+    return value.strip()
 
 
 if __name__ == "__main__":

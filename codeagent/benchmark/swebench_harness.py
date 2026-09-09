@@ -98,6 +98,7 @@ class SWEbenchRunResult:
     oracle_detail: str
     token_usage: dict[str, object]
     source_identity: dict[str, str] | None = None
+    oracle_report_path: str | None = None
 
 
 class SWEbenchHarness:
@@ -118,6 +119,11 @@ class SWEbenchHarness:
         store = SessionStore(prepared.source_root, session_root=root / "sessions").create(
             provider=model_config.provider, model=model_config.resolved_model,
             title=f"SWE-bench {task.instance_id}",
+            model_options={
+                "temperature": model_config.temperature, "max_tokens": model_config.max_tokens,
+                "reasoning_enabled": model_config.reasoning_enabled,
+                "reasoning_effort": model_config.resolved_reasoning_effort,
+            },
         )
         manager = GitWorktreeManager(store.session_root)
         context = None
@@ -165,6 +171,7 @@ class SWEbenchHarness:
                     "dataset_base_commit": prepared.dataset_base_commit,
                     "prepared_head": prepared.prepared_head, "prepared_tree": prepared.prepared_tree,
                 },
+                oracle.report_path,
             )
             (root / "result.json").write_text(json.dumps(asdict(result), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             return result

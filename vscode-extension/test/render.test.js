@@ -11,7 +11,13 @@ Module._load = function(request, parent, isMain) {
   return originalLoad(request, parent, isMain);
 };
 
-const { renderChat, ChatViewProvider, sameWorkspace } = require("../extension.js");
+const {
+  renderChat, ChatViewProvider, sameWorkspace, renderToolFailureHtml, renderChangesHtml, validateProfile,
+} = require("../extension.js");
+
+const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+}[c]));
 
 test("generated webview script is valid JavaScript", () => {
   const html = renderChat({sessionId: "s1", title: "Demo", turns: []}, []);
@@ -22,10 +28,19 @@ test("generated webview script is valid JavaScript", () => {
   assert.match(html, /Loading CodeAgent/);
   assert.match(html, /"temperature":0\.2/);
   assert.match(html, /class="save"/);
+  assert.match(html, /Enable reasoning/);
+  assert.match(html, /Reasoning effort/);
+  assert.match(html, /reasoningEnabled/);
   assert.match(html, /productState/);
   assert.match(html, /captureUiState/);
   assert.match(html, /Continue current task/);
-  assert.match(html, /Current Delivery/);
+  assert.match(html, /Changes ready for review/);
+  assert.match(html, /failure\.title/);
+  assert.match(html, /Show output/);
+  assert.match(html, /Long output was truncated/);
+  assert.match(html, /Tests passed at that time/);
+  assert.match(html, /Review Diff/);
+  assert.match(html, /renderChangesHtml/);
   assert.match(html, /Waiting for your approval/);
   assert.match(html, /Copy user message/);
   assert.match(html, /Copy agent response/);
@@ -42,6 +57,51 @@ test("generated webview script is valid JavaScript", () => {
   assert.match(html, /Needs attention/);
   assert.match(html, /Open that workspace to continue them/);
   assert.match(html, /No sessions in this Session Root/);
+});
+
+test("model profile validates provider-specific reasoning settings", () => {
+  const glm = validateProfile({
+    provider: "glm", model: "glm-5.2", reasoningEnabled: true, reasoningEffort: "max",
+  });
+  assert.equal(glm.reasoningEnabled, true);
+  assert.equal(glm.reasoningEffort, "max");
+  assert.throws(() => validateProfile({
+    provider: "glm", model: "glm-5.2", reasoningEnabled: true, reasoningEffort: "low",
+  }), /high, max/);
+  assert.throws(() => validateProfile({
+    provider: "deepseek", model: "custom", reasoningEnabled: true, reasoningEffort: "high",
+  }), /not supported/);
+});
+
+test("reasoning profile is saved and restored from global state", async () => {
+  const updates = [];
+  let stored = {
+    provider: "glm", model: "glm-5.2", reasoningEnabled: true, reasoningEffort: "max",
+    temperature: 0.2, maxTokens: 4000, maxStepsPerTurn: 12, maxModelStepsPerUserTurn: 48,
+  };
+  const context = {
+    globalState: {
+      get: key => key === "productProfile" ? stored : undefined,
+      update: async (key, value) => { updates.push([key, value]); stored = value; },
+    },
+    secrets: {get: async () => undefined, store: async () => {}},
+  };
+  const runtime = {restart: () => { throw new Error("unexpected restart"); }};
+  vscodeMock.window = {setStatusBarMessage: () => {}};
+  const view = new ChatViewProvider(runtime, "/work/current", context, {});
+
+  assert.equal(view.profile.reasoningEnabled, true);
+  assert.equal(view.profile.reasoningEffort, "max");
+  await view.saveSettings({
+    provider: "deepseek", model: "deepseek-v4-pro", reasoningEnabled: true, reasoningEffort: "low",
+    temperature: 0.2, maxTokens: 4000, maxStepsPerTurn: 12, maxModelStepsPerUserTurn: 48,
+  }, "");
+
+  assert.equal(updates[0][0], "productProfile");
+  assert.equal(updates[0][1].reasoningEffort, "low");
+  const restored = new ChatViewProvider(runtime, "/work/current", context, {});
+  assert.equal(restored.profile.reasoningEnabled, true);
+  assert.equal(restored.profile.reasoningEffort, "low");
 });
 
 test("workspace identity is normalized before session access", () => {
@@ -119,6 +179,63 @@ test("selecting a history item closes history before opening the session", () =>
   const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
 
   assert.match(script, /el\.onclick=\(\)=>\{historyOpen=false;vscode\.postMessage\(\{type:'selectSession',sessionId:el\.dataset\.session\}\);\}/);
+});
+
+test("failed tool rendering shows the reason and expandable bounded output", () => {
+  const html = renderToolFailureHtml({failure: {
+    kind: "command_exit_nonzero",
+    title: "Command exited with code 1",
+    summary: "ZeroDivisionError: division by zero",
+    output: "traceback",
+    outputTruncated: true,
+  }}, "turn:tool", esc);
+
+  assert.match(html, /Command exited with code 1/);
+  assert.match(html, /ZeroDivisionError: division by zero/);
+  assert.match(html, /Show output/);
+  assert.match(html, /traceback/);
+  assert.match(html, /Long output was truncated/);
+});
+
+test("applied changes keep Review Diff and remove delivery actions", () => {
+  const html = renderChangesHtml({
+    state: "applied", available: true, fileCount: 1, additions: 2, deletions: 0,
+    fileStats: [{path: "calculator.py", additions: 2, deletions: 0, previewAvailable: true}],
+    validation: {status: "passed", command: "python3 verify.py", historical: true},
+  }, {availableActions: {}, actionReasons: {}}, esc);
+
+  assert.match(html, /Applied · 1 file/);
+  assert.match(html, /calculator.py/);
+  assert.match(html, /Review Diff/);
+  assert.match(html, /Tests passed at that time/);
+  assert.doesNotMatch(html, /id="accept-changes"/);
+  assert.doesNotMatch(html, /id="discard-changes"/);
+});
+
+test("pending changes remain a first-class card with delivery actions", () => {
+  const html = renderChangesHtml({
+    state: "pending", available: true, fileCount: 1, files: ["calculator.py"],
+    validation: {status: "passed", appliesToCurrentChanges: true},
+  }, {availableActions: {canAcceptChanges: true, canDiscardChanges: true}, actionReasons: {}}, esc);
+
+  assert.match(html, /Changes ready for review · 1 file/);
+  assert.match(html, /Review Diff/);
+  assert.match(html, /Tests passed · up to date/);
+  assert.match(html, /id="accept-changes"/);
+  assert.match(html, /id="discard-changes"/);
+});
+
+test("discarded changes show a receipt without current review actions", () => {
+  const html = renderChangesHtml(
+    {state: "discarded", available: false},
+    {deliveryReceipt: {kind: "discarded", message: "Agent changes discarded; source unchanged"}},
+    esc,
+  );
+
+  assert.match(html, /Agent changes discarded; source unchanged/);
+  assert.doesNotMatch(html, /Review Diff/);
+  assert.doesNotMatch(html, /id="accept-changes"/);
+  assert.doesNotMatch(html, /id="discard-changes"/);
 });
 
 test("budget increase is an explicit control request and cancellation does not run", async () => {

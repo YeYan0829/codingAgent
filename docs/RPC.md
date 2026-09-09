@@ -63,11 +63,14 @@ VS Code Extension 通过 newline-delimited stdio JSON-RPC 2.0 与 `codeagent-rpc
 | `session/list` | 可选 `workspace` | 不传时列出当前 Session Root 全部 Session；传入时过滤 workspace |
 | `session/get` | `sessionId` | 返回 Product Read Model、timeline、changes/validation、budget 和 available actions |
 | `session/events` | `sessionId`、可选 `afterSeq`/`limit` | 分页读取有界 Event；`afterSeq >= 0`，`1 <= limit <= 1000` |
-| `session/create` | `workspace`、provider/model 与可选预算 | 创建 Session 并冻结配置，不自动运行 |
+| `session/create` | `workspace`、provider/model、reasoning 与可选预算 | 创建 Session 并冻结配置，不自动运行 |
 | `session/run` | `sessionId`、`message` | 异步启动新的 UserTurn；返回 job/state，不等待模型完成 |
 | `session/continue` | `sessionId` | 继续仍有剩余预算的未完成 UserTurn；正常自动切片不需要 Extension 调用 |
 | `session/stop` | `sessionId` | 请求协作式停止；可停止 active job 或结束 idle budget waiting |
 | `session/increaseBudget` | Session/Turn identity 与新上限 | 明确扩额并异步继续同一个 UserTurn |
+
+Timeline 中失败的工具项带有 `failure`。其中包含分类、面向用户的标题、关键错误行、可选 exit code、
+有界 output 和截断标记。字段来自已有 ToolResult，不是另一套执行结果。
 
 `session/create` 当前支持 `fake`、`deepseek`、`glm`。预算约束为：
 
@@ -75,6 +78,12 @@ VS Code Extension 通过 newline-delimited stdio JSON-RPC 2.0 与 `codeagent-rpc
 - `maxStepsPerTurn <= maxModelStepsPerUserTurn <= 1000`；
 - `maxTokens` 省略或位于 1～131072；
 - temperature 省略或位于 0～2。
+
+`reasoningEnabled` 是布尔值，默认 `false`。`reasoningEffort` 是可选字符串。
+GLM-5.2 接受 `high`、`max`；DeepSeek V4 Flash/Pro 接受 `low`、`high`、`max`。
+启用 reasoning 时，不支持的 provider、model 或档位会使创建请求失败。
+
+`session/list` 和 `session/get` 返回 `reasoningEnabled` 与 `reasoningEffort`。隐藏推理正文不进入 Product Read Model。
 
 `session/increaseBudget` 必须携带当前 `turnId` 和 `expectedLimit`，并且只能二选一提供 `newLimit` 或
 `additionalSteps`。过期 identity、重复提交、运行中提交、布尔/非整数或不增长的上限都会拒绝。
@@ -93,16 +102,19 @@ Pending approval 通过 `session/get.pendingApproval` 获取。其 `summary` 是
 
 | 方法 | 参数 | 行为 |
 | --- | --- | --- |
-| `changes/get` | `sessionId` | 返回当前文件、逐文件 Git stat 和 validation summary |
-| `changes/file` | `sessionId`、`path` | 返回单个 UTF-8 文件的 baseline/current 文本，供原生 Diff 使用 |
+| `changes/get` | `sessionId` | 返回待审查或最近已应用的文件、逐文件 stat 和 validation summary |
+| `changes/file` | `sessionId`、`path` | 返回单个 UTF-8 文件的前后文本，供原生 Diff 使用 |
 | `changes/accept` | `sessionId` | 要求 idle、current validation 和安全 workspace，执行 identity 复检与三方合并 |
 | `changes/discard` | `sessionId` | 要求 idle，重置 Candidate；tainted 状态允许进入受控 discard |
 
 `validation.appliesToCurrentChanges` 表示最近测试记录的修改序号与当前序号相同。
 它不是实时文件树证明。实际 Accept 会再次核对工作区、baseline 和文件树。
 
-`changes/file` 使用 PathGuard，拒绝不在当前 changed files 中的路径、symlink、二进制或过大文本。Extension 不应
-根据本地 Git 自行构造 Diff。
+`changes/get.state` 区分 `pending`、`applied`、`discarded` 和 `none`。Applied 状态返回 Accept 当时保存的文件统计，
+并把 validation 标记为历史结果。
+
+Pending 状态的 `changes/file` 使用 PathGuard 读取 Agent worktree。Applied 状态读取 Session 中保存的只读快照，
+不会读取 source 当前内容。二进制或超过预览上限的文件不提供 Diff。Extension 不应根据本地 Git 自行构造 Diff。
 
 ## Notifications
 

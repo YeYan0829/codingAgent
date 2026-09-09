@@ -185,13 +185,18 @@ class AgentRunner:
                 return self._terminate_stopped(steps)
             if not response.tool_calls:
                 final = response.text or ""
-                self.session_store.append_event("assistant_message", {"message": final})
+                payload = {"message": final}
+                if response.reasoning_content is not None:
+                    payload["reasoning_content"] = response.reasoning_content
+                self.session_store.append_event("assistant_message", payload)
                 return RunnerOutput(final_text=final, steps=steps, steps_used_in_turn=self._steps_used_in_current_turn())
 
             tool_payload = {
                 "message": response.text or "",
                 "tool_calls": [call.model_dump() for call in response.tool_calls],
             }
+            if response.reasoning_content is not None:
+                tool_payload["reasoning_content"] = response.reasoning_content
             self.session_store.append_event("assistant_tool_calls", tool_payload)
             if response.text:
                 self._notify({"type": "assistant_progress", "message": response.text})

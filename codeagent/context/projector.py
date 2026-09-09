@@ -38,7 +38,11 @@ def project_events(events: list[SessionEvent]) -> list[UserTurnView]:
             continue
         if event.type == "assistant_tool_calls":
             _require_closed(current_step, seq)
-            current_step = ModelStepView(event.model_step_id or f"legacy-step-{seq}", str(event.payload.get("message") or ""))
+            current_step = ModelStepView(
+                event.model_step_id or f"legacy-step-{seq}",
+                str(event.payload.get("message") or ""),
+                str(event.payload["reasoning_content"]) if event.payload.get("reasoning_content") is not None else None,
+            )
             current.model_steps.append(current_step)
             for item in event.payload.get("tool_calls", []):
                 call_id = str(item.get("call_id", ""))
@@ -74,9 +78,14 @@ def project_events(events: list[SessionEvent]) -> list[UserTurnView]:
             current.model_steps.append(current_step)
         elif event.type == "assistant_message":
             _require_closed(current_step, seq)
-            current.model_steps.append(ModelStepView(event.model_step_id or f"legacy-step-{seq}",
-                                                     message=str(event.payload.get("message", ""))))
+            reasoning = event.payload.get("reasoning_content")
+            current.model_steps.append(ModelStepView(
+                event.model_step_id or f"legacy-step-{seq}",
+                message=str(event.payload.get("message", "")),
+                reasoning_content=str(reasoning) if reasoning is not None else None,
+            ))
             current.final_message = str(event.payload.get("message", ""))
+            current.final_reasoning_content = str(reasoning) if reasoning is not None else None
             current_step = None
         elif event.type == "turn_terminated":
             _require_closed(current_step, seq)

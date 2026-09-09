@@ -36,6 +36,8 @@ def test_deepseek_text_response_to_llm_response():
     assert response.text == "hello"
     assert response.tool_calls == []
     assert client.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert "reasoning_effort" not in client.calls[0]
+    assert client.calls[0]["tool_choice"] == "auto"
 
 
 def test_deepseek_normalizes_provider_usage_and_request_id():
@@ -121,6 +123,40 @@ def test_deepseek_preserves_explanation_before_tool_calls():
     assert response.tool_calls[0].name == "read_file"
 
 
+def test_deepseek_reasoning_tool_round_trip_uses_provider_contract():
+    tool_call = SimpleNamespace(
+        id="call_1", function=SimpleNamespace(name="read_file", arguments='{"path":"README.md"}'),
+    )
+    client = FakeClient(response_with_message(SimpleNamespace(
+        content="先读取。", reasoning_content="需要查看文件。", tool_calls=[tool_call],
+    )))
+    deepseek = DeepSeekClient(
+        api_key="key", client=client, reasoning_enabled=True, reasoning_effort="high",
+    )
+    tool = ModelTool(name="read_file", description="Read", parameters={"type": "object"})
+
+    first = deepseek.complete(ModelRequest(messages=[{"role": "user", "content": "inspect"}], tools=[tool]))
+    assert first.reasoning_content == "需要查看文件。"
+    assert client.calls[0]["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert client.calls[0]["reasoning_effort"] == "high"
+    assert "tool_choice" not in client.calls[0]
+
+    messages = [
+        {"role": "user", "content": "inspect"},
+        {"role": "assistant", "content": first.text, "reasoning_content": first.reasoning_content,
+         "tool_calls": [{"id": "call_1", "type": "function", "function": {
+             "name": "read_file", "arguments": '{"path":"README.md"}',
+         }}]},
+        {"role": "tool", "tool_call_id": "call_1", "content": "# Demo"},
+    ]
+    client.chat.completions.response = response_with_message(SimpleNamespace(
+        content="完成。", reasoning_content="文件已读取。", tool_calls=None,
+    ))
+    deepseek.complete(ModelRequest(messages=messages, tools=[tool]))
+    assert client.calls[1]["messages"][1]["reasoning_content"] == "需要查看文件。"
+    assert client.calls[1]["messages"][1]["content"] == "先读取。"
+
+
 def test_deepseek_malformed_tool_arguments_return_clear_text():
     tool_call = SimpleNamespace(
         id="call_1",
@@ -170,3 +206,25 @@ def test_deepseek_retries_without_extra_body_when_sdk_rejects_it():
     assert response.text == "ok"
     assert "extra_body" in completions.calls[0]
     assert "extra_body" not in completions.calls[1]
+
+
+def test_deepseek_reasoning_does_not_silently_fall_back_when_sdk_rejects_parameters():
+    class RejectingCompletions:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            raise TypeError("unexpected reasoning parameter")
+
+    completions = RejectingCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    deepseek = DeepSeekClient(
+        api_key="key", client=client, reasoning_enabled=True, reasoning_effort="high",
+    )
+
+    with pytest.raises(TypeError, match="unexpected reasoning parameter"):
+        deepseek.complete(ModelRequest(messages=[{"role": "user", "content": "hi"}]))
+
+    assert len(completions.calls) == 1
+    assert completions.calls[0]["extra_body"] == {"thinking": {"type": "enabled"}}

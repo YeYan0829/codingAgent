@@ -10,5 +10,6 @@
     "output": "28",
     "cached_input": "2"
   },
+  "reasoning_included_in_output": true,
   "source": "https://bigmodel.cn/pricing（GLM-5.2 标准 API：输入 8 元/百万 tokens、输出 28 元/百万 tokens、缓存命中 2 元/百万 tokens；访问于 2026-09-04）"
 }

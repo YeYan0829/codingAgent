@@ -20,22 +20,30 @@ class OpenAICompatibleClient(BaseModelClient):
     """OpenAI Chat Completions 兼容 provider 的公共 transport。"""
 
     def __init__(self, *, model: str, api_key: str, base_url: str, provider_name: str,
-                 client: Any | None = None, extra_body: dict[str, Any] | None = None) -> None:
+                 client: Any | None = None, extra_body: dict[str, Any] | None = None,
+                 reasoning_effort: str | None = None, allow_extra_body_fallback: bool = True,
+                 include_tool_choice: bool = True) -> None:
         self.model = model
         self.api_key = api_key
         self.provider_name = provider_name
         self.extra_body = extra_body
+        self.reasoning_effort = reasoning_effort
+        self.allow_extra_body_fallback = allow_extra_body_fallback
+        self.include_tool_choice = include_tool_choice
         self.client = client or OpenAI(api_key=api_key, base_url=base_url)
 
     def complete(self, request: ModelRequest) -> LLMResponse:
         kwargs: dict[str, Any] = {
             "model": request.model or self.model,
             "messages": request.messages,
-            "tool_choice": request.tool_choice,
             "stream": False,
         }
+        if self.include_tool_choice:
+            kwargs["tool_choice"] = request.tool_choice
         if self.extra_body is not None:
             kwargs["extra_body"] = self.extra_body
+        if self.reasoning_effort is not None:
+            kwargs["reasoning_effort"] = self.reasoning_effort
         if request.tools:
             kwargs["tools"] = [_to_chat_completion_tool(tool) for tool in request.tools]
         if request.temperature is not None:
@@ -46,12 +54,15 @@ class OpenAICompatibleClient(BaseModelClient):
         try:
             response = self.client.chat.completions.create(**kwargs)
         except TypeError:
-            if "extra_body" not in kwargs:
+            if "extra_body" not in kwargs or not self.allow_extra_body_fallback:
                 raise
             kwargs.pop("extra_body")
             response = self.client.chat.completions.create(**kwargs)
 
         message = response.choices[0].message
+        reasoning_content = _get(message, "reasoning_content")
+        if reasoning_content is not None and not isinstance(reasoning_content, str):
+            reasoning_content = str(reasoning_content)
         usage = _parse_usage(getattr(response, "usage", None))
         request_id = _get(response, "id")
         try:
@@ -65,9 +76,10 @@ class OpenAICompatibleClient(BaseModelClient):
             tool_calls.provider_request_id = request_id
             return tool_calls
         if tool_calls:
-            return LLMResponse(text=getattr(message, "content", None) or None, tool_calls=tool_calls,
+            return LLMResponse(text=getattr(message, "content", None) or None,
+                               reasoning_content=reasoning_content, tool_calls=tool_calls,
                                usage=usage, provider_request_id=request_id)
-        return LLMResponse(text=getattr(message, "content", None) or "", usage=usage,
+        return LLMResponse(text=getattr(message, "content", None) or "", reasoning_content=reasoning_content, usage=usage,
                            provider_request_id=request_id)
 
     def _parse_tool_calls(self, raw_tool_calls: Any) -> list[LLMToolCall] | LLMResponse:
@@ -99,7 +111,7 @@ def _parse_usage(raw: Any) -> TokenUsage | None:
     if raw is None:
         return None
     prompt_details = _get(raw, "prompt_tokens_details")
-    completion_details = _get(raw, "completion_tokens_details")
+    completion_details = _get(raw, "completion_tokens_details") or _get(raw, "output_tokens_details")
     return TokenUsage(
         input_tokens=_first_int(_get(raw, "prompt_tokens"), _get(raw, "input_tokens")),
         output_tokens=_first_int(_get(raw, "completion_tokens"), _get(raw, "output_tokens")),
@@ -108,7 +120,7 @@ def _parse_usage(raw: Any) -> TokenUsage | None:
             _get(raw, "prompt_cache_hit_tokens"), _get(prompt_details, "cached_tokens")
         ),
         cache_miss_input_tokens=_first_int(_get(raw, "prompt_cache_miss_tokens")),
-        reasoning_tokens=_first_int(_get(completion_details, "reasoning_tokens")),
+        reasoning_tokens=_first_int(_get(raw, "reasoning_tokens"), _get(completion_details, "reasoning_tokens")),
     )
 
 

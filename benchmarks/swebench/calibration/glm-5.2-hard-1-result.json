@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "purpose": "development_budget_calibration",
+  "used_for_budget_calibration": true,
+  "counts_toward_fixed_50_evaluation": false,
+  "completed_at": "2026-09-08T12:03:31Z",
+  "selection": {
+    "path": "benchmarks/swebench/calibration/glm-5.2-hard-1.json",
+    "sha256": "7ae9ce99684e1d3a2622bfdaeb4a7b269a79e029c2bbf9daa292938e64cb14a9",
+    "instance_id": "django__django-15629",
+    "in_fixed_50_selection": false
+  },
+  "run": {
+    "batch_run_id": "calibration-glm52-hard-v1",
+    "task_run_id": "2c5c61607a7e4431",
+    "runtime_commit": "a5e2257791e55de83b30aac2596160cab1e30b2c",
+    "runtime_dirty": true,
+    "model": "glm-5.2",
+    "reasoning_enabled": true,
+    "reasoning_effort": "max",
+    "attempts": 1,
+    "max_model_steps": 72,
+    "max_output_tokens": 32768,
+    "context_limit": 128000,
+    "usable_input_tokens": 89232,
+    "outer_wall_clock_timeout_seconds": 10800
+  },
+  "outcome": {
+    "classification": "unresolved_voluntary_finish",
+    "resolved": false,
+    "agent_status": "completed",
+    "budget_exhausted": false,
+    "context_exceeded": false,
+    "model_steps": 61,
+    "first_edit_step": 18,
+    "last_edit_step": 56,
+    "last_successful_validation_step": 59,
+    "post_successful_validation_steps": 2,
+    "validation_count": 11,
+    "validation_success_count": 9,
+    "validation_failure_count": 2,
+    "patch_sha256": "5450055df55f3528a8cf74cd2ec9c4fbb4391ba7bb57c41802ac373f69bf4591",
+    "prediction_sha256": "38a5b6dd8f577977fd2d305f7482dcf0e3c676abca066589e61fe1bc1f508def",
+    "official_report": {
+      "path": "logs/evaluation/2c5c61607a7e4431/codeagent__glm-5.2/django__django-15629/report.json",
+      "sha256": "c63585e683ed1d73fa41f14d2b27a6d3def71fe74d3bca792b5b4d25b59d49a5",
+      "infra_failure": false,
+      "fail_to_pass_success": 1,
+      "fail_to_pass_failure": 1,
+      "failed_target": "AlterField operation of db_collation on primary keys changes any FKs"
+    },
+    "official_summary": {
+      "path": "benchmarks/swebench/runs/calibration-glm52-hard-v1/official-summary.json",
+      "sha256": "91a1f935b3a0cef18d1ac06c79b5eb42ef6e20cf49a721bfc60f596b2a0b21da"
+    },
+    "harness_report_note": "The supplied report template pointed to the wrong directory. The official grader completed and wrote the report above; the batch artifact therefore recorded report_invalid even though the official result is available."
+  },
+  "usage": {
+    "requests": 61,
+    "coverage": "complete",
+    "input_tokens": 1597993,
+    "output_tokens": 18587,
+    "total_tokens": 1616580,
+    "cached_input_tokens": 760256,
+    "cache_miss_input_tokens": 837737,
+    "reasoning_tokens": 11501,
+    "max_request_input_tokens": 51170,
+    "max_request_output_tokens": 2200,
+    "max_request_reasoning_tokens": 2053
+  },
+  "cost": {
+    "snapshot_id": "glm-5.2-standard-api-cny-2026-09-04",
+    "snapshot_fingerprint": "cc8825051438dbd02263a1a188e88ce4f1097155954d9cd44d5289b4ddf460c8",
+    "currency": "CNY",
+    "complete": true,
+    "total": "8.742844",
+    "reasoning_included_in_output": true
+  },
+  "timing": {
+    "agent_event_wall_seconds": 523.009867,
+    "successful_resume_wall_seconds": 603.9,
+    "initial_docker_unavailable_attempt_wall_seconds": 1.52
+  },
+  "tool_usage": {
+    "command": 13,
+    "edit": 6,
+    "read": 49,
+    "search": 27,
+    "other": 1
+  },
+  "source_identity": {
+    "image_ref": "swebench/sweb.eval.x86_64.django_1776_django-15629:latest",
+    "image_digest": "sha256:59f1f89efe666569df30dd7dee656f4a4368cec715857e7e845010ed5dc29ed7",
+    "dataset_base_commit": "694cf458f16b8d340a3195244196980b2dec34fd",
+    "prepared_head": "9b70bb1938e97614e57443bbade13b71730f813e",
+    "prepared_tree": "ae7d451039d57611fc1269a6167d55fe1f4d49be"
+  },
+  "budget_decision": {
+    "reasoning_effort": "max",
+    "max_model_steps": 72,
+    "max_output_tokens": 8192,
+    "context_limit": 128000,
+    "outer_wall_clock_timeout_seconds": 10800,
+    "reason": "The task finished at step 61 while still making useful edits after the old 48-step default. A 72-step ceiling preserves 11 steps of margin. Per-request output peaked at 2200 tokens, so 8192 leaves substantial headroom without reserving 32768 tokens on every request."
+  }
+}
