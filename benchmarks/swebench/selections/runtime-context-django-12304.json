@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "selection_id": "runtime-context-django-12304-20260910",
+  "status": "development_runtime_regression",
+  "benchmark": "HAL SWE-bench Verified Mini targeted context regression",
+  "task_count": 1,
+  "source": {
+    "parent_selection": "runtime-reasoning-regression-2-20260909",
+    "selection_reason": "Pre-HAL semantic-condensation regression gate: run Django first before the two-task regression",
+    "counts_toward_final_evaluation": false
+  },
+  "pinned_sources": {
+    "task_repository": "https://github.com/SWE-bench/swe-bench-tasks.git",
+    "task_repository_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d",
+    "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0"
+  },
+  "scheduling": {
+    "policy": "fixed_target_order",
+    "difficulty_affects_runtime_config": false,
+    "distribution": {
+      "easy": 1,
+      "medium": 0,
+      "hard": 0
+    }
+  },
+  "official_instance_ids": [
+    "django__django-12304"
+  ],
+  "tasks": [
+    {
+      "instance_id": "django__django-12304",
+      "hal_official_index": 27,
+      "difficulty": "easy",
+      "difficulty_source_value": "<15 min fix",
+      "repo": "django/django",
+      "image": "swebench/sweb.eval.x86_64.django_1776_django-12304:latest",
+      "base_commit": "4c1b401e8250f9f520b3c7dc369554477ce8b15a",
+      "execution_index": 0
+    }
+  ]
+}

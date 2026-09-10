@@ -35,7 +35,7 @@ Extension 当前没有运行时 npm 依赖。`npm test` 直接执行 `node --tes
 | 搜索、读取和权限 | 工具参数受到检查，禁止的路径和权限会被拒绝 | 真实模型不会提出危险操作 |
 | 文件编辑和 Git worktree | 编辑失败可以回滚；源仓库不会被普通 Agent 修改直接覆盖 | 所有 Git 并发情况都能自动合并 |
 | 命令服务 | 权限、超时、文件变化和失败原因会被记录 | 当前主机一定能运行 Bubblewrap |
-| 上下文和步骤预算 | 历史会被裁剪；工具调用保持配对；任务会在预算用尽时等待 | 任意长任务都不会超过模型上限 |
+| 上下文和步骤预算 | CCES、Anchor、rolling chain、双预算、失败恢复和最新 reasoning/tool 原子协议正确；任务会在预算用尽时等待 | Provider 一定按预期利用摘要/reasoning，或任意长任务都不会超过模型上限 |
 | 产品和 JSON-RPC | 会话、审批、Stop、Diff、Accept 和 Discard 的状态规则 | 真实 VS Code 界面布局和交互体验 |
 | 模型适配器 | 请求格式、响应解析和 token 用量转换 | 真实 API 当前可用或模型质量达标 |
 | Extension | 扩展配置、HTML 生成和界面消息处理 | VSIX 可以在真实 VS Code 中完整运行 |
@@ -50,13 +50,22 @@ Extension 当前没有运行时 npm 依赖。`npm test` 直接执行 `node --tes
 - 工具与权限：`test_policy.py`、`test_permissions.py`、`test_path_guard.py`
 - 编辑与 worktree：`test_atomic_edit.py`、`test_candidate_loop.py`、`test_session_workspace_lifecycle.py`
 - 命令执行：`test_command_sandbox_service.py`、`test_sandbox_executor.py`
-- 上下文：`test_context_management.py`、`test_context_tool_call_history.py`、`test_execution_slices.py`
+- 上下文：`test_context_management.py`、`test_context_tool_call_history.py`、`test_semantic_condensation.py`、`test_execution_slices.py`、`test_output_truncation.py`
 - 产品与 RPC：`test_product_execution.py`、`test_product_rpc.py`、`test_product_changes.py`
 - 模型适配器：`test_deepseek_client.py`、`test_glm_client.py`、`test_model_factory.py`
 - Extension：`test_vscode_extension_manifest.py`、`vscode-extension/test/render.test.js`
 - SWE-bench：`test_swebench_*.py`、`test_benchmark_accounting.py`、`test_trajectory_analyzer.py`
 
 默认测试不会调用付费模型，也不会证明 Agent 的修复质量。
+
+`test_output_truncation.py` 覆盖 provider `finish_reason=length`、usage fallback、跨 slice 自动恢复、连续三次截断终止、
+72 步总预算优先级、截断 reasoning 只进入紧接着一次恢复请求，以及支持的 Provider 在该请求临时使用 `low` effort。
+Context 测试还确认：完整 Session reasoning 不会
+被删除；进入模型请求时只保留紧邻上一 ModelStep 的完整 reasoning/tool 协议，预算不足时不会继续拆除这组最低集合。
+
+`test_semantic_condensation.py` 覆盖 CCES allowlist、source identity、closed atom、Current Task Anchor、latest protocol
+去重、fixed/history/condenser budget、递归分块、rolling chain Resume、A/B/C 失败分类、四次调用上限、derived Event identity
+和 main/condenser usage 分离。完整 contract 见[上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)。
 
 ## 真实 Bubblewrap 测试
 

@@ -242,6 +242,50 @@ class SessionStore:
         with _store_lock(self.meta_path):
             return self._append_event(event_type, payload)
 
+    def append_derived_events(
+        self,
+        events: list[tuple[str, dict[str, Any]]],
+        *,
+        turn_id: str | None,
+        expected_event_seq: int | None = None,
+    ) -> list[SessionEvent]:
+        """在一个 store critical section 中追加不属于主 ModelStep 的派生事件。
+
+        该路径只推进 Event seq/last_active_at，不读取或改写 current turn/model-step identity。
+        expected_event_seq 用于拒绝 condenser plan 生成后的 frontier 竞态。
+        """
+        if not events:
+            return []
+        with _store_lock(self.meta_path):
+            meta = self.read_meta()
+            current_seq = int(meta.get("event_seq", 0))
+            if not current_seq and self.events_path.exists():
+                current_seq = max(
+                    (event.seq or index for index, event in enumerate(self.read_events(), 1)), default=0,
+                )
+            if expected_event_seq is not None and current_seq != expected_event_seq:
+                raise SessionStoreError(
+                    f"derived event frontier changed: expected={expected_event_seq}, actual={current_seq}"
+                )
+            appended: list[SessionEvent] = []
+            seq = current_seq
+            for event_type, payload in events:
+                seq += 1
+                appended.append(SessionEvent(
+                    seq=seq,
+                    turn_id=turn_id,
+                    model_step_id=None,
+                    type=event_type,
+                    payload=payload,
+                ))
+            with self.events_path.open("a", encoding="utf-8") as fh:
+                for event in appended:
+                    fh.write(event.model_dump_json() + "\n")
+            meta["event_seq"] = seq
+            meta["last_active_at"] = appended[-1].ts
+            self._write_state(meta)
+            return appended
+
     def _append_event(self, event_type: str, payload: dict[str, Any] | None = None) -> SessionEvent:
         meta = self.read_meta()
         if "event_seq" in meta:
@@ -254,7 +298,9 @@ class SessionStore:
         if event_type == "user_message":
             turn_id = f"turn-{seq}"
             model_step_id = None
-        elif event_type in {"assistant_tool_calls", "assistant_message", "model_protocol_error"}:
+        elif event_type in {
+            "assistant_tool_calls", "assistant_message", "model_protocol_error", "model_output_truncated",
+        }:
             model_step_id = f"step-{seq}"
         event = SessionEvent(seq=seq, turn_id=turn_id, model_step_id=model_step_id, type=event_type, payload=payload or {})
         with self.events_path.open("a", encoding="utf-8") as fh:

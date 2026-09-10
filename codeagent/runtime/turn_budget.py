@@ -32,7 +32,9 @@ def current_turn_budget(events: list[SessionEvent], default_limit: int = 48) -> 
             limit = int(event.payload["max_model_steps_per_user_turn"])
         elif event.type == "turn_budget_increased":
             limit = int(event.payload["new_limit"])
-    used = sum(event.type in {"assistant_tool_calls", "assistant_message", "model_protocol_error"} for event in turn)
+    used = sum(event.type in {
+        "assistant_tool_calls", "assistant_message", "model_protocol_error", "model_output_truncated",
+    } for event in turn)
     closed = any(event.type in {"assistant_message", "turn_terminated"} for event in turn)
     waiting = not closed and used >= limit
     return TurnBudget(first.turn_id, used, limit, closed, waiting)

@@ -7,7 +7,8 @@ REASONING_EFFORTS = {
     "glm": ("high", "max"),
     "deepseek": ("low", "high", "max"),
 }
-REASONING_DEFAULTS = {"glm": "max", "deepseek": "high"}
+# Runtime 默认值优先保证长工具循环的行动效率；max 仍可由调用方显式选择。
+REASONING_DEFAULTS = {"glm": "high", "deepseek": "high"}
 REASONING_MODELS = {
     "glm": {"glm-5.2", "glm-5.3"},
     "deepseek": {"deepseek-v4-flash", "deepseek-v4-pro"},

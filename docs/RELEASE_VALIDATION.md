@@ -1,6 +1,7 @@
 # v0.5.0-rc.2 发布验收
 
-本页记录 `v0.5.0-rc.2` 的冻结条件。正式 HAL 50 题在 tag 创建后运行，因此不属于这里的发布成绩。
+本页记录 `v0.5.0-rc.2` 的历史冻结条件。之后发现输出截断和 reasoning 上下文处理问题，因此该 tag 与已有产物
+只保留为历史证据，不能直接发布；正式 HAL 50 题等待新的候选版本。
 
 ## 冻结基线
 
@@ -51,8 +52,8 @@ Accept、Discard、Stop / Budget 和 History。History 导航与最后一轮 UI 
 
 | 产物 | 路径 | SHA-256 |
 | --- | --- | --- |
-| wheel | `/home/a1872/projects/code-agent/dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `52eb7bc579ba1364fce04e560430fa4daa38fd2d02376605139e97f629de18d7` |
-| VSIX | `/home/a1872/projects/code-agent/dist/codeagent-0.5.0.vsix` | `66716af365c65889ef855072b205e0b39cfa8b7de00a90b4294715cf311f869f` |
+| wheel | `dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `52eb7bc579ba1364fce04e560430fa4daa38fd2d02376605139e97f629de18d7` |
+| VSIX | `dist/codeagent-0.5.0.vsix` | `66716af365c65889ef855072b205e0b39cfa8b7de00a90b4294715cf311f869f` |
 
 VSIX 不包含 Python Runtime。目标机器需要分别安装同版本 wheel 和 VSIX。
 
@@ -79,7 +80,21 @@ GLM-5.3 smoke 机器记录见
 
 ## Release blockers
 
-None。
+当前发布阻断项：
+
+- Provider `finish_reason`、输出截断自动续跑和有界终止已经完成代码与单元测试。
+- GLM 默认 reasoning effort 已从 `max` 调整为 `high`。
+- Session 保留完整 reasoning；主请求只保留紧邻上一 ModelStep 的 reasoning/tool 协议，更旧 reasoning 不进入模型
+  Context，也不生成 residue。
+- [上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)的 Phase 1–3 已实现：连续 CCES tail、
+  Current Task Anchor、rolling semantic summary、双预算和有界失败状态机已经替代固定四步窗口、历史 residue 与
+  whole-turn eviction。
+- 真实 GLM semantic-condensation smoke 已触发 1 次 condenser 并通过 Anchor、coverage、raw tail、usage 和继续执行检查。
+- `django__django-12304` 优先回归 official resolved；该题低于压缩阈值，19 个主请求内完成，没有 condenser call。
+- 后续两题回归暴露一次 SymPy 过度 reasoning：44 个请求、8 次截断后有界终止。截断后的紧邻请求现临时降为
+  `low` effort；修复后 SymPy 真实重跑在 1 次截断后成功工具续写，恢复 `high`，19 个请求完成且 official resolved。
+- 当前代码与验证已具备创建 Evaluation Candidate commit 的条件；在具体 commit SHA 冻结前，不创建新 tag、不重建
+  正式 wheel/VSIX，也不启动正式 HAL 50 题。
 
 `v0.5.0-rc.1` 的首次正式运行发现 grader adapter 会把 empty patch 误记为基础设施失败，
 并让 resume 错误跳过。该运行已停止并作废，不计入成绩。修复进入 `v0.5.0-rc.2` 后，正式 HAL

@@ -17,4 +17,6 @@ benchmarks/swebench/runs/
 benchmarks/swebench/source-cache/
 benchmarks/swebench/selection-runs/
 benchmarks/swebench/*-generation.json
+benchmarks/swebench/calibration/runtime-*-result.json
+benchmarks/swebench/smoke/glm-5.3-semantic-condensation-*.json
 logs/evaluation/

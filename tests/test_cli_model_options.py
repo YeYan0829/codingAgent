@@ -50,7 +50,7 @@ def test_glm_uses_provider_specific_context_limit():
 
 
 def test_reasoning_configuration_uses_provider_specific_efforts_and_safe_defaults():
-    assert ModelConfig(provider="glm", reasoning_enabled=True).resolved_reasoning_effort == "max"
+    assert ModelConfig(provider="glm", reasoning_enabled=True).resolved_reasoning_effort == "high"
     assert ModelConfig(provider="deepseek", reasoning_enabled=True).resolved_reasoning_effort == "high"
     assert ModelConfig(provider="deepseek", reasoning_enabled=False).resolved_reasoning_effort is None
     with pytest.raises(ValueError, match="must be one of"):

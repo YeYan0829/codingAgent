@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "selection_id": "runtime-context-sympy-15599-20260910",
+  "status": "development_runtime_regression",
+  "benchmark": "HAL SWE-bench Verified Mini targeted truncation recovery regression",
+  "task_count": 1,
+  "source": {
+    "parent_selection": "runtime-reasoning-regression-2-20260909",
+    "selection_reason": "Verify low-effort immediate recovery after the two-task run exposed repeated output truncation",
+    "counts_toward_final_evaluation": false
+  },
+  "pinned_sources": {
+    "task_repository": "https://github.com/SWE-bench/swe-bench-tasks.git",
+    "task_repository_commit": "3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d",
+    "swebench_commit": "334882dd1f2664cc55c1abfe9de4884af023c0c0"
+  },
+  "scheduling": {
+    "policy": "fixed_target_order",
+    "difficulty_affects_runtime_config": false,
+    "distribution": {
+      "easy": 0,
+      "medium": 1,
+      "hard": 0
+    }
+  },
+  "official_instance_ids": [
+    "sympy__sympy-15599"
+  ],
+  "tasks": [
+    {
+      "instance_id": "sympy__sympy-15599",
+      "hal_official_index": 15,
+      "difficulty": "medium",
+      "difficulty_source_value": "15 min - 1 hour",
+      "repo": "sympy/sympy",
+      "image": "swebench/sweb.eval.x86_64.sympy_1776_sympy-15599:latest",
+      "base_commit": "5e17a90c19f7eecfa10c1ab872648ae7e2131323",
+      "execution_index": 0
+    }
+  ]
+}

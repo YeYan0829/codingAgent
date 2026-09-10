@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codeagent.model_gateway.base import ModelRequest, ModelTool
+from codeagent.model_gateway.base import MalformedToolArgumentsError, ModelRequest, ModelTool
 from codeagent.model_gateway.glm_client import DEFAULT_GLM_MODEL, GLMClient
 
 
@@ -16,9 +16,9 @@ class FakeCompletions:
         return self.response
 
 
-def _client(message, *, usage=None):
+def _client(message, *, usage=None, finish_reason=None):
     completions = FakeCompletions(SimpleNamespace(
-        choices=[SimpleNamespace(message=message)], usage=usage,
+        choices=[SimpleNamespace(message=message, finish_reason=finish_reason)], usage=usage,
     ))
     return SimpleNamespace(chat=SimpleNamespace(completions=completions)), completions
 
@@ -34,6 +34,34 @@ def test_glm_defaults_and_keeps_reasoning_disabled_by_default():
     assert completions.calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
     assert "reasoning_effort" not in completions.calls[0]
     assert completions.calls[0]["tool_choice"] == "auto"
+
+
+def test_glm_parses_openai_compatible_finish_reason():
+    client, _ = _client(
+        SimpleNamespace(content="", reasoning_content="仍在分析", tool_calls=None),
+        finish_reason="length",
+    )
+
+    response = GLMClient(api_key="key", client=client).complete(ModelRequest(messages=[]))
+
+    assert response.finish_reason == "length"
+
+
+def test_glm_keeps_length_reason_on_truncated_tool_arguments():
+    tool_call = SimpleNamespace(
+        id="call-1", function=SimpleNamespace(name="read_file", arguments='{"path":'),
+    )
+    client, _ = _client(
+        SimpleNamespace(content="partial", reasoning_content="thinking", tool_calls=[tool_call]),
+        finish_reason="length",
+    )
+
+    with pytest.raises(MalformedToolArgumentsError) as caught:
+        GLMClient(api_key="key", client=client).complete(ModelRequest(messages=[]))
+
+    assert caught.value.finish_reason == "length"
+    assert caught.value.text == "partial"
+    assert caught.value.reasoning_content == "thinking"
 
 
 def test_glm_uses_openai_compatible_function_calls():
@@ -56,7 +84,7 @@ def test_glm_uses_openai_compatible_function_calls():
     assert completions.calls[0]["tools"][0]["function"]["name"] == "read_file"
 
 
-def test_glm_reasoning_tool_round_trip_uses_preserved_thinking_contract():
+def test_glm_reasoning_tool_round_trip_uses_clearable_thinking_contract():
     tool_call = SimpleNamespace(
         id="call-1", function=SimpleNamespace(name="read_file", arguments='{"path":"README.md"}'),
     )
@@ -69,7 +97,7 @@ def test_glm_reasoning_tool_round_trip_uses_preserved_thinking_contract():
     first = glm.complete(ModelRequest(messages=[{"role": "user", "content": "inspect"}], tools=[tool]))
     assert first.reasoning_content == "需要查看文件。"
     assert completions.calls[0]["extra_body"] == {
-        "thinking": {"type": "enabled", "clear_thinking": False},
+        "thinking": {"type": "enabled", "clear_thinking": True},
     }
     assert completions.calls[0]["reasoning_effort"] == "max"
 
@@ -112,7 +140,19 @@ def test_glm_53_is_always_reasoning_and_supports_low_high_max():
     assert response.reasoning_content == "think"
     assert completions.calls[0]["reasoning_effort"] == "low"
     assert completions.calls[0]["extra_body"] == {
-        "thinking": {"type": "enabled", "clear_thinking": False},
+        "thinking": {"type": "enabled", "clear_thinking": True},
     }
     with pytest.raises(ValueError, match="does not support reasoning disabled"):
         GLMClient(model="glm-5.3", api_key="key", client=client)
+
+
+def test_glm_reasoning_defaults_to_high():
+    client, completions = _client(SimpleNamespace(
+        content="ok", reasoning_content="think", tool_calls=None,
+    ))
+
+    GLMClient(
+        model="glm-5.3", api_key="key", client=client, reasoning_enabled=True,
+    ).complete(ModelRequest(messages=[{"role": "user", "content": "hi"}]))
+
+    assert completions.calls[0]["reasoning_effort"] == "high"

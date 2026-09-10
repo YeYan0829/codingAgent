@@ -25,7 +25,7 @@ Extension 使用 VS Code 中第一个 workspace folder。新建会话时，它�
 齿轮页可以设置 provider、model、reasoning、temperature、最大输出 token 和步骤预算。
 这些设置只影响之后新建的会话。
 
-GLM-5.2 的 reasoning 档位为 `high`、`max`，默认选择 `max`。DeepSeek V4 的档位为
+GLM-5.3 的 reasoning 档位为 `high`、`max`，默认选择 `high`。DeepSeek V4 的档位为
 `low`、`high`、`max`，默认选择 `high`。关闭 reasoning 时，Runtime 不会发送 reasoning effort。
 
 设置保存到 VS Code 的本地状态。新建会话后，标题栏会显示这次会话使用的 reasoning 状态。

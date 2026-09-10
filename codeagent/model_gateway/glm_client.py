@@ -22,7 +22,7 @@ class GLMClient(OpenAICompatibleClient):
         resolved_key = api_key if api_key is not None else os.environ.get(GLM_API_KEY_ENV)
         if client is None and not resolved_key:
             raise RuntimeError(f"{GLM_API_KEY_ENV} is required when provider=glm")
-        effort = (reasoning_effort or "max") if reasoning_enabled else None
+        effort = (reasoning_effort or "high") if reasoning_enabled else None
         if model == "glm-5.3" and not reasoning_enabled:
             raise ValueError("GLM-5.3 always reasons and does not support reasoning disabled")
         if reasoning_enabled and model not in GLM_REASONING_EFFORTS:
@@ -30,7 +30,9 @@ class GLMClient(OpenAICompatibleClient):
         if effort is not None and effort not in GLM_REASONING_EFFORTS[model]:
             allowed = ", ".join(sorted(GLM_REASONING_EFFORTS[model]))
             raise ValueError(f"{model} reasoning_effort must be one of: {allowed}")
-        thinking = {"type": "enabled", "clear_thinking": False} if reasoning_enabled else {"type": "disabled"}
+        # Runtime 会保留紧邻上一轮的完整工具推理子轮，并把更早可见历史交给语义压缩器。
+        # 因此不能声明 preserved thinking；该模式要求全部 reasoning 原样连续回传。
+        thinking = {"type": "enabled", "clear_thinking": True} if reasoning_enabled else {"type": "disabled"}
         super().__init__(
             model=model,
             api_key=resolved_key or "injected-client",

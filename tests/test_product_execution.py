@@ -148,11 +148,15 @@ def _wait_until(predicate, timeout=2.0):
 class CountingModel:
     def __init__(self, tool_steps=50, block_at=None):
         self.calls = 0
+        self.condenser_calls = 0
         self.tool_steps, self.block_at = tool_steps, block_at
         self.entered, self.release = threading.Event(), threading.Event()
 
     def complete(self, request):
         from codeagent.model_gateway.base import LLMResponse, LLMToolCall
+        if request.purpose == "context_condenser":
+            self.condenser_calls += 1
+            return LLMResponse(text="PENDING:\ncontinue", finish_reason="stop")
         self.calls += 1
         if self.calls == self.block_at:
             self.entered.set()

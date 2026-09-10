@@ -3,7 +3,9 @@
 SWE-bench 用真实开源仓库的 bug 修复任务检查 Coding Agent。CodeAgent 使用任务指定的 Docker 镜像，
 最后交给 SWE-bench 官方评分程序判断修复是否成立。
 
-本页说明正式评测如何固定题目和运行条件。已经得到的结果见[评测结果](EVALUATION_RESULTS.md)。
+本页说明正式评测如何固定题目和运行条件。已经得到的结果见[评测结果](EVALUATION_RESULTS.md)。`v0.5.0-rc.2`
+配置保留为冻结历史，但输出截断与 reasoning 上下文问题被列为发布阻断项，不能据此启动或恢复正式成绩；下一候选版本
+尚未冻结。
 
 ## 正式题集
 
@@ -56,8 +58,9 @@ benchmark harness 使用预先允许的评测权限，不经过 VS Code 的人�
 
 ## 模型和统一资源上限
 
-正式模型固定为 GLM-5.3。该模型在当前 API 上始终启用推理，不能关闭；本次固定使用
-`reasoning_effort=max`。
+正式模型固定为 GLM-5.3。该模型在当前 API 上始终启用推理，不能关闭。`rc.2` 历史配置使用
+`reasoning_effort=max`；旧轨迹显示它与长 reasoning 输出、空 patch 有明显相关性，因此下一候选配置改用
+`reasoning_effort=high`。`max` 仍是可显式选择的 Provider 能力，不再是 CodeAgent 的 GLM 默认值。
 
 50 题统一使用以下限制：
 
@@ -76,13 +79,35 @@ benchmark harness 使用预先允许的评测权限，不经过 VS Code 的人�
 输入、输出、缓存输入和 reasoning token 是事后记账字段，不是每题总 token 上限。
 正式配置没有虚构 `max_total_tokens_per_task`。
 
-ContextBuilder 每次请求仍会控制工具输出大小。单条工具结果和近期工具原文有独立限制，
-不会因为模型上下文较大而无限增长。
+ContextManager 每次请求控制工具输出大小，单条 ToolResult 最多展示 16 KiB。较旧的连续 CCES prefix 由无工具 condenser
+生成 rolling semantic summary，近期 CCES 保持连续 raw tail；不再按固定四步把结果转换成 residue，也不做 completed-turn
+eviction。当前请求通过 Current Task Anchor 精确出现一次。
 
-机器可读配置见
+当前 UserTurn 只向下一次请求回传紧邻上一 ModelStep 的完整 reasoning/tool 协议，同一 ToolCall/Result 不会再由普通 raw
+renderer 重复生成。更旧 reasoning 不进入主请求或 condenser，Session 审计事件仍保留原文。GLM 主请求使用
+`clear_thinking=true`；condenser 使用独立预算、最低合法 reasoning effort 和 `purpose=context_condenser`。
+
+历史机器可读配置见
 [v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)。
+下一候选配置只会在 Runtime 修复、真实 Provider 回归和两道定向任务完成后冻结。
+
+两道定向回归 selection 见
+[runtime-reasoning-regression-2.json](../benchmarks/swebench/selections/runtime-reasoning-regression-2.json)。它只包含旧轨迹中
+输出恰好达到 8,192 token 且仍产生非空 patch 的 `django__django-12304`、`sympy__sympy-15599`，属于
+Development，不计入正式 50 题。第一次 reasoning `high` 回归消除了两题的输出触顶，但请求数和输入 token 明显增加；
+语义压缩实现后的复测及截断恢复结果见[评测结果](EVALUATION_RESULTS.md)。截断后的紧邻恢复请求会临时使用 `low`
+reasoning effort，形成工具调用或最终回答后恢复主配置 `high`。
+
+当前实现以[上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)为准，不引入 Active Code、
+Working Set、文件重要度、RepoMap 或 RAG。真实 condensation smoke 和定向回归已经完成；正式 HAL 50 仍等待
+Evaluation Candidate commit 冻结。
 
 ## GLM-5.3 兼容性 smoke
+
+2026-09-10 的 semantic-condensation smoke 在受控 Session 中真实触发 1 次无工具 condenser，再完成 1 次主请求；
+Anchor、raw tail、summary wrapper、coverage、usage 和预算检查全部通过。可复现入口见
+[run_semantic_condensation_smoke.py](../benchmarks/swebench/smoke/run_semantic_condensation_smoke.py)；生成结果不进入
+Evaluation Candidate commit。
 
 2026-09-09 的最小付费 smoke 使用 GLM-5.3 和 reasoning `max`。模型先推理并调用 `read_file`，
 收到工具结果后继续推理，再给出最终答案。
@@ -110,7 +135,7 @@ Easy → Medium → Hard 的顺序；顺序错误会在模型请求前被拒绝�
 - token usage 与成本
 - prediction、执行摘要和 official report 路径
 
-结果分类至少区分：`resolved`、`unresolved`、`budget_exhausted`、`provider_error`、
+结果分类至少区分：`resolved`、`unresolved`、`budget_exhausted`、`output_truncated`、`provider_error`、
 `infra_error` 和 `not_started`。
 
 official grader 正常完成但没有解决的题属于 `unresolved`。它也是一个完整结果，恢复时会跳过，
@@ -162,9 +187,10 @@ GLM-5.3 价格快照见
 [glm-5.3-standard-api-2026-09-09.json](../benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json)。
 reasoning token 已包含在 output token 中，不会重复计价。
 
-## 正式运行入口
+## rc.2 历史运行入口
 
-下面的命令展示固定参数。`INITIAL_BUDGET_RMB` 由运行者在首次启动时填写，并在恢复时保持不变。
+下面的命令只用于复核 `rc.2` 冻结参数，不应重新启动正式运行。下一候选会改用 reasoning `high`，并在新的 tag、
+配置和 run ID 冻结后提供新命令。`INITIAL_BUDGET_RMB` 由运行者在首次启动时填写，并在恢复时保持不变。
 
 ```bash
 export TASK_REPO="$PWD/reference/swe-bench-tasks"

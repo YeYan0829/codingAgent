@@ -1,5 +1,5 @@
 from codeagent.context.builder import ContextBuilder
-from codeagent.context.projector import project_events
+from codeagent.context.projector import project_context_events
 from codeagent.session.store import SessionStore
 
 
@@ -18,7 +18,7 @@ def test_context_rebuilds_assistant_tool_call_and_tool_result_pair(tmp_path):
     assert tool["tool_call_id"] == "call_1"
 
 
-def test_context_keeps_reasoning_with_its_tool_call_when_raw_text_is_reduced(tmp_path):
+def test_context_keeps_reasoning_with_latest_mandatory_tool_atom(tmp_path):
     store = SessionStore(tmp_path).create()
     store.append_event("user_message", {"message": "inspect"})
     store.append_event("assistant_tool_calls", {
@@ -29,15 +29,16 @@ def test_context_keeps_reasoning_with_its_tool_call_when_raw_text_is_reduced(tmp
         "call_id": "call_1", "name": "list_dir", "content": '{"ok": true, "content": "README.md"}',
     })
 
-    messages = ContextBuilder(store).manager._render_turns(project_events(store.read_events()), recent_raw_steps=0)
+    result = ContextBuilder(store).manager.build()
+    messages = result.messages
 
     assistant = next(message for message in messages if message.get("tool_calls"))
-    assert assistant["content"] == ""
+    assert assistant["content"] == "read it"
     assert assistant["reasoning_content"] == "reason exactly"
     assert messages[messages.index(assistant) + 1]["tool_call_id"] == "call_1"
 
 
-def test_context_keeps_user_turns_but_compacts_completed_tool_noise(tmp_path):
+def test_context_keeps_completed_tool_history_raw_until_trigger(tmp_path):
     store = SessionStore(tmp_path).create()
     store.append_event("user_message", {"message": "运行精确命令 --required-flag"})
     for index in range(25):
@@ -51,4 +52,5 @@ def test_context_keeps_user_turns_but_compacts_completed_tool_noise(tmp_path):
 
     user_messages = [message["content"] for message in messages if message["role"] == "user"]
     assert user_messages == ["运行精确命令 --required-flag", "继续并使用我指定的命令"]
-    assert not any(message.get("tool_calls") for message in messages)
+    assert sum(bool(message.get("tool_calls")) for message in messages) == 25
+    assert len(project_context_events(store.read_events()).items) == 53

@@ -57,6 +57,42 @@ def test_context_and_step_termination_are_factual():
     assert step["step_exhausted"]
 
 
+def test_trajectory_distinguishes_completion_empty_patch_and_output_truncation():
+    completed = analyze_trajectory([ev("assistant_message", {"message": "done"})], {"patch_present": True})
+    empty = analyze_trajectory([ev("assistant_message", {"message": "done"})], {"patch_present": False})
+    truncated = analyze_trajectory([
+        ev("model_usage", {"finish_reason": "length", "usage": {"total_tokens": 20}}),
+        ev("model_output_truncated", {"finish_reason": "length"}),
+        ev("turn_terminated", {"reason": "output_truncated"}),
+    ], {"patch_present": False})
+
+    assert completed["completed"] and not completed["empty_patch"] and not completed["output_truncated"]
+    assert empty["completed"] and empty["empty_patch"] and not empty["output_truncated"]
+    assert truncated["termination_reason"] == "output_truncated"
+    assert truncated["output_truncated"] and truncated["output_truncation_steps"] == 1
+    assert truncated["model_steps"] == 1 and not truncated["completed"]
+
+
+def test_truncation_recovery_and_context_identity_are_projected():
+    events = [
+        ev("user_message"),
+        ev("model_usage", {"purpose": "main_agent", "finish_reason": "length",
+            "reasoning_effort": "high", "usage": {"total_tokens": 20},
+            "context": {"anchor_source_event_id": "seq:1", "retained_raw_source_event_ids": ["seq:2"]}}),
+        ev("model_output_truncated", {"finish_reason": "length"}),
+        ev("model_usage", {"purpose": "main_agent", "finish_reason": "tool_calls",
+            "reasoning_effort": "low", "context_reductions": ["output_truncation_partial_replayed"],
+            "usage": {"total_tokens": 10}, "context": {"anchor_source_event_id": "seq:1"}}),
+        ev("assistant_tool_calls", {"tool_calls": []}),
+    ]
+    result = analyze_trajectory(events)
+    recovery = result["truncation_recovery"]
+    assert recovery["high_to_low_count"] == recovery["one_request_recovery_count"] == 1
+    assert recovery["records"][0]["partial_replayed"] is True
+    assert result["latest_context_snapshot"]["anchor_source_event_id"] == "seq:1"
+    assert result["usage_by_purpose"]["main_agent"]["requests"] == 2
+
+
 def test_context_breakdown_is_projected_and_legacy_remains_unavailable():
     payload = {"reason": "context_budget_exceeded", "estimated_tokens": 20, "usable_tokens": 10,
         "minimum_set_components": [{"category": "recent_tool_observations", "estimated_tokens": 12,

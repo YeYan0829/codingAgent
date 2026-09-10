@@ -2,6 +2,9 @@
 
 本文描述 `0.5.0` 发布候选代码已经实现的系统。接口事实以源码和自动化测试为准。
 
+上下文实现以[上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)为架构基线：完整 Event Store
+派生出 CCES、rolling semantic summary、连续 raw tail 和 Current Task Anchor，不再使用固定四步窗口或历史 residue。
+
 ## 阅读约定
 
 本页需要使用少量内部名称。先给出它们的普通含义：
@@ -90,36 +93,48 @@ Event 是一条持久化事件记录，同时保存 `turn_id` 和 `model_step_id
 
 ```text
 events.jsonl
-→ UserTurn / ModelStep / ToolExchange projection
+→ 显式 allowlist 的 CCES 与 closed manipulation atoms
+→ valid rolling summary + 连续 raw event tail
 → 当前 Workspace、Candidate、validation、command environment snapshot
-→ 最近有界 Tool Observation 与历史 residue
-→ token budget reduction
+→ Current Task Anchor + transient recovery notice
+→ fixed/history 双预算
 → provider request
 ```
 
-每轮保留当前用户请求，用 Git 和 Session metadata 更新 active workspace、changed paths、baseline、validation
+Current Task Anchor 每次精确投影当前用户请求一次；其 source Event 仍可被 rolling summary 连续覆盖，但不会作为普通 raw
+UserMessage 重复发送。Runtime 用 Git 和 Session metadata 更新 active workspace、changed paths、baseline、validation
 和实际命令环境。预算由 Runtime 单独执行；后续内部切片通过临时控制消息告知模型已用步骤和当前上限，
 并非 Runtime Snapshot 自带全部预算字段。
 
-预算估算同时计算消息和工具 schema，并预留输出、续跑和安全余量。先减少保留正文的近期工具步骤，再整轮移除
-已完成的旧请求；工具调用和 terminal result 始终配对。旧正文降级为访问记录，源码需要时再次读取。
-当前轮的工具调用参数仍然保留，长参数或过长用户输入仍可能撑满最低集合；旧轮次被移除后也不保证保留其全部约束。
-估算器按 UTF-8 大小估计 token，并非 provider 的精确 tokenizer。最低必需集合仍超限时，Runtime 写入
-`context_budget_exceeded` 并保留 Session 与 workspace。当前没有 semantic condensation、自动 Working Set、
-RepoMap 或 RAG。
+预算估算同时计算消息和工具 schema，并预留输出、续跑和安全余量。不可压缩 fixed 部分与 history 部分分开计量；
+事件数或 token 达到软阈值时可调用一次 condenser，hard 超限时在同一主 ModelStep 前最多调用四次。Condenser 没有工具，
+使用独立输入/输出预算，从最老的连续 closed atom 开始；一轮放不下时通过 predecessor summary 递归分块。每个有效 summary
+写入 predecessor、增量 source IDs/digest、logical frontier 和 algorithm version，恢复时重新验证 chain。每次成功后必须
+rebuild/re-estimate；仍不 fit 或无进展时 fail closed。Event Store 原记录不删除。
 
-每个 provider 响应另写 `model_usage` Event，记录可获得的 token 和 provider request id。usage 不进入后续模型
-上下文，也不计作一个 ModelStep。
+单条 ToolResult 仍限制为 16 KiB。没有 Active Code、Working Set、RepoMap、RAG、文件重要度选择、typed residue、
+completed-turn eviction 或 raw-to-zero fallback。
+
+每个 provider 响应另写 `model_usage` Event，记录 `purpose=main_agent|context_condenser`、可获得的 token、provider request id、
+`finish_reason` 和本次 `context_reductions`。Condenser usage 计入 Session/benchmark 总成本，但不归属主 ModelStep，也不消耗
+UserTurn 步骤预算。usage 本身不进入后续模型上下文。
 
 GLM 和 DeepSeek 启用 reasoning 后，会把 provider 返回的 `reasoning_content` 保存在对应的模型事件中。
 它不会投影成普通 assistant 消息，也不会显示在产品界面。
 
-带工具调用的 reasoning 会和该次 assistant tool call 一起保留。下一次请求按 Provider 契约原样回传，
-ContextBuilder 缩减历史时也不会拆开 tool call 与 tool result。最低上下文无法同时容纳这组消息时，Runtime 会停止，
-不会发送不完整的消息序列。
+同一 UserTurn 内，只把紧邻上一 ModelStep 的 `reasoning_content` 与该次 assistant tool call、terminal tool result
+按 Provider 契约原样回传。这组 latest mandatory protocol 是最低上下文的一部分，planner 不跨越它，普通 raw renderer
+也不会再生成一份相同 ToolCall/Result。更早 reasoning 不进入请求或 condenser；对应的可见 assistant/tool 历史仍按 CCES
+保持 raw，直到被 semantic summary 连续吸收。原始 reasoning 始终保存在 Session 事件中。
+
+输出因 `finish_reason=length` 截断且没有完整工具调用时，Runtime 保存部分 reasoning/content，并只在紧接着的恢复请求
+中作为 assistant 历史原样回放，同时要求模型停止扩展探索、优先形成具体工具调用。恢复成功后该截断片段退出请求上下文；
+连续截断只保留最新片段，三次后终止。缺失 `finish_reason` 时只有空响应且 usage 达到显式输出上限才使用 fallback。
 
 DeepSeek V4 开启 reasoning 时不发送 `tool_choice`，让 Provider 使用有 tools 时的默认选择。对应的 assistant
-tool-call 消息始终保留非 null `content`。GLM 继续发送普通 `tool_choice`，并使用 `clear_thinking: false` 保留思考。
+tool-call 消息始终保留非 null `content`。GLM 继续发送普通 `tool_choice`，并使用 `clear_thinking: true`，让标准 API
+清除其认定的 previous turns reasoning；当前工具交错所需的上一 ModelStep reasoning 仍由 Runtime 原样回传。
+Runtime 的 UserTurn、ModelStep 和 execution slice 不是 Provider 文档中的同一种 turn，slice 边界不会触发 reasoning 清理。
 
 ## 工具与工作区升级
 

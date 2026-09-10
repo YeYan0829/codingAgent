@@ -771,6 +771,10 @@ def _summarize_event(event: SessionEvent) -> str:
     if event.type == "assistant_tool_calls":
         calls = [f"{call.get('name')} {_summarize_tool_arguments(call.get('name', ''), call.get('arguments', {}))}" for call in payload.get("tool_calls", [])]
         return f"assistant tool calls: {'; '.join(calls)}"
+    if event.type == "model_output_truncated":
+        return ("model output truncated: "
+                f"finish_reason={payload.get('finish_reason')} "
+                f"consecutive={payload.get('consecutive_count')}")
     if event.type == "tool_requested":
         return f"tool requested: {payload.get('name')} {_summarize_tool_arguments(payload.get('name', ''), payload.get('arguments', {}))}"
     if event.type == "tool_result":

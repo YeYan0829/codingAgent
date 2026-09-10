@@ -38,12 +38,13 @@ class OpenAICompatibleClient(BaseModelClient):
             "messages": request.messages,
             "stream": False,
         }
-        if self.include_tool_choice:
+        if self.include_tool_choice and request.purpose != "context_condenser":
             kwargs["tool_choice"] = request.tool_choice
         if self.extra_body is not None:
             kwargs["extra_body"] = self.extra_body
-        if self.reasoning_effort is not None:
-            kwargs["reasoning_effort"] = self.reasoning_effort
+        reasoning_effort = request.reasoning_effort or self.reasoning_effort
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
         if request.tools:
             kwargs["tools"] = [_to_chat_completion_tool(tool) for tool in request.tools]
         if request.temperature is not None:
@@ -59,7 +60,11 @@ class OpenAICompatibleClient(BaseModelClient):
             kwargs.pop("extra_body")
             response = self.client.chat.completions.create(**kwargs)
 
-        message = response.choices[0].message
+        choice = response.choices[0]
+        message = choice.message
+        finish_reason = _get(choice, "finish_reason")
+        if finish_reason is not None and not isinstance(finish_reason, str):
+            finish_reason = str(finish_reason)
         reasoning_content = _get(message, "reasoning_content")
         if reasoning_content is not None and not isinstance(reasoning_content, str):
             reasoning_content = str(reasoning_content)
@@ -70,17 +75,22 @@ class OpenAICompatibleClient(BaseModelClient):
         except MalformedToolArgumentsError as exc:
             exc.usage = usage
             exc.provider_request_id = request_id
+            exc.finish_reason = finish_reason
+            exc.text = getattr(message, "content", None)
+            exc.reasoning_content = reasoning_content
             raise
         if isinstance(tool_calls, LLMResponse):
             tool_calls.usage = usage
             tool_calls.provider_request_id = request_id
+            tool_calls.finish_reason = finish_reason
             return tool_calls
         if tool_calls:
             return LLMResponse(text=getattr(message, "content", None) or None,
                                reasoning_content=reasoning_content, tool_calls=tool_calls,
-                               usage=usage, provider_request_id=request_id)
+                               usage=usage, provider_request_id=request_id,
+                               finish_reason=finish_reason)
         return LLMResponse(text=getattr(message, "content", None) or "", reasoning_content=reasoning_content, usage=usage,
-                           provider_request_id=request_id)
+                           provider_request_id=request_id, finish_reason=finish_reason)
 
     def _parse_tool_calls(self, raw_tool_calls: Any) -> list[LLMToolCall] | LLMResponse:
         if not raw_tool_calls:

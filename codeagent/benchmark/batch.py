@@ -25,7 +25,8 @@ class SWEbenchSelection:
         self.path = Path(path).resolve()
         value = json.loads(self.path.read_text(encoding="utf-8"))
         self.selection_id = str(value["selection_id"])
-        self.swebench_commit = (value.get("pinned_sources") or {}).get("swebench_commit")
+        self.pinned_sources = dict(value.get("pinned_sources") or {})
+        self.swebench_commit = self.pinned_sources.get("swebench_commit")
         tasks = value.get("tasks")
         if not isinstance(tasks, list) or not tasks:
             raise ValueError("selection tasks 必须是非空列表")
@@ -78,6 +79,7 @@ class SWEbenchBatchRunner:
             run_id=run_id, selection_path=self.selection.path, selection_id=self.selection.selection_id,
             model=self.model_config, runtime=self.runtime_config, endpoint_identity=self.endpoint_identity,
             swebench_commit=self.selection.swebench_commit, runtime_root=self.runtime_root,
+            pinned_sources=self.selection.pinned_sources,
         )
         expected["batch"] = {
             "execution_order": "selection_order",
@@ -126,14 +128,18 @@ class SWEbenchBatchRunner:
                 )
             task_root.mkdir(parents=True, exist_ok=True)
             attempt = self._next_attempt(state_path)
+            started_at = datetime.now(timezone.utc).isoformat()
             state = {"schema_version": 1, "instance_id": instance_id, "attempt": attempt,
                      "status": "running", "outcome": None,
-                     "config_fingerprint": manifest["model"]["config_fingerprint"]}
+                     "config_fingerprint": manifest["model"]["config_fingerprint"],
+                     "evaluation_commit_sha": manifest["runtime"]["git_commit"],
+                     "selection_sha256": manifest["selection_sha256"],
+                     "started_at": started_at}
             write_json_atomic(state_path, state)
             try:
                 result = self.harness.run(self.task_loader(instance_id), self.model_factory(),
                                           self.model_config, task_root / "runs", runtime_config=self.runtime_config)
-                entry = self._finish_task(task_root, result, attempt)
+                entry = self._finish_task(task_root, result, attempt, manifest, started_at)
                 if result.source_identity:
                     manifest["benchmark"]["tasks"][instance_id] = result.source_identity
                     write_json_atomic(manifest_path, manifest)
@@ -164,7 +170,10 @@ class SWEbenchBatchRunner:
         write_json_atomic(manifest_path, manifest)
         return self._write_summary(root, manifest, completed, finished=True)
 
-    def _finish_task(self, task_root: Path, result: SWEbenchRunResult, attempt: int) -> dict:
+    def _finish_task(
+        self, task_root: Path, result: SWEbenchRunResult, attempt: int,
+        manifest: dict, started_at: str,
+    ) -> dict:
         raw = asdict(result)
         event_paths = list((task_root / "runs" / result.run_id / "sessions").rglob("events.jsonl"))
         matching = [path for path in event_paths if path.parent.name == result.session_id]
@@ -173,7 +182,15 @@ class SWEbenchBatchRunner:
                 f"无法唯一定位 Session events: session={result.session_id}, matches={len(matching)}"
             )
         trajectory_path = task_root / "trajectory-summary.json"
-        save_trajectory(trajectory_path, analyze_trajectory(load_events(matching[0]), raw))
+        trajectory = analyze_trajectory(load_events(matching[0]), raw)
+        usage_by_purpose = trajectory.get("usage_by_purpose") or {}
+        cost_by_purpose = {
+            purpose: calculate_cost(usage, self.price_snapshot)
+            if self.price_snapshot and isinstance(usage, dict) else None
+            for purpose, usage in usage_by_purpose.items()
+        }
+        trajectory["cost_by_purpose"] = cost_by_purpose
+        save_trajectory(trajectory_path, trajectory)
         usage = raw.get("token_usage")
         cost = calculate_cost(usage, self.price_snapshot) if self.price_snapshot and isinstance(usage, dict) else None
         outcome = _completed_outcome(result)
@@ -181,6 +198,13 @@ class SWEbenchBatchRunner:
         return {
             **raw, "attempt": attempt, "outcome": outcome, "stop_reason": stop_reason,
             "trajectory_path": str(trajectory_path), "cost": cost,
+            "evaluation_commit_sha": manifest["runtime"]["git_commit"],
+            "config_fingerprint": manifest["model"]["config_fingerprint"],
+            "selection_sha256": manifest["selection_sha256"],
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "usage_by_purpose": usage_by_purpose,
+            "cost_by_purpose": cost_by_purpose,
         }
 
     @staticmethod
@@ -208,7 +232,7 @@ class SWEbenchBatchRunner:
             "oracle_status", "oracle_report_path", "trajectory_path", "token_usage", "cost",
         }
         if (value.get("status") != "completed" or
-                value.get("outcome") not in {"resolved", "unresolved", "budget_exhausted"} or
+                value.get("outcome") not in {"resolved", "unresolved", "budget_exhausted", "output_truncated"} or
                 not isinstance(result, dict) or not required <= result.keys()):
             return None
         if not Path(result["prediction_path"]).is_file() or not Path(result["trajectory_path"]).is_file():
@@ -224,6 +248,7 @@ class SWEbenchBatchRunner:
     def _validate_resume(old: dict, new: dict) -> None:
         fields = (
             ("selection_id",), ("selection_sha256",), ("model", "config_fingerprint"),
+            ("runtime", "git_commit"), ("runtime", "dirty"),
             ("batch", "cost_guard"), ("pricing",),
         )
         for field in fields:
@@ -303,7 +328,7 @@ class SWEbenchBatchRunner:
         return summary
 
     def _outcome_counts(self, root: Path, tasks: list[dict]) -> dict[str, int]:
-        names = ("resolved", "unresolved", "budget_exhausted", "provider_error", "infra_error")
+        names = ("resolved", "unresolved", "budget_exhausted", "output_truncated", "provider_error", "infra_error")
         counts = {name: sum(task.get("outcome") == name for task in tasks) for name in names}
         completed_ids = {str(task.get("instance_id")) for task in tasks}
         failed_ids: set[str] = set()
@@ -338,6 +363,8 @@ def _completed_outcome(result: SWEbenchRunResult) -> str:
         return "resolved"
     if result.agent_status in {"model_step_budget_exhausted", "context_budget_exceeded"}:
         return "budget_exhausted"
+    if result.agent_status == "output_truncated":
+        return "output_truncated"
     if result.oracle_status == "completed" and result.oracle_passed is False:
         return "unresolved"
     return "infra_error"

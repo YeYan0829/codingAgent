@@ -115,10 +115,17 @@ def test_runner_persists_usage_for_every_model_request(tmp_path):
     runner.run_turn("test")
 
     event = next(event for event in store.read_events() if event.type == "model_usage")
+    context = event.payload.pop("context")
+    assert context["anchor_source_event_id"] == "seq:2"
+    assert context["estimated_tokens"] <= context["usable_tokens"]
     assert event.payload == {
         "provider": "glm",
         "model": "glm-5.2",
+        "purpose": "main_agent",
         "provider_request_id": "req-42",
+        "finish_reason": None,
+        "reasoning_effort": None,
+        "context_reductions": [],
         "usage": {
             "input_tokens": 100, "output_tokens": 5, "total_tokens": 105,
             "cached_input_tokens": None, "cache_miss_input_tokens": None, "reasoning_tokens": None,

@@ -38,6 +38,7 @@ _ACTIVITY_LABELS = {
     "turn_budget_exhausted": "Step budget reached",
     "turn_budget_increased": "User increased step budget",
     "turn_terminated": "Execution stopped before completion",
+    "model_output_truncated": "Model output reached its length limit",
     "model_protocol_error": "Model response could not be processed",
 }
 
@@ -93,6 +94,7 @@ def build_session_detail(store: SessionStore) -> dict[str, Any]:
         "activitySummary": activity_summary(events, changes),
         "recentActivity": [activity_item(event) for event in events if event.type not in {
             "user_message", "assistant_message", "model_usage",
+            "context_condensation_attempt", "context_condensed",
         }][-50:],
         "changesSummary": {**changes, "fileCount": len(changes["files"])},
         "validationSummary": validation,
@@ -465,7 +467,10 @@ def activity_item(event: SessionEvent) -> dict[str, Any]:
 
 
 def activity_summary(events: list[SessionEvent], changes: dict[str, Any]) -> dict[str, Any]:
-    visible = [event for event in events if event.type not in {"user_message", "assistant_message", "model_usage"}]
+    visible = [event for event in events if event.type not in {
+        "user_message", "assistant_message", "model_usage",
+        "context_condensation_attempt", "context_condensed",
+    }]
     latest = activity_item(visible[-1])["summary"] if visible else "No activity yet"
     tools = [event for event in events if event.type == "tool_requested"]
     inspected = {

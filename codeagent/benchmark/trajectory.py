@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
+from codeagent.benchmark.accounting import aggregate_usage
 from codeagent.session.events import SessionEvent
 
 
@@ -37,12 +38,21 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
     usage_by_step: dict[int, dict[str, Any] | None] = {}
     pending_usage: list[dict[str, Any] | None] = []
     revision = 0
+    condenser_usage: list[dict[str, Any] | None] = []
+    main_usage: list[dict[str, Any] | None] = []
 
     for event in values:
         payload = event.payload
         if event.type == "model_usage":
-            pending_usage.append(payload.get("usage") if isinstance(payload.get("usage"), dict) else None)
-        elif event.type in {"assistant_tool_calls", "assistant_message", "model_protocol_error"}:
+            usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else None
+            if payload.get("purpose", "main_agent") == "context_condenser":
+                condenser_usage.append(usage)
+            else:
+                pending_usage.append(usage)
+                main_usage.append(usage)
+        elif event.type in {
+            "assistant_tool_calls", "assistant_message", "model_protocol_error", "model_output_truncated",
+        }:
             step += 1
             if pending_usage:
                 usage_by_step[step] = pending_usage.pop(0)
@@ -106,6 +116,15 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
         "completed": termination == "completed",
         "context_exceeded": termination == "context_budget_exceeded",
         "step_exhausted": termination == "model_step_budget_exhausted",
+        "output_truncated": termination == "output_truncated",
+        "output_truncation_steps": sum(event.type == "model_output_truncated" for event in values),
+        "protocol_error_count": sum(event.type == "model_protocol_error" for event in values),
+        "tool_call_count": sum(
+            len(event.payload.get("tool_calls", []))
+            for event in values if event.type == "assistant_tool_calls"
+        ),
+        "revert_count": sum(event.type == "changes_discarded" for event in values),
+        "empty_patch": bool(result is not None and result.get("patch_present") is False),
         "tool_usage": {name: tool_counts.get(name, 0) for name in (*sorted(set(TOOL_GROUPS.values())), "other")},
         "first_edit_step": min(effective_edits) if effective_edits else None,
         "last_edit_step": last_edit,
@@ -123,6 +142,13 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
         "exact_same_revision_read_count": repeated_reads,
         "normalized_identical_command_repeat_count": repeated_commands,
         "context_detail": _context_detail(values),
+        "latest_context_snapshot": _latest_context_snapshot(values),
+        "condensation": _condensation_detail(values, condenser_usage),
+        "truncation_recovery": _truncation_recovery(values),
+        "usage_by_purpose": {
+            "main_agent": aggregate_usage(main_usage),
+            "context_condenser": aggregate_usage(condenser_usage),
+        },
     }
 
 
@@ -171,3 +197,101 @@ def _context_detail(events: list[SessionEvent]) -> dict[str, Any] | None:
             "component_estimated_tokens": item.payload.get("component_estimated_tokens") if available else None,
             "estimation_residual": item.payload.get("estimation_residual") if available else None,
             "unavailable_reason": None if available else "历史事件未记录最低集合的分项组成"}
+
+
+def _latest_context_snapshot(events: list[SessionEvent]) -> dict[str, Any] | None:
+    usage = next((event for event in reversed(events) if event.type == "model_usage"
+                  and event.payload.get("purpose", "main_agent") == "main_agent"
+                  and isinstance(event.payload.get("context"), dict)), None)
+    return dict(usage.payload["context"]) if usage else None
+
+
+def _truncation_recovery(events: list[SessionEvent]) -> dict[str, Any]:
+    records: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        if event.type != "model_output_truncated":
+            continue
+        before = next((item for item in reversed(events[:index]) if item.type == "model_usage"
+                       and item.payload.get("purpose", "main_agent") == "main_agent"), None)
+        after = next((item for item in events[index + 1:] if item.type == "model_usage"
+                      and item.payload.get("purpose", "main_agent") == "main_agent"), None)
+        reductions = after.payload.get("context_reductions", []) if after else []
+        finish = after.payload.get("finish_reason") if after else None
+        records.append({
+            "truncation_event_id": f"seq:{event.seq}",
+            "model_step_id": event.model_step_id,
+            "finish_reason": event.payload.get("finish_reason"),
+            "original_reasoning_effort": before.payload.get("reasoning_effort") if before else None,
+            "recovery_reasoning_effort": after.payload.get("reasoning_effort") if after else None,
+            "partial_replayed": "output_truncation_partial_replayed" in reductions,
+            "recovery_finish_reason": finish,
+            "recovered_in_one_request": finish in {"tool_calls", "stop"},
+            "repeated_truncation": finish == "length",
+        })
+    return {
+        "count": len(records),
+        "high_to_low_count": sum(
+            item["original_reasoning_effort"] == "high" and item["recovery_reasoning_effort"] == "low"
+            for item in records
+        ),
+        "one_request_recovery_count": sum(item["recovered_in_one_request"] for item in records),
+        "repeated_truncation_count": sum(item["repeated_truncation"] for item in records),
+        "terminal_output_truncation": any(
+            event.type == "turn_terminated" and event.payload.get("reason") == "output_truncated"
+            for event in events
+        ),
+        "records": records,
+    }
+
+
+def _condensation_detail(
+    events: list[SessionEvent], usages: list[dict[str, Any] | None],
+) -> dict[str, Any]:
+    attempts = [event for event in events if event.type == "context_condensation_attempt"]
+    summaries = [event for event in events if event.type == "context_condensed"]
+    latest = summaries[-1].payload if summaries else {}
+    attempt_records = [{
+        "event_id": f"seq:{event.seq}",
+        **{key: event.payload.get(key) for key in (
+            "attempt_id", "plan_id", "call_index_for_next_model_step", "previous_summary_event_id",
+            "candidate_source_event_ids", "candidate_source_event_ids_sha256", "trigger", "hard",
+            "request_estimated_tokens_before", "condenser_input_estimated_tokens", "status",
+            "failure_code", "finish_reason", "usage", "latency_seconds",
+        )},
+    } for event in attempts]
+    summary_records = []
+    for event in summaries:
+        next_main = next((item for item in events if item.seq > event.seq and item.type == "model_usage"
+                          and item.payload.get("purpose", "main_agent") == "main_agent"
+                          and isinstance(item.payload.get("context"), dict)), None)
+        summary_records.append({
+            "event_id": f"seq:{event.seq}",
+            **{key: event.payload.get(key) for key in (
+                "attempt_id", "previous_summary_event_id", "newly_covered_event_ids",
+                "newly_covered_event_ids_sha256", "logical_covered_event_count",
+                "logical_frontier_source_event_id", "summary", "reason", "algorithm_version",
+                "input_estimated_tokens", "summary_estimated_tokens",
+            )},
+            "rebuild_request_estimated_tokens": (
+                next_main.payload["context"].get("estimated_tokens") if next_main else None
+            ),
+        })
+    return {
+        "calls": len(attempts),
+        "successful_calls": sum(event.payload.get("status") == "valid_completion" for event in attempts),
+        "failures": {
+            status: sum(event.payload.get("status") == status for event in attempts)
+            for status in ("request_failed", "invalid_completion")
+        },
+        "usage": aggregate_usage(usages),
+        "logical_covered_event_count": latest.get("logical_covered_event_count"),
+        "logical_frontier_source_event_id": latest.get("logical_frontier_source_event_id"),
+        "newly_covered_event_ids": latest.get("newly_covered_event_ids"),
+        "attempt_event_ids": [f"seq:{event.seq}" for event in attempts],
+        "summary_event_ids": [f"seq:{event.seq}" for event in summaries],
+        "recursive_condensation_count": sum(
+            event.payload.get("previous_summary_event_id") is not None for event in summaries
+        ),
+        "attempts": attempt_records,
+        "summaries": summary_records,
+    }

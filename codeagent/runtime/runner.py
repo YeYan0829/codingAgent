@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import time
+import uuid
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from codeagent.config import ModelConfig, RuntimeConfig
-from codeagent.context.builder import ContextManager
-from codeagent.context.models import ContextBudgetExceeded, ModelCapabilities
+from codeagent.context.builder import ContextManager, SUMMARY_ALGORITHM_VERSION
+from codeagent.context.models import (
+    CondensationPlan, CondensationRequired, ContextBudgetExceeded, ModelCapabilities, ReadyContext,
+)
 from codeagent.model_gateway.base import (
     BaseModelClient,
+    LLMResponse,
     LLMToolCall,
     MalformedToolArgumentsError,
     ModelRequest,
@@ -17,7 +23,7 @@ from codeagent.model_gateway.base import (
 from codeagent.runtime.approval import ApprovalGate
 from codeagent.runtime.policy import DefaultPolicy, PolicyDecision
 from codeagent.runtime.turn_budget import current_turn_budget
-from codeagent.session.store import SessionStore
+from codeagent.session.store import SessionStore, SessionStoreError
 from codeagent.tools.base import ToolResult, ToolSpec
 from codeagent.tools.registry import ToolRegistry
 from codeagent.workspace.workspace import WorkspaceContext
@@ -33,6 +39,15 @@ from codeagent.tools.atomic_edit import build_atomic_edit_tool
 from codeagent.tools.command import build_command_tool, command_tool_schema
 from codeagent.workspace.git_worktree import GitWorktreeError, GitWorktreeManager
 from codeagent.workspace.workspace import SessionWorkspaceState
+
+
+MAX_CONSECUTIVE_OUTPUT_TRUNCATIONS = 3
+MAX_CONDENSER_CALLS_PER_MODEL_STEP = 4
+MAX_SOFT_CONDENSER_CALLS_PER_MODEL_STEP = 1
+OUTPUT_TRUNCATION_CONTROL_MESSAGE = (
+    "上一次响应达到输出长度上限，任务尚未完成。不要扩展或重新推演已有分析；"
+    "请依据现有证据立即执行一个具体的下一步工具调用，不要重复已经完成的探索。"
+)
 
 
 @dataclass
@@ -126,8 +141,9 @@ class AgentRunner:
             and (event.payload.get("kind") == "workspace_upgrade" or event.payload.get("reason") == "创建隔离 Agent worktree")
             for event in events
         )
-        repair_messages: list[dict] = []
+        repair_messages = self._protocol_continuation_messages()
         control_messages = self._continuation_messages()
+        truncation_messages = self._truncation_continuation_messages()
         protocol_failures = 0
         previous_failure: tuple[str, str] | None = None
         budget = current_turn_budget(self.session_store.read_events(), self.config.max_model_steps_per_user_turn)
@@ -140,27 +156,52 @@ class AgentRunner:
         for _ in range(slice_limit):
             if self.cancellation_callback():
                 return self._terminate_stopped(steps)
-            try:
-                messages = self.context_manager.build(
-                    model_capabilities=ModelCapabilities(
-                        context_limit=self.model_config.context_limit,
-                        generation_reserve=self.model_config.max_tokens or 4_000,
-                    ),
-                    current_turn_transient_messages=tuple(control_messages + repair_messages),
-                )
-            except ContextBudgetExceeded as exc:
-                return self._terminate_context_budget(steps, exc)
+            caps = ModelCapabilities(
+                context_limit=self.model_config.context_limit,
+                generation_reserve=self.model_config.max_tokens or 4_000,
+            )
+            prepared = self._prepare_context(
+                caps,
+                tuple(control_messages + repair_messages + truncation_messages),
+            )
+            if isinstance(prepared, list):  # 测试/旧嵌入方的临时 renderer seam。
+                messages = prepared
+            elif isinstance(prepared, ContextBudgetExceeded):
+                return self._terminate_context_budget(steps, prepared)
+            else:
+                messages = prepared.messages
+            if self.cancellation_callback():
+                return self._terminate_stopped(steps)
             request = ModelRequest(
                 messages=messages,
                 tools=self.tools.as_model_tools(),
                 model=self.model_config.resolved_model,
                 temperature=self.model_config.temperature,
                 max_tokens=self.model_config.max_tokens,
+                reasoning_effort=self._main_request_reasoning_effort(
+                    recovering_output_truncation=bool(truncation_messages)
+                ),
             )
             try:
                 response = self.model.complete(request)
             except MalformedToolArgumentsError as exc:
-                self._record_model_usage(exc.usage, exc.provider_request_id)
+                self._record_model_usage(
+                    exc.usage, exc.provider_request_id, exc.finish_reason,
+                    reasoning_effort=request.reasoning_effort,
+                )
+                if exc.finish_reason == "length":
+                    terminated = self._record_output_truncation(
+                        steps, text=exc.text, reasoning_content=exc.reasoning_content,
+                        finish_reason=exc.finish_reason, detection="provider_finish_reason",
+                        budget_limit=budget.limit,
+                    )
+                    if terminated is not None:
+                        return terminated
+                    truncation_messages[:] = [{"role": "system", "content": OUTPUT_TRUNCATION_CONTROL_MESSAGE}]
+                    repair_messages.clear()
+                    protocol_failures = 0
+                    previous_failure = None
+                    continue
                 protocol_failures += 1
                 fingerprint = (exc.tool_name, exc.raw_arguments)
                 self.session_store.append_event("model_protocol_error", {
@@ -180,9 +221,27 @@ class AgentRunner:
                     "请依据工具 schema 重新生成完整工具调用，并确保所有字符串使用合法 JSON 转义。"
                 )})
                 continue
-            self._record_model_usage(response.usage, response.provider_request_id)
+            self._record_model_usage(
+                response.usage, response.provider_request_id, response.finish_reason,
+                reasoning_effort=request.reasoning_effort,
+            )
             if self.cancellation_callback():
                 return self._terminate_stopped(steps)
+            truncation_detection = self._output_truncation_detection(response, request)
+            if truncation_detection is not None and not response.tool_calls:
+                terminated = self._record_output_truncation(
+                    steps, text=response.text, reasoning_content=response.reasoning_content,
+                    finish_reason=response.finish_reason, detection=truncation_detection,
+                    budget_limit=budget.limit,
+                )
+                if terminated is not None:
+                    return terminated
+                truncation_messages[:] = [{"role": "system", "content": OUTPUT_TRUNCATION_CONTROL_MESSAGE}]
+                repair_messages.clear()
+                protocol_failures = 0
+                previous_failure = None
+                continue
+            repair_messages.clear()
             if not response.tool_calls:
                 final = response.text or ""
                 payload = {"message": final}
@@ -198,6 +257,7 @@ class AgentRunner:
             if response.reasoning_content is not None:
                 tool_payload["reasoning_content"] = response.reasoning_content
             self.session_store.append_event("assistant_tool_calls", tool_payload)
+            truncation_messages.clear()
             if response.text:
                 self._notify({"type": "assistant_progress", "message": response.text})
             for call in response.tool_calls:
@@ -223,6 +283,277 @@ class AgentRunner:
         text = f"内部执行切片结束；继续同一 UserTurn（已用 {used}/{budget.limit}）。"
         return RunnerOutput(final_text=text, steps=steps, status="slice_exhausted", steps_used_in_turn=used)
 
+    def _prepare_context(
+        self, caps: ModelCapabilities, transient_messages: tuple[dict, ...],
+    ) -> ReadyContext | ContextBudgetExceeded:
+        """在一次主 ModelStep 前有界编排 semantic condensation。"""
+        calls = 0
+        soft_calls = 0
+        suppress_soft = False
+        plan_max_atoms: int | None = None
+        consecutive_invalid = 0
+        request_failures: dict[str, int] = {}
+        retry_plan: CondensationPlan | None = None
+        valid_before_estimate: int | None = None
+
+        while True:
+            try:
+                result = self.context_manager.build(
+                    model_capabilities=caps,
+                    current_turn_transient_messages=transient_messages,
+                    suppress_soft_trigger=suppress_soft,
+                    plan_max_atoms=plan_max_atoms,
+                )
+            except ContextBudgetExceeded as exc:  # 兼容旧 renderer seam。
+                return exc
+            if isinstance(result, list):
+                report = self.context_manager.last_budget_report or self._compat_budget_report(caps)
+                return ReadyContext(result, report)
+            if isinstance(result, ReadyContext):
+                return result
+            if isinstance(result, ContextBudgetExceeded):
+                return result
+            if valid_before_estimate is not None and result.budget_report.estimated_tokens >= valid_before_estimate:
+                return ContextBudgetExceeded(result.budget_report, "condensation_no_progress")
+            valid_before_estimate = None
+            if calls >= MAX_CONDENSER_CALLS_PER_MODEL_STEP:
+                return ContextBudgetExceeded(result.budget_report, "condensation_cycles_exhausted")
+            if not result.plan.hard and soft_calls >= MAX_SOFT_CONDENSER_CALLS_PER_MODEL_STEP:
+                suppress_soft = True
+                continue
+
+            plan = retry_plan or result.plan
+            retry_plan = None
+            if plan.expected_event_seq != int(self.session_store.read_meta().get("event_seq", 0)):
+                plan = replace(plan, expected_event_seq=int(self.session_store.read_meta().get("event_seq", 0)))
+            calls += 1
+            if not plan.hard:
+                soft_calls += 1
+            status, failure_code = self._call_condenser(plan, caps, calls)
+            if status == "valid_completion":
+                consecutive_invalid = 0
+                plan_max_atoms = None
+                valid_before_estimate = result.budget_report.estimated_tokens
+                continue
+            if status == "request_failed":
+                count = request_failures.get(plan.plan_id, 0) + 1
+                request_failures[plan.plan_id] = count
+                if not plan.hard:
+                    suppress_soft = True
+                    continue
+                if count < 2 and calls < MAX_CONDENSER_CALLS_PER_MODEL_STEP:
+                    retry_plan = replace(plan, expected_event_seq=int(self.session_store.read_meta().get("event_seq", 0)))
+                    continue
+                return ContextBudgetExceeded(result.budget_report, "condensation_request_failed")
+
+            consecutive_invalid += 1
+            if not plan.hard:
+                suppress_soft = True
+                continue
+            if consecutive_invalid >= 2:
+                return ContextBudgetExceeded(result.budget_report, "condensation_invalid_completion")
+            if failure_code == "stale_frontier":
+                plan_max_atoms = None
+                continue
+            smaller = len(plan.source_atoms) - 1
+            if smaller <= 0:
+                return ContextBudgetExceeded(result.budget_report, "condensation_no_smaller_atom")
+            plan_max_atoms = smaller
+
+    def _call_condenser(
+        self, plan: CondensationPlan, caps: ModelCapabilities, call_index: int,
+    ) -> tuple[str, str | None]:
+        attempt_id = "cond-attempt-" + uuid.uuid4().hex[:16]
+        request = ModelRequest(
+            messages=list(plan.source_messages),
+            tools=[],
+            tool_choice="none",
+            model=self.model_config.resolved_model,
+            temperature=0,
+            max_tokens=caps.summary_max_tokens,
+            purpose="context_condenser",
+            reasoning_effort=self._condenser_reasoning_effort(),
+        )
+        started = time.monotonic()
+        try:
+            response = self.model.complete(request)
+        except Exception as exc:
+            latency = time.monotonic() - started
+            self._append_condensation_failure(
+                plan, attempt_id, call_index, "request_failed", type(exc).__name__, latency,
+                usage=None, provider_request_id=None, finish_reason=None, output_text=None,
+                reasoning_content=None,
+            )
+            return "request_failed", type(exc).__name__
+        latency = time.monotonic() - started
+        failure_code = self._invalid_summary_reason(response, caps)
+        if failure_code is not None:
+            self._append_condensation_failure(
+                plan, attempt_id, call_index, "invalid_completion", failure_code, latency,
+                usage=response.usage, provider_request_id=response.provider_request_id,
+                finish_reason=response.finish_reason, output_text=response.text,
+                reasoning_content=response.reasoning_content,
+            )
+            return "invalid_completion", failure_code
+
+        summary = (response.text or "").strip()
+        usage_payload = self._usage_event_payload(
+            response.usage, response.provider_request_id, response.finish_reason, latency,
+            purpose="context_condenser",
+        )
+        attempt_payload = self._condensation_attempt_payload(
+            plan, attempt_id, call_index, "valid_completion", None, latency,
+            response.usage, response.provider_request_id, response.finish_reason, summary,
+            response.reasoning_content,
+        )
+        success_payload = {
+            "attempt_id": attempt_id,
+            "previous_summary_event_id": plan.previous_summary_event_id,
+            "newly_covered_from_seq": self._seq_from_event_id(plan.source_event_ids[0]),
+            "newly_covered_to_seq": self._seq_from_event_id(plan.source_event_ids[-1]),
+            "newly_covered_event_ids": list(plan.source_event_ids),
+            "newly_covered_event_ids_sha256": plan.candidate_source_event_ids_sha256,
+            "logical_covered_event_count": (
+                plan.previous_logical_covered_event_count + len(plan.source_event_ids)
+            ),
+            "logical_frontier_source_event_id": plan.source_event_ids[-1],
+            "summary": summary,
+            "reason": list(plan.trigger),
+            "algorithm_version": SUMMARY_ALGORITHM_VERSION,
+            "input_estimated_tokens": plan.input_estimated_tokens,
+            "summary_estimated_tokens": self.context_manager.estimator.estimate(summary),
+        }
+        try:
+            self.session_store.append_derived_events([
+                ("model_usage", usage_payload),
+                ("context_condensation_attempt", attempt_payload),
+                ("context_condensed", success_payload),
+            ], turn_id=plan.turn_id, expected_event_seq=plan.expected_event_seq)
+        except SessionStoreError:
+            # response 合法但 plan frontier 已失效；不得让它进入 rolling chain。
+            self._append_condensation_failure(
+                replace(plan, expected_event_seq=int(self.session_store.read_meta().get("event_seq", 0))),
+                attempt_id, call_index, "invalid_completion", "stale_frontier", latency,
+                usage=response.usage, provider_request_id=response.provider_request_id,
+                finish_reason=response.finish_reason, output_text=summary,
+                reasoning_content=response.reasoning_content,
+            )
+            return "invalid_completion", "stale_frontier"
+        return "valid_completion", None
+
+    def _append_condensation_failure(
+        self, plan: CondensationPlan, attempt_id: str, call_index: int, status: str,
+        failure_code: str, latency: float, *, usage: TokenUsage | None,
+        provider_request_id: str | None, finish_reason: str | None, output_text: str | None,
+        reasoning_content: str | None,
+    ) -> None:
+        usage_payload = self._usage_event_payload(
+            usage, provider_request_id, finish_reason, latency, purpose="context_condenser",
+        )
+        attempt_payload = self._condensation_attempt_payload(
+            plan, attempt_id, call_index, status, failure_code, latency, usage,
+            provider_request_id, finish_reason, output_text,
+            reasoning_content,
+        )
+        try:
+            self.session_store.append_derived_events([
+                ("model_usage", usage_payload),
+                ("context_condensation_attempt", attempt_payload),
+            ], turn_id=plan.turn_id, expected_event_seq=plan.expected_event_seq)
+        except SessionStoreError:
+            self.session_store.append_derived_events([
+                ("model_usage", usage_payload),
+                ("context_condensation_attempt", {**attempt_payload, "failure_code": "stale_frontier"}),
+            ], turn_id=plan.turn_id)
+
+    def _condensation_attempt_payload(
+        self, plan: CondensationPlan, attempt_id: str, call_index: int, status: str,
+        failure_code: str | None, latency: float, usage: TokenUsage | None,
+        provider_request_id: str | None, finish_reason: str | None, output_text: str | None,
+        reasoning_content: str | None,
+    ) -> dict:
+        text = output_text or ""
+        payload = {
+            "attempt_id": attempt_id,
+            "plan_id": plan.plan_id,
+            "call_index_for_next_model_step": call_index,
+            "previous_summary_event_id": plan.previous_summary_event_id,
+            "candidate_source_event_ids_sha256": plan.candidate_source_event_ids_sha256,
+            "candidate_source_event_ids": list(plan.source_event_ids),
+            "trigger": list(plan.trigger),
+            "hard": plan.hard,
+            "request_estimated_tokens_before": plan.request_estimated_tokens_before,
+            "condenser_input_estimated_tokens": plan.input_estimated_tokens,
+            "status": status,
+            "failure_code": failure_code,
+            "provider": self.model_config.provider,
+            "model": self.model_config.resolved_model,
+            "provider_request_id": provider_request_id,
+            "finish_reason": finish_reason,
+            "usage": usage.model_dump() if usage is not None else None,
+            "latency_seconds": latency,
+            "output_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else None,
+            "output_chars": len(text),
+        }
+        if reasoning_content is not None:
+            payload["reasoning_content"] = reasoning_content
+        return payload
+
+    def _usage_event_payload(
+        self, usage: TokenUsage | None, provider_request_id: str | None,
+        finish_reason: str | None, latency: float, *, purpose: str,
+    ) -> dict:
+        return {
+            "provider": self.model_config.provider,
+            "model": self.model_config.resolved_model,
+            "purpose": purpose,
+            "provider_request_id": provider_request_id,
+            "finish_reason": finish_reason,
+            "usage": usage.model_dump() if usage is not None else None,
+            "latency_seconds": latency,
+            "context_reductions": ["semantic_condensation_applied"] if purpose == "context_condenser" else [],
+        }
+
+    def _invalid_summary_reason(self, response: LLMResponse, caps: ModelCapabilities) -> str | None:
+        if response.finish_reason != "stop":
+            return "missing_finish_reason" if response.finish_reason is None else f"finish_reason_{response.finish_reason}"
+        if response.tool_calls:
+            return "tool_calls"
+        if not (response.text or "").strip():
+            return "empty_summary"
+        if self.context_manager.estimator.estimate((response.text or "").strip()) > caps.summary_max_tokens:
+            return "summary_too_large"
+        return None
+
+    def _condenser_reasoning_effort(self) -> str | None:
+        if not self.model_config.reasoning_enabled:
+            return None
+        if self.model_config.provider == "glm" and self.model_config.resolved_model == "glm-5.3":
+            return "low"
+        if self.model_config.provider == "deepseek":
+            return "low"
+        return "high"
+
+    def _main_request_reasoning_effort(self, *, recovering_output_truncation: bool) -> str | None:
+        """截断续写暂时降低推理强度；正常主请求继续使用 client 的配置值。"""
+        if not recovering_output_truncation or not self.model_config.reasoning_enabled:
+            return None
+        if (self.model_config.provider == "glm"
+                and self.model_config.resolved_model == "glm-5.3"):
+            return "low"
+        if self.model_config.provider == "deepseek":
+            return "low"
+        return None
+
+    @staticmethod
+    def _seq_from_event_id(value: str) -> int:
+        return int(value.split(":", 1)[1])
+
+    @staticmethod
+    def _compat_budget_report(caps: ModelCapabilities):
+        from codeagent.context.models import BudgetReport
+        return BudgetReport(0, caps.usable_input_budget)
+
     def _wait_for_budget(self, steps: list[dict], used: int) -> RunnerOutput:
         budget = current_turn_budget(self.session_store.read_events(), self.config.max_model_steps_per_user_turn)
         text = f"本轮已使用 {used}/{budget.limit} 个模型步骤。可提高本轮预算后继续；当前修改与原始请求已保留。"
@@ -246,6 +577,7 @@ class AgentRunner:
         )
         self.session_store.append_event("turn_terminated", {
             "reason": "context_budget_exceeded",
+            "context_budget_reason": exc.reason,
             "message": text,
             "estimated_tokens": report.estimated_tokens,
             "usable_tokens": report.usable_tokens,
@@ -284,7 +616,7 @@ class AgentRunner:
         events = self.session_store.read_events()
         turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
         return sum(event.turn_id == turn_id and event.type in {
-            "assistant_tool_calls", "assistant_message", "model_protocol_error",
+            "assistant_tool_calls", "assistant_message", "model_protocol_error", "model_output_truncated",
         } for event in events)
 
     def _has_incomplete_turn(self) -> bool:
@@ -311,17 +643,123 @@ class AgentRunner:
             "请根据现有工具记录和 Runtime Snapshot 继续；已有足够证据时优先编辑和运行用户要求的验证。"
         )}]
 
+    def _truncation_continuation_messages(self) -> list[dict]:
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        latest_step = next((event for event in reversed(events) if event.turn_id == turn_id and event.type in {
+            "assistant_tool_calls", "assistant_message", "model_protocol_error", "model_output_truncated",
+        }), None)
+        if latest_step is None or latest_step.type != "model_output_truncated":
+            return []
+        return [{"role": "system", "content": OUTPUT_TRUNCATION_CONTROL_MESSAGE}]
+
+    def _protocol_continuation_messages(self) -> list[dict]:
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        latest = next((event for event in reversed(events) if event.turn_id == turn_id and event.type in {
+            "assistant_tool_calls", "assistant_message", "model_protocol_error", "model_output_truncated",
+        }), None)
+        if latest is None or latest.type != "model_protocol_error":
+            return []
+        payload = latest.payload
+        return [{"role": "system", "content": (
+            f"上一响应中 {payload.get('tool', '')} 的 arguments 不是合法 JSON：{payload.get('message', '')} "
+            f"(line {payload.get('line')}, column {payload.get('column')})。工具尚未执行，workspace 未发生变化。"
+            "请依据工具 schema 重新生成完整工具调用，并确保所有字符串使用合法 JSON 转义。"
+        )}]
+
     def _notify(self, event: dict) -> None:
         if self.progress_callback is not None:
             self.progress_callback(event)
 
-    def _record_model_usage(self, usage: TokenUsage | None, provider_request_id: str | None) -> None:
+    def _record_model_usage(
+        self, usage: TokenUsage | None, provider_request_id: str | None, finish_reason: str | None = None,
+        *, reasoning_effort: str | None = None,
+    ) -> None:
+        report = self.context_manager.last_budget_report
         self.session_store.append_event("model_usage", {
             "provider": self.model_config.provider,
             "model": self.model_config.resolved_model,
+            "purpose": "main_agent",
             "provider_request_id": provider_request_id,
+            "finish_reason": finish_reason,
+            "reasoning_effort": reasoning_effort or self.model_config.resolved_reasoning_effort,
             "usage": usage.model_dump() if usage is not None else None,
+            "context_reductions": list(report.reductions) if report is not None else [],
+            "context": ({
+                "estimated_tokens": report.estimated_tokens,
+                "usable_tokens": report.usable_tokens,
+                "fixed_request_tokens": report.fixed_request_tokens,
+                "history_tokens": report.history_tokens,
+                "uncovered_context_event_count": report.uncovered_context_event_count,
+                "chain_tip_event_id": report.chain_tip_event_id,
+                "anchor_source_event_id": report.anchor_source_event_id,
+                "retained_raw_source_event_ids": list(report.retained_raw_source_event_ids),
+                "mandatory_protocol_atom_id": report.mandatory_protocol_atom_id,
+            } if report is not None else None),
         })
+
+    @staticmethod
+    def _output_truncation_detection(response: LLMResponse, request: ModelRequest) -> str | None:
+        if response.finish_reason == "length":
+            return "provider_finish_reason"
+        if response.finish_reason is not None:
+            return None
+        output_tokens = response.usage.output_tokens if response.usage is not None else None
+        if (not response.text and not response.tool_calls and request.max_tokens is not None
+                and output_tokens is not None and output_tokens >= request.max_tokens):
+            return "usage_fallback"
+        return None
+
+    def _record_output_truncation(
+        self, steps: list[dict], *, text: str | None, reasoning_content: str | None,
+        finish_reason: str | None, detection: str, budget_limit: int,
+    ) -> RunnerOutput | None:
+        prior_count = self._consecutive_output_truncations()
+        count = prior_count + 1
+        payload = {
+            "message": text or "",
+            "finish_reason": finish_reason,
+            "detection": detection,
+            "consecutive_count": count,
+            "max_consecutive_output_truncations": MAX_CONSECUTIVE_OUTPUT_TRUNCATIONS,
+        }
+        if reasoning_content is not None:
+            payload["reasoning_content"] = reasoning_content
+        self.session_store.append_event("model_output_truncated", payload)
+        used = self._steps_used_in_current_turn()
+        if used >= budget_limit:
+            return self._wait_for_budget(steps, used)
+        if count < MAX_CONSECUTIVE_OUTPUT_TRUNCATIONS:
+            return None
+        message = (
+            f"模型连续 {count} 次达到输出长度上限，未形成完整工具调用或最终回答；"
+            "当前任务未完成，Session 与 workspace 已保留。"
+        )
+        self.session_store.append_event("turn_terminated", {
+            "reason": "output_truncated", "message": message,
+            "consecutive_output_truncations": count,
+            "steps_used_in_turn": used,
+        })
+        return RunnerOutput(
+            final_text=message, steps=steps, status="output_truncated", steps_used_in_turn=used,
+        )
+
+    def _consecutive_output_truncations(self) -> int:
+        events = self.session_store.read_events()
+        turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
+        count = 0
+        for event in reversed(events):
+            if event.turn_id != turn_id:
+                continue
+            if event.type not in {
+                "assistant_tool_calls", "assistant_message", "model_protocol_error", "model_output_truncated",
+            }:
+                continue
+            if event.type != "model_output_truncated":
+                break
+            count += 1
+        return count
 
     def _handle_tool_call(self, call: LLMToolCall) -> dict:
         self.session_store.append_event("tool_requested", call.model_dump())

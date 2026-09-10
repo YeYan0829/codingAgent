@@ -10,6 +10,13 @@ class FakeLLM(BaseModelClient):
     """用于本地验证 runtime loop 的确定性假模型。"""
 
     def complete(self, request: ModelRequest) -> LLMResponse:
+        if request.purpose == "context_condenser":
+            source = request.messages[-1].get("content", "") if request.messages else ""
+            return LLMResponse(
+                text=("LAST_KNOWN_STATE:\n已压缩较旧的可见执行历史。\n"
+                      "IMPORTANT_EVIDENCE:\n" + str(source)[-1200:] + "\nPENDING:\n继续当前任务。"),
+                finish_reason="stop",
+            )
         messages = request.messages
         observations = [m for m in messages if m.get("role") == "tool"]
         if not observations:

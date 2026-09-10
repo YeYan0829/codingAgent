@@ -29,6 +29,7 @@ class LLMResponse(BaseModel):
     tool_calls: list[LLMToolCall] = Field(default_factory=list)
     usage: TokenUsage | None = None
     provider_request_id: str | None = None
+    finish_reason: str | None = None
 
 
 class ModelTool(BaseModel):
@@ -44,6 +45,8 @@ class ModelRequest(BaseModel):
     model: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    purpose: str = "main_agent"
+    reasoning_effort: str | None = None
 
 
 class BaseModelClient(ABC):
@@ -54,7 +57,9 @@ class BaseModelClient(ABC):
 
 class MalformedToolArgumentsError(ValueError):
     def __init__(self, tool_name: str, message: str, line: int, column: int, raw_arguments: str,
-                 *, usage: TokenUsage | None = None, provider_request_id: str | None = None) -> None:
+                 *, usage: TokenUsage | None = None, provider_request_id: str | None = None,
+                 finish_reason: str | None = None, text: str | None = None,
+                 reasoning_content: str | None = None) -> None:
         super().__init__(message)
         self.tool_name = tool_name
         self.message = message
@@ -63,3 +68,6 @@ class MalformedToolArgumentsError(ValueError):
         self.raw_arguments = raw_arguments
         self.usage = usage
         self.provider_request_id = provider_request_id
+        self.finish_reason = finish_reason
+        self.text = text
+        self.reasoning_content = reasoning_content

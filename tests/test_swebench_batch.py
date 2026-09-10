@@ -125,7 +125,7 @@ def test_normally_completed_unresolved_is_persisted_and_skipped_on_resume(tmp_pa
     summary = make_runner(tmp_path, first).run("batch-unresolved")
     assert summary["outcomes"] == {
         "resolved": 0, "unresolved": 3, "budget_exhausted": 0,
-        "provider_error": 0, "infra_error": 0, "not_started": 0,
+        "output_truncated": 0, "provider_error": 0, "infra_error": 0, "not_started": 0,
     }
     state = next((tmp_path / "out/batch-unresolved/tasks").glob("0000-*/task-state.json"))
     result = json.loads(state.read_text())["result"]
@@ -145,7 +145,7 @@ def test_failed_task_records_infra_outcome_and_not_started_count(tmp_path):
     summary = json.loads((tmp_path / "out/batch-infra/batch-summary.json").read_text())
     assert summary["outcomes"] == {
         "resolved": 1, "unresolved": 0, "budget_exhausted": 0,
-        "provider_error": 0, "infra_error": 1, "not_started": 1,
+        "output_truncated": 0, "provider_error": 0, "infra_error": 1, "not_started": 1,
     }
 
 
@@ -250,7 +250,14 @@ def test_manifest_records_identity_dirty_runtime_and_stable_fingerprint(tmp_path
     assert one["selection_sha256"] == file_sha256(selection)
     assert one["runtime"]["git_commit"] and one["runtime"]["dirty"] is False
     assert one["runtime"]["generation_reserve"] == 123 and one["runtime"]["max_model_steps_per_user_turn"] == 7
-    assert one["model"]["reasoning"] == {"enabled": True, "effort": "max"}
+    assert one["model"]["reasoning"] == {
+        "enabled": True, "effort": "max",
+        "immediate_output_truncation_recovery_effort": "max",
+        "restore_after_recovery": "max", "clear_thinking": True,
+    }
+    assert one["runtime"]["context_reduction"] == "semantic-condensation-v1"
+    assert one["runtime"]["context"]["max_events"] == 80
+    assert one["runtime"]["condenser"]["max_output_tokens"] == 2048
     serialized = json.dumps(one).lower()
     assert "secret" not in serialized and "api_key" not in serialized
     two = build_run_manifest(run_id="other", selection_path=selection, selection_id="s", model=model,
@@ -262,3 +269,15 @@ def test_manifest_records_identity_dirty_runtime_and_stable_fingerprint(tmp_path
     dirty = build_run_manifest(run_id="r", selection_path=selection, selection_id="s", model=model,
         runtime=runtime, endpoint_identity="x", swebench_commit=None, runtime_root=repo)
     assert dirty["runtime"]["dirty"] is True
+
+
+def test_resume_rejects_different_evaluation_commit(tmp_path):
+    runner = make_runner(tmp_path, FakeHarness())
+    runner.run("batch-commit")
+    manifest_path = tmp_path / "out/batch-commit/run-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["runtime"]["git_commit"] = "different"
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(BatchCompatibilityError, match="runtime.git_commit"):
+        make_runner(tmp_path, FakeHarness()).run("batch-commit")

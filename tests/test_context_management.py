@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from codeagent.context.builder import ConservativeTokenEstimator, ContextManager
-from codeagent.context.models import ContextBudgetExceeded, ModelCapabilities
+from codeagent.context.models import (
+    CondensationRequired, ContextBudgetExceeded, ModelCapabilities, ReadyContext,
+)
 from codeagent.context.projector import ContextNotReady, ProjectionError, project_events
 from codeagent.runtime.approval import AutoApprovalGate
 from codeagent.runtime.artifacts import CommandArtifactStore
@@ -102,7 +104,7 @@ def test_orphan_and_duplicate_terminal_outcomes_fail_projection(tmp_path):
         project_events(duplicate.read_events())
 
 
-def test_old_execution_becomes_residue_without_body(tmp_path):
+def test_old_execution_remains_continuous_raw_until_semantic_condensation(tmp_path):
     root = _git_workspace(tmp_path)
     store = SessionStore(root).create()
     store.append_event("user_message", {"message": "first"})
@@ -111,11 +113,11 @@ def test_old_execution_becomes_residue_without_body(tmp_path):
     store.append_event("assistant_message", {"message": "done"})
     store.append_event("user_message", {"message": "continue"})
     (root / "a.py").write_text("changed now\n", encoding="utf-8")
-    rendered = ContextManager(store).build()
-    residue = next(item["content"] for item in rendered if item["role"] == "system" and "历史执行记录" in item["content"])
-    assert "SECRET BODY" not in residue
-    assert "a.py" in residue and "sha256" in residue
-    assert '"changed_since_read": true' in residue
+    result = ContextManager(store).build()
+    assert isinstance(result, ReadyContext)
+    rendered = json.dumps(result.messages, ensure_ascii=False)
+    assert "SECRET BODY" in rendered
+    assert "historical_reduction" not in rendered
 
 
 def test_context_does_not_reread_source_into_runtime_snapshot(tmp_path):
@@ -125,7 +127,7 @@ def test_context_does_not_reread_source_into_runtime_snapshot(tmp_path):
     store.append_event("assistant_tool_calls", {"tool_calls": [{"call_id": "c1", "name": "read_file", "arguments": {"path": "a.py", "start_line": 1, "end_line": 2}}]})
     store.append_event("tool_result", {"call_id": "c1", "result": {"ok": True, "content": "old", "metadata": {"path": "a.py", "start_line": 1, "end_line": 2}}})
     (root / "a.py").write_text("new current\nline2\n", encoding="utf-8")
-    messages = ContextManager(store).build()
+    messages = ContextManager(store).build().messages
     snapshot = messages[2]["content"]
     rendered = json.dumps(messages, ensure_ascii=False)
     assert "new current" not in rendered
@@ -196,22 +198,24 @@ def test_budget_evicts_whole_completed_turns_and_keeps_current(tmp_path):
         store.append_event("assistant_message", {"message": f"answer-{index}"})
     store.append_event("user_message", {"message": "current request"})
     manager = ContextManager(store)
-    messages = manager.build(model_capabilities=ModelCapabilities(context_limit=7_000, generation_reserve=1000,
+    result = manager.build(model_capabilities=ModelCapabilities(context_limit=7_000, generation_reserve=1000,
         continuation_reserve=1000, safety_margin=1000))
-    assert any(item.get("content") == "current request" for item in messages)
-    assert manager.last_budget_report and manager.last_budget_report.dropped_turn_ids
-    assert manager.last_budget_report.estimated_tokens <= manager.last_budget_report.usable_tokens
+    assert isinstance(result, CondensationRequired)
+    assert result.plan.source_event_ids[0] == "seq:2"
+    assert "seq:12" not in result.plan.source_event_ids
+    assert manager.last_budget_report and not manager.last_budget_report.dropped_turn_ids
 
 
 def test_minimum_context_over_budget_fails_with_breakdown(tmp_path):
     root = _git_workspace(tmp_path)
     store = SessionStore(root).create()
     store.append_event("user_message", {"message": "x" * 5000})
-    with pytest.raises(ContextBudgetExceeded) as caught:
-        ContextManager(store).build(model_capabilities=ModelCapabilities(context_limit=1000, generation_reserve=100,
-            continuation_reserve=100, safety_margin=100))
-    assert caught.value.report.estimated_tokens > caught.value.report.usable_tokens
-    report = caught.value.report
+    result = ContextManager(store).build(model_capabilities=ModelCapabilities(
+        context_limit=1000, generation_reserve=100, continuation_reserve=100, safety_margin=100,
+    ))
+    assert isinstance(result, ContextBudgetExceeded)
+    assert result.report.estimated_tokens > result.report.usable_tokens
+    report = result.report
     categories = {item.category for item in report.minimum_set_components}
     assert {"system_prompt", "runtime_snapshot", "current_user_message", "tool_definitions"} <= categories
     assert report.component_estimated_tokens == sum(
@@ -232,12 +236,11 @@ def test_minimum_breakdown_identifies_large_observation_without_copying_content(
         "ok": True, "content": "SECRET_SOURCE_BODY" * 1000,
         "metadata": {"path": "a.py", "sha256": "digest"},
     }})
-    with pytest.raises(ContextBudgetExceeded) as caught:
-        ContextManager(store).build(model_capabilities=ModelCapabilities(
-            context_limit=1000, generation_reserve=100, continuation_reserve=100, safety_margin=100,
-            preferred_recent_raw_steps=1,
-        ))
-    report = caught.value.report
+    result = ContextManager(store).build(model_capabilities=ModelCapabilities(
+        context_limit=1000, generation_reserve=100, continuation_reserve=100, safety_margin=100,
+    ))
+    assert isinstance(result, ContextBudgetExceeded)
+    report = result.report
     assert report.largest_observations[0].tool == "read_file"
     assert report.largest_observations[0].call_id == "large-read"
     assert report.largest_observations[0].path == "a.py"
@@ -260,7 +263,8 @@ def test_system_prompt_explains_temporary_observations_and_action_convergence(tm
 
     system_prompt = ContextManager(store).build()[0]["content"]
 
-    assert "工具读取结果只会在近期 Context 中暂时保留" in system_prompt
+    assert "较旧的可见执行历史可能由 Runtime 压缩" in system_prompt
+    assert "<historical_memory>" in system_prompt
     assert "足以支持一项可验证的 bugfix 时，立即" in system_prompt
     assert "不要为了获得不影响实现选择的额外确定性继续读取" in system_prompt
 
@@ -271,15 +275,16 @@ def test_desensitized_real_session_fixture_preserves_success_failure_and_resume_
     fixture = Path(__file__).parent / "fixtures" / "context_itsdangerous_events.jsonl"
     store.events_path.write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
     (root / "a.py").write_text("fixed current source\n", encoding="utf-8")
-    messages = ContextManager(store).build()
+    messages = ContextManager(store).build().messages
     rendered = json.dumps(messages, ensure_ascii=False)
     assert "继续完成测试并验证" in rendered
     assert "fixed current source" not in rendered
     assert "operation_errors" in rendered and "workspace_changed" in rendered
-    assert "old source body" not in rendered
+    assert "old source body" in rendered
+    assert "historical_reduction" not in rendered
 
 
-def test_active_turn_keeps_four_recent_steps_raw_and_older_steps_as_residue(tmp_path):
+def test_active_turn_keeps_continuous_raw_tail_without_residue(tmp_path):
     root = _git_workspace(tmp_path)
     store = SessionStore(root).create()
     store.append_event("user_message", {"message": "inspect"})
@@ -292,15 +297,15 @@ def test_active_turn_keeps_four_recent_steps_raw_and_older_steps_as_residue(tmp_
             "ok": True, "content": f"RAW-{index}", "metadata": {"path": "a.py", "sha256": "old"}
         }})
 
-    rendered = json.dumps(ContextManager(store).build(), ensure_ascii=False)
-    assert "RAW-0" not in rendered and "RAW-1" not in rendered
-    assert all(f"RAW-{index}" in rendered for index in range(2, 6))
-    tool_results = [json.loads(message["content"]) for message in ContextManager(store).build()
+    messages = ContextManager(store).build().messages
+    rendered = json.dumps(messages, ensure_ascii=False)
+    assert all(f"RAW-{index}" in rendered for index in range(6))
+    tool_results = [json.loads(message["content"]) for message in messages
                     if message["role"] == "tool"]
-    assert sum(result.get("content_retained") is False for result in tool_results) == 2
+    assert all("content_retained" not in result for result in tool_results)
 
 
-def test_recent_raw_target_can_degrade_under_hard_budget(tmp_path):
+def test_hard_budget_requires_semantic_condensation_not_raw_degradation(tmp_path):
     root = _git_workspace(tmp_path)
     store = SessionStore(root).create()
     store.append_event("user_message", {"message": "inspect"})
@@ -317,14 +322,13 @@ def test_recent_raw_target_can_degrade_under_hard_budget(tmp_path):
         }})
 
     manager = ContextManager(store)
-    messages = manager.build(model_capabilities=ModelCapabilities(
+    result = manager.build(model_capabilities=ModelCapabilities(
         context_limit=8_000, generation_reserve=1_000, continuation_reserve=1_000, safety_margin=1_000,
     ))
+    assert isinstance(result, CondensationRequired)
     assert manager.last_budget_report
-    assert "recent_raw_to_residue" in manager.last_budget_report.reductions
-    assert manager.last_budget_report.estimated_tokens <= 5_000
-    tool_results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
-    assert any(result.get("content_retained") is False for result in tool_results)
+    assert "recent_raw_to_residue" not in manager.last_budget_report.reductions
+    assert result.plan.hard is True
 
 
 def test_large_context_budget_keeps_tool_observations_bounded_and_recent(tmp_path):
@@ -345,21 +349,69 @@ def test_large_context_budget_keeps_tool_observations_bounded_and_recent(tmp_pat
         }})
 
     manager = ContextManager(store)
-    messages = manager.build(model_capabilities=ModelCapabilities(
+    result = manager.build(model_capabilities=ModelCapabilities(
         context_limit=1_000_000, generation_reserve=131_072,
     ))
+    assert isinstance(result, ReadyContext)
+    messages = result.messages
 
     assert manager.last_budget_report
-    assert manager.last_budget_report.reductions == ()
+    assert manager.last_budget_report.reductions == ("reasoning_history_omitted",)
     assert manager.last_budget_report.estimated_tokens <= manager.last_budget_report.usable_tokens
     tool_results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
-    assert sum(result.get("content_retained") is False for result in tool_results) == 8
-    raw_results = [result for result in tool_results if "content_retained" not in result]
-    assert len(raw_results) == 4
-    assert all(len(result["content"].encode("utf-8")) <= 16_000 for result in raw_results)
-    assert all(result["context_truncated"] is True for result in raw_results)
-    reasoning = [message.get("reasoning_content") for message in messages if message.get("tool_calls")]
-    assert reasoning == [f"reason-{index}" for index in range(12)]
+    assert len(tool_results) == 12
+    assert all(len(result["content"].encode("utf-8")) <= 16_000 for result in tool_results)
+    assert all(result["context_truncated"] is True for result in tool_results)
+    reasoning = [message.get("reasoning_content") for message in messages
+                 if message.get("tool_calls") and message.get("reasoning_content") is not None]
+    assert reasoning == ["reason-11"]
+    assert not any("runtime_reasoning_compaction" in str(message.get("content")) for message in messages)
+    rendered = json.dumps(messages, ensure_ascii=False)
+    assert all(f'"reasoning_content": "reason-{index}"' not in rendered for index in range(10))
+
+
+def test_completed_turn_keeps_visible_answer_but_not_reasoning_in_next_turn(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "first"})
+    store.append_event("assistant_message", {
+        "message": "visible answer", "reasoning_content": "private completed reasoning",
+    })
+    store.append_event("user_message", {"message": "second"})
+
+    manager = ContextManager(store)
+    messages = manager.build().messages
+
+    assert any(message.get("content") == "visible answer" for message in messages)
+    assert "private completed reasoning" not in json.dumps(messages, ensure_ascii=False)
+    assert manager.last_budget_report
+    assert "reasoning_history_omitted" in manager.last_budget_report.reductions
+
+
+def test_hard_budget_never_drops_latest_reasoning_tool_protocol(tmp_path):
+    root = _git_workspace(tmp_path)
+    store = SessionStore(root).create()
+    store.append_event("user_message", {"message": "inspect"})
+    for index in range(2):
+        call_id = f"read-{index}"
+        store.append_event("assistant_tool_calls", {
+            "reasoning_content": str(index) * 20_000,
+            "tool_calls": [{
+                "call_id": call_id, "name": "read_file", "arguments": {"path": "a.py"},
+            }],
+        })
+        store.append_event("tool_result", {"call_id": call_id, "result": {
+            "ok": True, "content": f"evidence-{index}", "metadata": {"path": "a.py"},
+        }})
+
+    manager = ContextManager(store)
+    result = manager.build(model_capabilities=ModelCapabilities(
+        context_limit=9_000, generation_reserve=1_000,
+        continuation_reserve=1_000, safety_margin=1_000,
+    ))
+    assert isinstance(result, CondensationRequired)
+    assert "reasoning_history_omitted" in result.budget_report.reductions
+    assert all(atom.atom_id != "model-step:step-5" for atom in result.plan.source_atoms)
 
 
 def test_observation_bounding_is_raw_and_preserves_metadata(tmp_path):
@@ -374,7 +426,7 @@ def test_observation_bounding_is_raw_and_preserves_metadata(tmp_path):
         "metadata": {"path": "a.py", "returned_range": [1, 200], "sha256": "digest"},
     }})
 
-    tool_message = next(message for message in ContextManager(store).build() if message["role"] == "tool")
+    tool_message = next(message for message in ContextManager(store).build().messages if message["role"] == "tool")
     result = json.loads(tool_message["content"])
     assert result["context_truncated"] is True
     assert result["metadata"]["context_limit_bytes"] == 16_000
@@ -384,7 +436,7 @@ def test_observation_bounding_is_raw_and_preserves_metadata(tmp_path):
     assert len(result["content"].encode("utf-8")) <= 16_000
 
 
-def test_legacy_command_residue_recovers_bounded_stderr_tail(tmp_path):
+def test_legacy_command_result_remains_raw_without_residue(tmp_path):
     root = _git_workspace(tmp_path)
     store = SessionStore(root).create()
     store.append_event("user_message", {"message": "run"})
@@ -394,8 +446,8 @@ def test_legacy_command_residue_recovers_bounded_stderr_tail(tmp_path):
         "metadata": {"status": "completed", "exit_code": 127}}})
     store.append_event("assistant_message", {"message": "stopped"})
     store.append_event("user_message", {"message": "what happened?"})
-    residue_message = next(item["content"] for item in ContextManager(store).build()
-                           if item["role"] == "system" and "历史执行记录" in item["content"])
-    residue = json.loads(residue_message.split("：\n", 1)[1])[0]
-    assert residue["metadata"]["exit_code"] == 127
-    assert "No such file" in residue["metadata"]["stderr_tail"]
+    messages = ContextManager(store).build().messages
+    tool = next(item for item in messages if item["role"] == "tool")
+    result = json.loads(tool["content"])
+    assert result["metadata"]["exit_code"] == 127
+    assert "No such file" in result["content"]
