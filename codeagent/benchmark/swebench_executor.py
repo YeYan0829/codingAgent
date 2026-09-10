@@ -18,6 +18,7 @@ from codeagent.runtime.command import (
     CommandResult,
     SandboxExecutionRequest,
 )
+from codeagent.runtime.command_environment import command_shell_options
 from codeagent.runtime.permissions import NetworkMode
 from codeagent.workspace.workspace import WorkspaceContext
 
@@ -287,11 +288,13 @@ class SWEbenchDockerCommandExecutor:
             if readonly:
                 value += ",readonly"
             argv.extend(("--mount", value))
+        options = command_shell_options(request.command.purpose)
+        pipefail = " " + " ".join(options) if options else ""
         wrapper = (
             'printf started > "$1"; '
             'if [ -f /opt/miniconda3/etc/profile.d/conda.sh ]; then '
             'source /opt/miniconda3/etc/profile.d/conda.sh && conda activate testbed; fi; '
-            'exec /bin/bash --noprofile --norc -c "$2"'
+            f'exec /bin/bash --noprofile --norc{pipefail} -c "$2"'
         )
         container_marker = container_home / marker.name
         argv.extend((

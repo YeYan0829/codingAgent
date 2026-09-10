@@ -19,7 +19,8 @@ def command_tool_schema() -> dict:
                         "cwd": {"type": "string", "default": ".",
                                 "description": "相对于 Runtime Snapshot active_workspace 的目录；省略时为 Candidate 根目录"},
                         "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": CommandLimits.MAX_TIMEOUT_SECONDS},
-                        "purpose": {"type": "string", "enum": ["utility", "validation"], "default": "utility"},
+                        "purpose": {"type": "string", "enum": ["utility", "validation"], "default": "utility",
+                                    "description": "证明修改正确性的测试/检查必须使用 validation；该模式启用 Bash pipefail，并可形成当前 revision 的验证证据。普通探索命令使用 utility。"},
                         "permissions": {"type": "array", "items": permission, "maxItems": CommandLimits.MAX_PERMISSIONS, "default": []}},
                         "required": ["command"], "additionalProperties": False}
 

@@ -1,4 +1,4 @@
-# v0.5.0-rc.2 发布验收
+# v0.5.0 发布验收与下一 Evaluation Candidate
 
 本页记录 `v0.5.0-rc.2` 的历史冻结条件。之后发现输出截断和 reasoning 上下文处理问题，因此该 tag 与已有产物
 只保留为历史证据，不能直接发布；正式 HAL 50 题等待新的候选版本。
@@ -95,6 +95,10 @@ GLM-5.3 smoke 机器记录见
   `low` effort；修复后 SymPy 真实重跑在 1 次截断后成功工具续写，恢复 `high`，19 个请求完成且 official resolved。
 - 当前代码与验证已具备创建 Evaluation Candidate commit 的条件；在具体 commit SHA 冻结前，不创建新 tag、不重建
   正式 wheel/VSIX，也不启动正式 HAL 50 题。
+- 发布前审计补上 validation-only Bash `pipefail`，避免测试管道前段失败形成成功证据；UI 现在明确区分命令成功证据、
+  当前 revision 证据与独立 official grader。Context condensation 和截断恢复以 Runtime/System 项显示，不伪装成回复。
+- 无 condenser 调用按完整数值零记账；batch task-state 与 summary 暴露 `agent|grader|completed` phase 和更新时间。
+- 阶段性 HAL 运行约 30 题、26 resolved，但它来自 dirty Development Runtime 且未完成，已作废，不作为正式成绩。
 
 `v0.5.0-rc.1` 的首次正式运行发现 grader adapter 会把 empty patch 误记为基础设施失败，
 并让 resume 错误跳过。该运行已停止并作废，不计入成绩。修复进入 `v0.5.0-rc.2` 后，正式 HAL

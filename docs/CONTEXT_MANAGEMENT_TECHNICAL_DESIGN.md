@@ -1,6 +1,6 @@
 # 上下文管理与语义压缩技术设计
 
-状态：Accepted Design；Phase 1–3 已实现，Phase 4 正式 HAL 50 前验证已完成
+状态：Accepted Design；Phase 1–3 已实现；Phase 4 开发验证完成，最终 HAL 50 待 Evaluation Candidate 冻结后执行
 
 日期：2026-09-10
 
@@ -170,7 +170,7 @@ assistant/tool 协议。这是 checkpoint + task replay，不是假装严格聊�
 除 Task Anchor 例外外，一个 CCES source item 只能处于两种状态之一：被 valid summary 逻辑覆盖，或作为 raw tail
 发送；不能两者同时存在。当前 `user_message` 不作为 raw item 发送，因为 Anchor 已是它的唯一精确投影。
 
-单条 ToolResult 继续经过 `_bounded_result()`，初始上限保持 16 KiB。Bounding 是单 Observation 展示限制，不是 residue，
+单条 ToolResult 继续经过 `_bounded_item_payload()`，初始文本上限保持 16,000 字符。Bounding 是单 Observation 展示限制，不是 residue，
 不改变 Event Store 原内容。
 
 ## 6. Manipulation atom 与 cut
@@ -359,7 +359,7 @@ available_condenser_source_budget =
 
 ### 8.3 Source rendering 与 oversized atom
 
-- ToolResult 使用与主 Context 相同的 16 KiB `_bounded_result()`；不再对普通工具结果做第二层比例缩短；
+- ToolResult 使用与主 Context 相同的 16,000 字符 `_bounded_item_payload()`；不再对普通工具结果做第二层比例缩短；
 - assistant visible content、tool arguments 和真实 UserMessage 保持原文；
 - source renderer 加 source type/seq/role delimiters，不能把不同来源拼成无标识文本；
 - 如果最小单个 atom 仍超过 `available_condenser_source_budget`，返回 `condenser_atom_too_large` 并 fail closed；
@@ -638,7 +638,9 @@ Condenser call 不创建主 ModelStep，不增加 turn budget used，不执行 T
 不再构造“user + final + residues”的特殊形态，也不再常规 whole-turn eviction。新的 active UserTurn Anchor 出现后，旧
 UserMessage 恢复为普通 CCES source；若它已被 summary 覆盖则只存在于 summary。
 
-产品时间线从 Event Store 渲染，不受 Context View condensation 影响。
+产品时间线从 Event Store 渲染，不受 Context View condensation 影响。产品可以把 `context_condensed` 投影为
+Runtime/System 摘要通知，但不得作为 assistant/reasoning 消息；Current Task Anchor 不持久化为 Event，因此不得重复
+显示 UserMessage。恢复成功的 condensation attempt 默认不制造错误提示。
 
 ### 14.3 旧 Session
 
@@ -668,7 +670,7 @@ UserMessage 恢复为普通 CCES source；若它已被 summary 覆盖则只存�
 - `max_soft_condenser_calls_per_model_step=1`；
 - request failure 同 plan 最多重试一次；
 - 连续 invalid completion 最多两次；
-- 单条 ToolResult Context 展示上限 16 KiB；
+- 单条 ToolResult Context 文本展示上限 16,000 字符；
 - fixed/minimum set 超预算、oversized atom 或无进展时 fail closed。
 
 ### 15.2 Diagnostics/accounting
@@ -744,7 +746,7 @@ UserMessage 恢复为普通 CCES source；若它已被 summary 覆盖则只存�
 - tool call/result、parallel batch、preserved-thinking loop 不被切开；
 - mandatory latest protocol 与 raw renderer 按 source ID 去重，同一 call/result 在最终 messages 中恰好一次；
 - open ModelStep 拒绝进入 plan；
-- 单条 ToolResult 仍限制 16 KiB。
+- 单条 ToolResult 文本仍限制 16,000 字符。
 
 ### 17.2 Main/condenser budget
 

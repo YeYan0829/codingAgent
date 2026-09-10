@@ -19,7 +19,7 @@ _ACTIVITY_LABELS = {
     "tool_denied": "Tool denied",
     "command_requested": "Command started",
     "command_completed": "Command completed",
-    "validation_completed": "Validation passed",
+    "validation_completed": "Validation command succeeded",
     "edit_transaction": "Workspace edited",
     "edit_receipt": "Workspace edited",
     "workspace_preparing": "Preparing isolated workspace",
@@ -144,6 +144,12 @@ def global_attention(meta: dict[str, Any], events: list[SessionEvent]) -> dict[s
             "message": str(terminated.payload.get("message") or "The model or Runtime failed before producing a final response."),
             "action": "Retry the request or open CodeAgent Runtime output for details.",
         }
+    if terminated and terminated.payload.get("reason") == "context_budget_exceeded":
+        return {
+            "kind": "context_limit", "title": "Agent context limit reached",
+            "message": "Runtime could not build a safe model request after summarizing older context.",
+            "action": "Retry with a narrower request or open CodeAgent Runtime output for diagnostics.",
+        }
     return None
 
 
@@ -153,6 +159,13 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
     current: dict[str, Any] | None = None
     calls: dict[str, dict[str, Any]] = {}
     active_group: dict[str, Any] | None = None
+    truncation_notice: dict[str, Any] | None = None
+    latest_condenser_usage: dict[str, Any] | None = None
+    latest_condensation_attempt: dict[str, Any] | None = None
+    pending_context_summary: dict[str, Any] | None = None
+    latest_main_usage: SessionEvent | None = None
+    pending_truncation_record: dict[str, Any] | None = None
+    condensation_failures = 0
 
     def ensure_turn(event: SessionEvent) -> dict[str, Any] | None:
         nonlocal current
@@ -177,6 +190,13 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
             turns.append(current)
             calls = {}
             active_group = None
+            truncation_notice = None
+            latest_condenser_usage = None
+            latest_condensation_attempt = None
+            pending_context_summary = None
+            latest_main_usage = None
+            pending_truncation_record = None
+            condensation_failures = 0
             continue
         turn = ensure_turn(event)
         if turn is None:
@@ -252,6 +272,78 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
         elif event.type == "assistant_message":
             close_group()
             turn["items"].append(_markdown_item(str(event.payload.get("message", "")), event, final=True))
+        elif event.type == "model_usage" and event.payload.get("purpose") == "context_condenser":
+            latest_condenser_usage = {
+                "model": event.payload.get("model"), "usage": event.payload.get("usage"),
+                "finishReason": event.payload.get("finish_reason"),
+            }
+        elif event.type == "model_usage":
+            if pending_context_summary is not None:
+                context = event.payload.get("context")
+                if isinstance(context, dict):
+                    pending_context_summary["rebuildRequestEstimatedTokens"] = context.get("estimated_tokens")
+                pending_context_summary = None
+            if pending_truncation_record is not None:
+                pending_truncation_record.update({
+                    "recoveryReasoningEffort": event.payload.get("reasoning_effort"),
+                    "recoveryFinishReason": event.payload.get("finish_reason"),
+                    "recoveredInOneRequest": event.payload.get("finish_reason") in {"tool_calls", "stop"},
+                })
+                pending_truncation_record = None
+            latest_main_usage = event
+        elif event.type == "context_condensation_attempt":
+            latest_condensation_attempt = event.payload
+            if event.payload.get("status") != "valid_completion":
+                condensation_failures += 1
+        elif event.type == "context_condensed":
+            close_group()
+            covered = event.payload.get("newly_covered_event_ids")
+            count = len(covered) if isinstance(covered, list) else event.payload.get("logical_covered_event_count")
+            summary_tokens = event.payload.get("summary_estimated_tokens")
+            facts = []
+            if isinstance(count, int):
+                facts.append(f"{count} earlier events")
+            if isinstance(summary_tokens, int):
+                facts.append(f"~{summary_tokens} token summary")
+            context_summary = {
+                "type": "contextSummary", "tone": "system",
+                "title": "Historical context summarized",
+                "message": " · ".join(facts) or "Older Runtime history was summarized.",
+                "summary": str(event.payload.get("summary") or ""),
+                "coveredEventCount": count, "summaryEstimatedTokens": summary_tokens,
+                "inputEstimatedTokens": event.payload.get("input_estimated_tokens"),
+                "requestEstimatedTokensBefore": (
+                    latest_condensation_attempt.get("request_estimated_tokens_before")
+                    if latest_condensation_attempt else None
+                ),
+                "reason": event.payload.get("reason"), "retryCount": condensation_failures,
+                "condenser": latest_condenser_usage, "eventSeq": event.seq, "timestamp": event.ts,
+            }
+            turn["items"].append(context_summary)
+            pending_context_summary = context_summary
+            condensation_failures = 0
+        elif event.type == "model_output_truncated":
+            close_group()
+            if truncation_notice is None:
+                truncation_notice = {
+                    "type": "notice", "tone": "info", "kind": "truncationRecovery",
+                    "message": "Model output was truncated; Runtime continued automatically.",
+                    "count": 1, "records": [], "eventSeq": event.seq,
+                }
+                turn["items"].append(truncation_notice)
+            else:
+                truncation_notice["count"] += 1
+                truncation_notice["message"] = (
+                    f"Runtime recovered from {truncation_notice['count']} truncated model outputs."
+                )
+            record = {
+                "finishReason": event.payload.get("finish_reason"),
+                "originalReasoningEffort": (
+                    latest_main_usage.payload.get("reasoning_effort") if latest_main_usage else None
+                ),
+            }
+            truncation_notice["records"].append(record)
+            pending_truncation_record = record
         elif event.type in {"turn_budget_exhausted", "turn_budget_increased"}:
             close_group()
             message = (f"Step budget reached: {event.payload.get('steps_used_in_turn')}/{event.payload.get('max_model_steps_per_user_turn')}"
@@ -264,8 +356,19 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
                 for call in calls.values():
                     if call.get("status") == "running":
                         call["status"] = "cancelled"
+            reason = event.payload.get("reason")
+            message = str(event.payload.get("message") or "Execution stopped before completion")
+            if reason == "context_budget_exceeded":
+                message = "Runtime could not build a safe model request after summarizing older context."
+            elif reason == "output_truncated":
+                message = "Model output remained truncated after automatic recovery; execution stopped."
+                if truncation_notice is not None:
+                    truncation_notice["tone"] = "warning"
+                    truncation_notice["message"] = (
+                        f"Runtime attempted recovery from {truncation_notice['count']} truncated model outputs."
+                    )
             turn["items"].append({
-                "type": "notice", "tone": "warning", "message": str(event.payload.get("message") or "Execution stopped before completion"),
+                "type": "notice", "tone": "warning", "message": message,
                 "eventSeq": event.seq,
             })
         elif event.type in {"workspace_tainted", "recovery_required"}:
@@ -560,7 +663,7 @@ def action_reasons(
         elif not changes["available"]:
             reasons["canAcceptChanges"] = "There are no pending changes to apply."
         elif not validation or not validation["appliesToCurrentChanges"] or validation["status"] != "passed":
-            reasons["canAcceptChanges"] = "Current passing tests are required before changes can be applied."
+            reasons["canAcceptChanges"] = "A successful validation command for the current revision is required before changes can be applied."
     if not actions["canDiscardChanges"]:
         reasons["canDiscardChanges"] = "There are no managed changes that can be discarded."
     return reasons

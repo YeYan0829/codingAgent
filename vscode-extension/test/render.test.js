@@ -38,7 +38,7 @@ test("generated webview script is valid JavaScript", () => {
   assert.match(html, /failure\.title/);
   assert.match(html, /Show output/);
   assert.match(html, /Long output was truncated/);
-  assert.match(html, /Tests passed at that time/);
+  assert.match(html, /Validation command succeeded at that time/);
   assert.match(html, /Review Diff/);
   assert.match(html, /renderChangesHtml/);
   assert.match(html, /Waiting for your approval/);
@@ -104,6 +104,16 @@ test("reasoning profile is saved and restored from global state", async () => {
   assert.equal(restored.profile.reasoningEffort, "low");
 });
 
+test("legacy GLM profile without an effort migrates to high", () => {
+  const context = {
+    globalState: {get: () => ({provider: "glm", model: "glm-5.3", reasoningEnabled: true})},
+    secrets: {get: async () => undefined, store: async () => {}},
+  };
+  const view = new ChatViewProvider({}, "/work/current", context, {});
+
+  assert.equal(view.profile.reasoningEffort, "high");
+});
+
 test("workspace identity is normalized before session access", () => {
   assert.equal(sameWorkspace("/tmp/project/../project", "/tmp/project"), true);
   assert.equal(sameWorkspace("/tmp/project", "/tmp/other"), false);
@@ -150,6 +160,21 @@ test("embedded state escapes script-breaking markup", () => {
 
   assert.doesNotMatch(html, /<script>bad\(\)<\/script>/);
   assert.match(html, /\\u003c\/script\\u003e/);
+});
+
+test("context condensation renders as a compact system item with expandable details", () => {
+  const html = renderChat({sessionId: "s1", title: "Context", turns: [{
+    turnId: "t1", userMessage: "Continue", changedFiles: [], validation: null, attention: [],
+    items: [{type: "contextSummary", title: "Historical context summarized",
+      message: "40 earlier events · ~512 token summary", summary: "GOAL: finish fix",
+      reason: "soft_limit", retryCount: 1, condenser: {model: "glm-5.3"}, eventSeq: 7}],
+  }]}, []);
+
+  assert.match(html, /Historical context summarized/);
+  assert.match(html, /40 earlier events/);
+  assert.match(html, /Context details/);
+  assert.match(html, /GOAL: finish fix/);
+  assert.doesNotMatch(html, /agent-markdown">GOAL: finish fix/);
 });
 
 test("composer clears submitted text and restores it only after rejection", () => {
@@ -207,7 +232,7 @@ test("applied changes keep Review Diff and remove delivery actions", () => {
   assert.match(html, /Applied · 1 file/);
   assert.match(html, /calculator.py/);
   assert.match(html, /Review Diff/);
-  assert.match(html, /Tests passed at that time/);
+  assert.match(html, /Validation command succeeded at that time/);
   assert.doesNotMatch(html, /id="accept-changes"/);
   assert.doesNotMatch(html, /id="discard-changes"/);
 });
@@ -220,7 +245,7 @@ test("pending changes remain a first-class card with delivery actions", () => {
 
   assert.match(html, /Changes ready for review · 1 file/);
   assert.match(html, /Review Diff/);
-  assert.match(html, /Tests passed · up to date/);
+  assert.match(html, /Current revision has validation evidence/);
   assert.match(html, /id="accept-changes"/);
   assert.match(html, /id="discard-changes"/);
 });

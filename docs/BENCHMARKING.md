@@ -4,8 +4,8 @@ SWE-bench 用真实开源仓库的 bug 修复任务检查 Coding Agent。CodeAge
 最后交给 SWE-bench 官方评分程序判断修复是否成立。
 
 本页说明正式评测如何固定题目和运行条件。已经得到的结果见[评测结果](EVALUATION_RESULTS.md)。`v0.5.0-rc.2`
-配置保留为冻结历史，但输出截断与 reasoning 上下文问题被列为发布阻断项，不能据此启动或恢复正式成绩；下一候选版本
-尚未冻结。
+配置保留为冻结历史，但输出截断与 reasoning 上下文问题使它不能用于启动或恢复正式成绩；本次
+Evaluation Candidate commit 是下一次 HAL 50 的唯一代码基线。
 
 ## 正式题集
 
@@ -72,14 +72,13 @@ benchmark harness 使用预先允许的评测权限，不经过 VS Code 的人�
 | 每题模型调用上限 | 72 次 |
 | 项目命令默认 timeout | 120 秒 |
 | 项目命令最大 timeout | 1,800 秒 |
-| 每题 wall-clock 上限 | 10,800 秒 |
 | 完成尝试 | 1 次 |
 | 项目命令网络 | 默认关闭 |
 
 输入、输出、缓存输入和 reasoning token 是事后记账字段，不是每题总 token 上限。
 正式配置没有虚构 `max_total_tokens_per_task`。
 
-ContextManager 每次请求控制工具输出大小，单条 ToolResult 最多展示 16 KiB。较旧的连续 CCES prefix 由无工具 condenser
+ContextManager 每次请求控制工具输出大小，单条 ToolResult 的文本最多展示 16,000 字符。较旧的连续 CCES prefix 由无工具 condenser
 生成 rolling semantic summary，近期 CCES 保持连续 raw tail；不再按固定四步把结果转换成 residue，也不做 completed-turn
 eviction。当前请求通过 Current Task Anchor 精确出现一次。
 
@@ -87,9 +86,10 @@ eviction。当前请求通过 Current Task Anchor 精确出现一次。
 renderer 重复生成。更旧 reasoning 不进入主请求或 condenser，Session 审计事件仍保留原文。GLM 主请求使用
 `clear_thinking=true`；condenser 使用独立预算、最低合法 reasoning effort 和 `purpose=context_condenser`。
 
-历史机器可读配置见
-[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)。
-下一候选配置只会在 Runtime 修复、真实 Provider 回归和两道定向任务完成后冻结。
+历史 `rc.2` 配置见
+[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)。下一轮唯一有效的机器配置是
+[v0.5.0-evaluation-candidate-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json)；
+它固定 `high`、8,192 output、12/72 steps 与当前 semantic-condensation 参数，不允许沿用 `rc.2` 的 `max`/旧 context 配置。
 
 两道定向回归 selection 见
 [runtime-reasoning-regression-2.json](../benchmarks/swebench/selections/runtime-reasoning-regression-2.json)。它只包含旧轨迹中
@@ -134,6 +134,10 @@ Easy → Medium → Hard 的顺序；顺序错误会在模型请求前被拒绝�
 - Agent 和 official grader 状态
 - token usage 与成本
 - prediction、执行摘要和 official report 路径
+- `started_at`、`updated_at`、`completed_at` 与当前 `phase=agent|grader|completed`
+
+批次级 `batch-summary.json.current_task` 同步给出 instance、attempt、phase 和最新更新时间；因此完成题数暂时不增长时，
+可以区分 Agent 仍在工作、official grader 正在运行和真正停止更新。状态写入仍是原子的。
 
 结果分类至少区分：`resolved`、`unresolved`、`budget_exhausted`、`output_truncated`、`provider_error`、
 `infra_error` 和 `not_started`。
@@ -149,6 +153,12 @@ Provider 或基础设施异常会保存为 failed，并立即停止 batch，不�
 
 当前记录保留最新一次未完成状态和最终完整结果。异常请求在产生完整单题 usage 前中断时，
 其费用可能无法进入批次总成本；正式报告必须说明这种缺口。
+
+没有发生 condenser 请求时，`usage_by_purpose.context_condenser` 和对应 cost 记录为 complete numeric zero；这与
+“发生了请求但 provider 没返回 usage”的 unavailable 明确区分。trajectory 还记录
+`excessive_truncation`（同题至少 3 次），只用于诊断，不改变 Agent 策略或结果分类。
+本轮没有增加 `suspicious_success_output`：跨 pytest/tox/npm 等工具可靠识别“exit 0 但其实失败”需要脆弱的输出文本分类，
+误报价值低于风险；exit status 与 validation purpose 仍是唯一行为依据。
 
 ## 断点恢复
 
@@ -189,8 +199,8 @@ reasoning token 已包含在 output token 中，不会重复计价。
 
 ## rc.2 历史运行入口
 
-下面的命令只用于复核 `rc.2` 冻结参数，不应重新启动正式运行。下一候选会改用 reasoning `high`，并在新的 tag、
-配置和 run ID 冻结后提供新命令。`INITIAL_BUDGET_RMB` 由运行者在首次启动时填写，并在恢复时保持不变。
+下面的命令只用于复核 `rc.2` 冻结参数，不应重新启动正式运行。`INITIAL_BUDGET_RMB` 由运行者在首次启动时填写，
+并在恢复时保持不变。
 
 ```bash
 export TASK_REPO="$PWD/reference/swe-bench-tasks"
@@ -216,8 +226,39 @@ export INITIAL_BUDGET_RMB="<本次批准的批次预算>"
   --run-id v0.5.0-rc2-hal-mini-50
 ```
 
-恢复时使用完全相同的命令和 `--run-id`。正式调度器还应对每个 task 应用机器配置中的
-10,800 秒 wall-clock 上限。
+恢复时使用完全相同的命令和 `--run-id`。
+
+## Evaluation Candidate 运行入口（审计后准备，尚未执行）
+
+最终 HAL 50 必须从本次 Evaluation Candidate 的干净 checkout 启动。准备好的首次启动命令如下；它尚未在本轮执行：
+
+```bash
+export TASK_REPO="$PWD/reference/swe-bench-tasks"
+export SOURCE_CACHE="$PWD/benchmarks/swebench/source-cache"
+export RUNS_DIR="$PWD/benchmarks/swebench/runs"
+export GRADER_COMMAND="$PWD/reference/SWE-bench/.venv/bin/python -m swebench.harness.run_evaluation --max_workers 1 --timeout 1800"
+
+.venv/bin/codeagent swebench-batch \
+  benchmarks/swebench/selections/hal-verified-mini-50.json \
+  --task-repo "$TASK_REPO" \
+  --source-cache "$SOURCE_CACHE" \
+  --output-root "$RUNS_DIR" \
+  --provider glm --model glm-5.3 \
+  --temperature 1.0 \
+  --reasoning --reasoning-effort high \
+  --max-tokens 8192 --slice-steps 12 --max-model-steps 72 \
+  --grader-command "$GRADER_COMMAND" \
+  --report-template "$PWD/logs/evaluation/{run_id}/codeagent__glm-5.3/{instance_id}/report.json" \
+  --price-snapshot benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json \
+  --cost-budget-cny 250 \
+  --minimum-remaining-cost-cny 10 \
+  --run-id v0.5.0-evaluation-candidate-hal-mini-50
+```
+
+`250` 是本地预算保护值，不是要求花完的金额。
+
+运行前必须再次核对机器配置文件、`git status --short` 为空和 manifest 中的 Evaluation Candidate commit。不要恢复或拼接
+任何 `rc.2`/dirty Development 的 partial run。
 
 ## Development 证据
 

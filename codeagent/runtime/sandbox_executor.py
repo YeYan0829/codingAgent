@@ -10,7 +10,9 @@ from pathlib import Path
 
 from codeagent.runtime.bubblewrap import BubblewrapBackend, MountPlan, SandboxUnavailable
 from codeagent.runtime.command import CommandArtifactPaths, CommandExecutionStatus, CommandResult, SandboxExecutionRequest
-from codeagent.runtime.command_environment import EffectiveCommandEnvironment, build_command_environment
+from codeagent.runtime.command_environment import (
+    EffectiveCommandEnvironment, build_command_environment, command_shell_options,
+)
 from codeagent.workspace.workspace import WorkspaceContext
 
 
@@ -38,7 +40,9 @@ class SandboxedCommandExecutor:
             mask_file.touch()
             plan = MountPlan.build(request.policy, mask_dir, mask_file)
             marker = artifacts.runtime_home / "payload-started"
-            wrapper = "printf started > \"$1\"; exec /bin/bash --noprofile --norc -c \"$2\""
+            options = command_shell_options(request.command.purpose)
+            pipefail = " " + " ".join(options) if options else ""
+            wrapper = f"printf started > \"$1\"; exec /bin/bash --noprofile --norc{pipefail} -c \"$2\""
             payload = ["/bin/bash", "--noprofile", "--norc", "-c", wrapper, "codeagent-launcher", str(marker), request.command.command]
             argv = self.backend.invocation(
                 features, plan, request.policy, environment.launch_cwd, environment.process_environment, payload,

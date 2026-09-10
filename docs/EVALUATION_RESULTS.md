@@ -5,7 +5,8 @@
 ## Final：HAL SWE-bench Verified Mini（待重新冻结）
 
 `v0.5.0-rc.2` 原计划使用 HAL 发布的固定 50 题和 GLM-5.3。输出截断和 reasoning 上下文问题发现后，
-该计划已被后续候选取代；`rc.2` 配置保留为历史证据，不产生正式成绩。下一候选尚未冻结。
+该计划已被后续候选取代；`rc.2` 配置保留为历史证据，不产生正式成绩。本次 Evaluation Candidate commit
+是下一轮唯一代码基线。
 
 | 项目 | 冻结设置或当前状态 |
 | --- | --- |
@@ -21,10 +22,12 @@
 
 正式 selection 见
 [hal-verified-mini-50.json](../benchmarks/swebench/selections/hal-verified-mini-50.json)。
-历史机器可读运行配置见
-[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)。
+历史 `rc.2` 运行配置见
+[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)；下一轮配置见
+[Evaluation Candidate HAL 50](../benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json)。
 
-下一次正式运行必须从新的干净 release tag 启动。每题结束后立即保存结果，中断后使用同一个 run ID 恢复。
+下一次正式运行必须从本次 Evaluation Candidate commit 的干净 checkout 启动。每题结束后立即保存结果，中断后使用
+同一个 run ID 恢复；此阶段不要求或创建新的 release tag。
 
 `v0.5.0-rc.1` 的首次运行发现 grader adapter 会把 empty patch 误记为基础设施失败。
 该运行已经停止并作废，不计入正式成绩，也不会与 `rc.2` 的结果合并。
@@ -76,6 +79,21 @@
 这些数据支持继续保留 8,192 单次输出上限：不提高全局输出预算，而在截断的立即恢复边界压低推理强度。
 真实 benchmark 题都没有达到语义压缩阈值，因此 summary 质量的真实 Provider 证据来自受控 smoke，不能把两题结果
 解释为摘要效果。完整机器摘要和 Session 证据保存在本地 benchmark artifact 中，不进入 Evaluation Candidate commit。
+
+### HAL 50 阶段性诊断运行（作废，不计分）
+
+2026-09-10 在 dirty Development Runtime 上启动的 HAL 固定 selection 因成本控制主动停止于约 30/50；已完成结果为
+26 resolved / 4 unresolved。该运行不是干净 Evaluation Candidate、没有完成 50 题，不能作为正式通过率，也不会被续跑或
+拼接到最终成绩。
+
+已有事件显示 5 次 semantic condensation 均成功，压缩后下一主请求估算下降约 33%–46%；22 次输出截断分布于 7 题，
+其中 20 次在一个请求内恢复、2 次重复，没有 context budget 或 step budget 终止。四道失败主要表现为补丁/测试语义缺口，
+没有摘要丢失、协议错误或 Runtime fail-close 证据。审计同时发现大量测试管道未启用 `pipefail`，可能把前段测试失败误记为
+validation command success；因此这批 validation 数据只能作为诊断线索，不能反推 Agent 或 official grader 结果。
+
+本轮发布前修复仅增加 validation-only `pipefail`、准确的 UI 证据文案、零 condenser accounting、batch phase 心跳和稳定
+诊断字段；不调整 8,192 output budget、上下文窗口或 Agent 策略。最终 HAL 50 必须从新的干净 Evaluation Candidate
+重新运行一次。
 
 ## Development：GLM-5.3 Provider smoke
 

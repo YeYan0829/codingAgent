@@ -175,6 +175,55 @@ def test_timeline_attaches_changes_and_validation_to_turn_end(tmp_path):
     }
 
 
+def test_timeline_projects_context_summary_as_system_item_without_duplicate_user_message(tmp_path):
+    store, session_root, _ = _session(tmp_path)
+    store.append_event("user_message", {"message": "Fix the parser"})
+    store.append_event("context_condensation_attempt", {
+        "status": "request_failed", "failure_code": "TimeoutError",
+    })
+    store.append_event("model_usage", {
+        "purpose": "context_condenser", "model": "glm-5.3",
+        "finish_reason": "stop", "usage": {"total_tokens": 120},
+    })
+    store.append_event("context_condensation_attempt", {"status": "valid_completion"})
+    store.append_event("context_condensed", {
+        "newly_covered_event_ids": ["seq:1", "seq:2", "seq:3"],
+        "summary": "USER_REQUIREMENTS: Preserve parser behavior.",
+        "summary_estimated_tokens": 41, "input_estimated_tokens": 4000,
+        "reason": "soft_limit",
+    })
+    store.append_event("assistant_message", {"message": "Done."})
+
+    detail = ProductApplicationService(session_root).get_session(store.session_id)
+    turn = detail["turns"][0]
+    item = next(value for value in turn["items"] if value["type"] == "contextSummary")
+
+    assert turn["userMessage"] == "Fix the parser"
+    assert sum(value["role"] == "user" for value in detail["conversation"]) == 1
+    assert item["title"] == "Historical context summarized"
+    assert item["coveredEventCount"] == 3 and item["summaryEstimatedTokens"] == 41
+    assert item["condenser"]["model"] == "glm-5.3"
+    assert item["retryCount"] == 1
+    assert sum(value["type"] == "contextSummary" for value in turn["items"]) == 1
+    assert not any("TimeoutError" in str(value) for value in turn["items"])
+
+
+def test_timeline_groups_recovered_truncations_and_explains_terminal_context_failure(tmp_path):
+    store, session_root, _ = _session(tmp_path)
+    store.append_event("user_message", {"message": "Continue"})
+    store.append_event("model_output_truncated", {"finish_reason": "length"})
+    store.append_event("model_output_truncated", {"finish_reason": "length"})
+    store.append_event("turn_terminated", {"reason": "context_budget_exceeded"})
+
+    detail = ProductApplicationService(session_root).get_session(store.session_id)
+    items = detail["turns"][0]["items"]
+
+    assert items[0]["kind"] == "truncationRecovery" and items[0]["count"] == 2
+    assert "2 truncated" in items[0]["message"]
+    assert "safe model request" in items[1]["message"]
+    assert detail["globalAttention"]["kind"] == "context_limit"
+
+
 def test_detail_projects_delivery_receipt_and_execution_error(tmp_path):
     store, session_root, _ = _session(tmp_path)
     store.append_event("user_message", {"message": "Apply the fix"})

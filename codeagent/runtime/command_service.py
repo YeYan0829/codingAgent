@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import uuid
 from dataclasses import replace
@@ -166,6 +167,8 @@ class CommandService:
                                     "baseline_workspace": str(self.context.source_root),
                                     "initial_cwd": str(self.context.active_root / request.cwd),
                                     "workspace_warning": workspace_warning,
+                                    "possible_validation_misclassified_as_utility":
+                                    _possible_validation_misclassification(request),
                                     "stdout_tail": _bounded_tail(result.stdout),
                                     "stderr_tail": _bounded_tail(result.stderr),
                                     "diagnostic": result.spawn_error,
@@ -185,6 +188,7 @@ def _request_summary(request, evaluations):
             "command_sha256": request.command_sha256, "cwd": request.cwd, "purpose": request.purpose,
             "timeout_seconds": request.timeout_seconds, "before_candidate_revision": request.before_candidate_revision,
             "before_subject_tree": request.before_subject_tree,
+            "possible_validation_misclassified_as_utility": _possible_validation_misclassification(request),
             "permissions": [{**item.request.to_dict(), "decision": item.decision.value, "policy_reason": item.reason} for item in evaluations]}
 
 
@@ -196,6 +200,7 @@ def _completion_summary(request, result, workspace_state):
             "after_candidate_revision": result.after_candidate_revision, "before_subject_tree": result.before_subject_tree,
             "after_subject_tree": result.after_subject_tree, "changed_paths": list(result.command_induced_changes)[:100],
             "audit_complete": workspace_state == SessionWorkspaceState.CHANGES_ACTIVE.value,
+            "possible_validation_misclassified_as_utility": _possible_validation_misclassification(request),
             "workspace_state": workspace_state, "effective_policy": result.effective_policy,
             **_environment_provenance(result)}
 
@@ -214,6 +219,16 @@ def _environment_provenance(result) -> dict:
 
 def _valid_evidence(result, workspace_state):
     return result.status == CommandExecutionStatus.COMPLETED and result.exit_code == 0 and result.payload_started and result.process_tree_stopped and workspace_state == SessionWorkspaceState.CHANGES_ACTIVE.value
+
+
+_VALIDATION_COMMAND = re.compile(
+    r"(?:^|[;&|]\s*)(?:python(?:3)?\s+-m\s+pytest|pytest|tox|nox|ctest|cargo\s+test|go\s+test|npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+test|make\s+(?:test|check))(?:\s|$)"
+)
+
+
+def _possible_validation_misclassification(request: CommandRequest) -> bool:
+    """只记录高置信度诊断，不改变命令 purpose 或 Agent 行为。"""
+    return request.purpose == "utility" and bool(_VALIDATION_COMMAND.search(request.command.strip()))
 
 
 def _result_content(result, workspace_warning: str | None = None):

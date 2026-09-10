@@ -79,9 +79,10 @@ class FakeDockerExecutionBackend:
             raise RuntimeError("cannot remove container")
 
 
-def sandbox_request(context, command="git status --short", cwd=".", network=NetworkMode.OFF):
+def sandbox_request(context, command="git status --short", cwd=".", network=NetworkMode.OFF,
+                    purpose="utility"):
     raw = CommandRequest(
-        "exec", command, cwd, 10, "utility", (), context.workspace_revision,
+        "exec", command, cwd, 10, purpose, (), context.workspace_revision,
         context.base_commit, 0, "tree", "hash",
     )
     runtime = context.active_root.parent / "runtime"
@@ -118,6 +119,27 @@ def test_projection_pins_image_and_mounts_candidate_and_git_metadata(tmp_path):
     common = git(context.active_root, "rev-parse", "--git-common-dir")
     common = (context.active_root / common).resolve()
     assert any(f"src={common},dst={common},readonly" in value for value in mounts)
+
+
+def test_container_inner_shell_enables_pipefail_only_for_validation(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    utility_backend = FakeDockerExecutionBackend(context.active_root)
+    utility = sandbox_request(context, command="false | tee result", purpose="utility")
+    SWEbenchDockerCommandExecutor(prepared(context), utility_backend).execute(
+        utility, context, CommandArtifactStore(store).prepare(utility.command)
+    )
+    validation_backend = FakeDockerExecutionBackend(context.active_root)
+    validation = sandbox_request(context, command="false | tee result", purpose="validation")
+    validation = SandboxExecutionRequest(
+        CommandRequest(**{**validation.command.__dict__, "execution_id": "validation"}),
+        validation.policy,
+    )
+    SWEbenchDockerCommandExecutor(prepared(context), validation_backend).execute(
+        validation, context, CommandArtifactStore(store).prepare(validation.command)
+    )
+
+    assert "-o pipefail" not in utility_backend.created_argv[-4]
+    assert "-o pipefail" in validation_backend.created_argv[-4]
 
 
 def test_command_service_audits_container_changes_on_host_candidate(tmp_path):

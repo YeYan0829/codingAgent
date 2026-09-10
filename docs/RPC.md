@@ -107,8 +107,12 @@ Pending approval 通过 `session/get.pendingApproval` 获取。其 `summary` 是
 | `changes/accept` | `sessionId` | 要求 idle、current validation 和安全 workspace，执行 identity 复检与三方合并 |
 | `changes/discard` | `sessionId` | 要求 idle，重置 Candidate；tainted 状态允许进入受控 discard |
 
-`validation.appliesToCurrentChanges` 表示最近测试记录的修改序号与当前序号相同。
-它不是实时文件树证明。实际 Accept 会再次核对工作区、baseline 和文件树。
+`validation.appliesToCurrentChanges` 表示最近成功的 validation 命令记录的修改序号与当前序号相同。
+它不是“测试充分”或 official grader 通过，也不是实时文件树证明。实际 Accept 会再次核对工作区、baseline 和文件树。
+
+`session/get.turns[].items` 还可能返回 `contextSummary`：它由 `context_condensed` Event 投影，包含可依赖的覆盖事件数、
+摘要估算大小及可展开诊断；摘要仍是 Runtime/System 信息。截断恢复使用 `notice(kind=truncationRecovery)`，同一 UserTurn
+内会聚合计数。旧 Session 没有这些 Event 时无需迁移，投影保持为空。
 
 `changes/get.state` 区分 `pending`、`applied`、`discarded` 和 `none`。Applied 状态返回 Accept 当时保存的文件统计，
 并把 validation 标记为历史结果。

@@ -112,7 +112,7 @@ UserMessage 重复发送。Runtime 用 Git 和 Session metadata 更新 active wo
 写入 predecessor、增量 source IDs/digest、logical frontier 和 algorithm version，恢复时重新验证 chain。每次成功后必须
 rebuild/re-estimate；仍不 fit 或无进展时 fail closed。Event Store 原记录不删除。
 
-单条 ToolResult 仍限制为 16 KiB。没有 Active Code、Working Set、RepoMap、RAG、文件重要度选择、typed residue、
+单条 ToolResult 文本仍限制为 16,000 字符。没有 Active Code、Working Set、RepoMap、RAG、文件重要度选择、typed residue、
 completed-turn eviction 或 raw-to-zero fallback。
 
 每个 provider 响应另写 `model_usage` Event，记录 `purpose=main_agent|context_condenser`、可获得的 token、provider request id、
@@ -171,11 +171,13 @@ workspace 状态无法确认时才进入 `workspace_tainted` 或 `recovery_requi
 worktree HEAD 是最近 accepted baseline，working tree 是当前 pending changes。原子编辑和命令产生的文件变化都会
 推进 `candidate_revision`。
 
-`run_command(purpose="validation")` 成功时记录执行证据。`current_validation_evidence` 查找状态为 passed、
+`run_command(purpose="validation")` 以 Bash `pipefail` 执行，命令整体成功时记录执行证据；utility 命令不改变 shell
+语义，也不形成验证证据。`current_validation_evidence` 查找状态为 passed、
 workspace revision、base commit 与当前 subject tree 相同的记录，不以 `candidate_revision` 单独判定新鲜度。
 文件树不同则旧证据 stale；恢复到同一树且其他身份相同，底层可再次使用旧成功证据。
 Product Read Model 另以最近 validation 命令及其 candidate_revision 展示状态和控制按钮，口径并不完全相同；
-UI 可用性不能代替 Accept 的实际树检查。Runtime 不判断测试选择是否充分。
+UI 称其为 validation command success/current revision evidence，不把它描述为 official grader 通过。UI 可用性不能
+代替 Accept 的实际树检查，official benchmark grader 也属于独立证据。Runtime 不判断测试选择是否充分。
 
 Accept 时，Runtime 检查 worktree HEAD 与基线、当前 validation，临时冻结 patch 并记录修改序号和树身份，
 再以 accepted baseline、Agent worktree、当前 source 做 Git 三方合并。非冲突的 source 并发修改可以保留；冲突
@@ -198,6 +200,11 @@ Extension 只通过 `codeagent-rpc` 读取 Product Read Model，不直接读取 
 执行过程通过 `session/event`、`approval/requested` 和 `session/executionStateChanged` notification 更新 UI。完整
 Event 保存在 `events.jsonl`，UI 只投影有界摘要。Approval bridge 只存在于当前 Runtime 进程和 job；Runtime
 重启后不会恢复待处理审批；已经持久化的 session-scope grant 与待处理 Approval 不同，仍按 Policy 复检。
+
+`context_condensed` 在 timeline 中投影为紧凑的 Runtime/System 项，详细信息可展开；它不冒充 assistant message 或
+reasoning。成功且无需用户处理的 condensation attempt 默认隐藏。多次 `model_output_truncated` 在同一 UserTurn 内合并为
+自动恢复提示，只有最终 `output_truncated` 或 `context_budget_exceeded` 才显示终止告警。Current Task Anchor 只属于模型
+Context View，不是持久 Event，因此不会在产品时间线重复用户消息。
 
 ## 持久化与恢复
 

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from pathlib import Path
 
-from codeagent.benchmark.accounting import PriceSnapshot, aggregate_usage, calculate_cost
+from codeagent.benchmark.accounting import PriceSnapshot, aggregate_usage, calculate_cost, zero_usage
 
 
 def snapshot(input_rate="2"):
@@ -20,6 +20,13 @@ def test_usage_distinguishes_complete_partial_missing_and_zero():
     assert missing["coverage"] == "unavailable" and missing["total_tokens"] is None
     derived = aggregate_usage([{"input_tokens": 10, "cached_input_tokens": 4, "total_tokens": 10}])
     assert derived["cache_miss_input_tokens"] == 6 and derived["cache_miss_input_tokens_derived"]
+    zero = zero_usage()
+    assert zero["coverage"] == "complete" and zero["requests"] == 0
+    assert all(zero[field] == 0 for field in (
+        "input_tokens", "output_tokens", "total_tokens", "cached_input_tokens",
+        "cache_miss_input_tokens", "reasoning_tokens",
+    ))
+    assert Decimal(calculate_cost(zero, snapshot())["total"]) == 0
 
 
 def test_cost_uses_decimal_and_never_presents_partial_as_exact():

@@ -14,6 +14,11 @@ INHERITED_ENV_NAMES = frozenset({"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TE
 DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
+def command_shell_options(purpose: str) -> tuple[str, ...]:
+    """返回内层命令 shell 选项；仅 validation 启用 pipefail。"""
+    return ("-o", "pipefail") if purpose == "validation" else ()
+
+
 @dataclass(frozen=True)
 class EffectiveCommandEnvironment:
     """命令启动配置及其 provenance 的单一事实来源；不解释命令语义。"""

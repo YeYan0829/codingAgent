@@ -123,10 +123,13 @@ class SWEbenchHarness:
     def run(
         self, task: SWEbenchTask, model: BaseModelClient, model_config: ModelConfig,
         output_root: str | Path, *, runtime_config: RuntimeConfig | None = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> SWEbenchRunResult:
         run_id = uuid.uuid4().hex[:16]
         root = Path(output_root).expanduser().resolve() / run_id
         root.mkdir(parents=True, exist_ok=False)
+        if progress_callback:
+            progress_callback("agent")
         prepared = self.source_preparer.prepare(SWEbenchTaskSource(task.instance_id, task.image, task.base_commit))
         store = SessionStore(prepared.source_root, session_root=root / "sessions").create(
             provider=model_config.provider, model=model_config.resolved_model,
@@ -172,6 +175,8 @@ class SWEbenchHarness:
                 "model_name_or_path": f"codeagent/{model_config.resolved_model}",
                 "model_patch": patch.decode("utf-8"),
             }], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            if progress_callback:
+                progress_callback("grader")
             oracle = self.grader.grade(task, prediction_path, run_id)
             result = SWEbenchRunResult(
                 run_id, task.instance_id, store.session_id, output.status, output.final_text,

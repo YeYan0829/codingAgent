@@ -73,6 +73,18 @@ def test_trajectory_distinguishes_completion_empty_patch_and_output_truncation()
     assert truncated["model_steps"] == 1 and not truncated["completed"]
 
 
+def test_zero_condenser_is_complete_zero_and_three_truncations_are_diagnostic():
+    result = analyze_trajectory([
+        ev("model_output_truncated"), ev("model_output_truncated"),
+        ev("model_output_truncated"), ev("assistant_message"),
+    ])
+
+    assert result["usage_by_purpose"]["context_condenser"]["coverage"] == "complete"
+    assert result["usage_by_purpose"]["context_condenser"]["total_tokens"] == 0
+    assert result["condensation"]["usage"]["requests"] == 0
+    assert result["excessive_truncation"] is True
+
+
 def test_truncation_recovery_and_context_identity_are_projected():
     events = [
         ev("user_message"),

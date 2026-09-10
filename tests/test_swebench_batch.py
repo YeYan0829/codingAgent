@@ -19,8 +19,10 @@ class FakeHarness:
         self.calls = []
         self.fail_on = fail_on
 
-    def run(self, task, model, model_config, output_root, runtime_config=None):
+    def run(self, task, model, model_config, output_root, runtime_config=None, progress_callback=None):
         self.calls.append(task.instance_id)
+        if progress_callback:
+            progress_callback("agent")
         if task.instance_id == self.fail_on:
             raise RuntimeError("planned")
         run_id = "run-" + task.instance_id
@@ -34,6 +36,8 @@ class FakeHarness:
                 "cache_miss_input_tokens": 3, "reasoning_tokens": 0}}}) + "\n" +
             json.dumps({"type": "assistant_message", "payload": {"message": "done"}}) + "\n")
         prediction = root / "prediction.json"; prediction.write_text("[]")
+        if progress_callback:
+            progress_callback("grader")
         return SWEbenchRunResult(run_id, task.instance_id, "session-1", "completed", "done",
             True, True, "abc", str(prediction), "completed", True, "ok",
             {"requests": 1, "requests_with_usage": 1, "coverage": "complete",
@@ -76,6 +80,29 @@ def test_batch_runs_in_order_persists_each_task_and_summarizes(tmp_path):
     assert summary["usage"]["input_tokens_complete"] is True
     states = sorted((tmp_path / "out/batch-1/tasks").glob("*/task-state.json"))
     assert len(states) == 3 and all(json.loads(x.read_text())["status"] == "completed" for x in states)
+    for path in states:
+        state = json.loads(path.read_text())
+        assert state["phase"] == "completed"
+        assert state["started_at"] <= state["updated_at"] == state["completed_at"]
+    assert summary["current_task"] is None
+
+
+def test_batch_exposes_current_task_and_grader_phase_while_running(tmp_path):
+    snapshots = []
+
+    class InspectingHarness(FakeHarness):
+        def run(self, task, model, model_config, output_root, runtime_config=None,
+                progress_callback=None):
+            progress_callback("grader")
+            batch_root = Path(output_root).parents[2]
+            snapshots.append(json.loads((batch_root / "batch-summary.json").read_text()))
+            return super().run(task, model, model_config, output_root, runtime_config,
+                               progress_callback=None)
+
+    make_runner(tmp_path, InspectingHarness()).run("batch-progress")
+
+    assert snapshots[0]["current_task"]["instance_id"] == "one"
+    assert snapshots[0]["current_task"]["phase"] == "grader"
 
 
 def test_formal_selection_is_fixed_easy_medium_hard_order(tmp_path):
@@ -101,6 +128,35 @@ def test_formal_selection_is_fixed_easy_medium_hard_order(tmp_path):
     ]}))
     with pytest.raises(ValueError, match="Easy → Medium → Hard"):
         SWEbenchSelection(invalid)
+
+
+def test_evaluation_candidate_machine_config_matches_runtime_contract():
+    root = Path(__file__).parents[1]
+    path = root / "benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json"
+    value = json.loads(path.read_text())
+    selection = root / value["selection"]["path"]
+    pricing = root / value["pricing"]["path"]
+
+    assert file_sha256(selection) == value["selection"]["sha256"]
+    assert file_sha256(pricing) == value["pricing"]["sha256"]
+    assert value["model"] == {
+        "provider": "glm", "model": "glm-5.3",
+        "endpoint_identity": "https://open.bigmodel.cn/api/paas/v4",
+        "temperature": 1.0, "reasoning_enabled": True, "reasoning_effort": "high",
+        "clear_thinking": True, "max_output_tokens": 8192,
+        "output_truncation_recovery_effort": "low", "restore_effort_after_recovery": "high",
+    }
+    assert value["runtime"]["max_steps_per_slice"] == 12
+    assert value["runtime"]["max_model_steps_per_task"] == 72
+    assert value["runtime"]["context"] == {
+        "max_events": 80, "target_events": 40, "soft_token_ratio": 0.8,
+        "target_token_ratio": 0.5, "minimum_progress": 0.1,
+        "tool_result_max_chars": 16000,
+    }
+    assert value["runtime"]["condenser"]["summary_max_tokens"] == 2048
+    assert value["runtime"]["condenser"]["safety_margin"] == 2000
+    assert value["orchestration"]["cost_guard"]["evaluation_budget"] == "250"
+    assert value["orchestration"]["cost_guard"]["stop_before_task_when_remaining_below"] == "10"
 
 
 def test_failure_keeps_completed_and_resume_skips_it(tmp_path):

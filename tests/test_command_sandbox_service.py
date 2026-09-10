@@ -93,6 +93,20 @@ def test_validation_evidence_binds_after_revision(tmp_path):
     assert evidence["command"] == "true"
 
 
+def test_test_like_utility_command_is_diagnostic_only(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    result = service(store, context, FakeSandboxExecutor()).run_command({
+        "command": "python -m pytest -q | tee pytest.log", "purpose": "utility",
+    })
+    completed = [event.payload for event in store.read_events()
+                 if event.type == "command_completed"][-1]
+
+    assert result.ok
+    assert result.metadata["possible_validation_misclassified_as_utility"] is True
+    assert completed["possible_validation_misclassified_as_utility"] is True
+    assert not any(event.type == "validation_completed" for event in store.read_events())
+
+
 def test_command_result_exposes_bounded_output_tails_for_context(tmp_path):
     _, store, context = execution_session(tmp_path)
     value = CommandResult(exit_code=2, status=CommandExecutionStatus.COMPLETED,

@@ -129,29 +129,45 @@ class SWEbenchBatchRunner:
             task_root.mkdir(parents=True, exist_ok=True)
             attempt = self._next_attempt(state_path)
             started_at = datetime.now(timezone.utc).isoformat()
-            state = {"schema_version": 1, "instance_id": instance_id, "attempt": attempt,
+            state = {"schema_version": 2, "instance_id": instance_id, "attempt": attempt,
                      "status": "running", "outcome": None,
                      "config_fingerprint": manifest["model"]["config_fingerprint"],
                      "evaluation_commit_sha": manifest["runtime"]["git_commit"],
                      "selection_sha256": manifest["selection_sha256"],
-                     "started_at": started_at}
+                     "phase": "agent", "started_at": started_at, "updated_at": started_at,
+                     "completed_at": None}
             write_json_atomic(state_path, state)
+            self._write_summary(root, manifest, completed, finished=False,
+                                current_task=_current_task(state, index))
+
+            def progress(phase: str) -> None:
+                state.update({"phase": phase, "updated_at": datetime.now(timezone.utc).isoformat()})
+                write_json_atomic(state_path, state)
+                self._write_summary(root, manifest, completed, finished=False,
+                                    current_task=_current_task(state, index))
             try:
                 result = self.harness.run(self.task_loader(instance_id), self.model_factory(),
-                                          self.model_config, task_root / "runs", runtime_config=self.runtime_config)
+                                          self.model_config, task_root / "runs", runtime_config=self.runtime_config,
+                                          progress_callback=progress)
                 entry = self._finish_task(task_root, result, attempt, manifest, started_at)
                 if result.source_identity:
                     manifest["benchmark"]["tasks"][instance_id] = result.source_identity
                     write_json_atomic(manifest_path, manifest)
             except Exception as exc:
                 outcome = _exception_outcome(exc)
+                completed_at = datetime.now(timezone.utc).isoformat()
                 state.update({"status": "failed", "outcome": outcome, "stop_reason": outcome,
+                              "phase": "completed", "updated_at": completed_at,
+                              "completed_at": completed_at,
                               "error_type": type(exc).__name__, "error": str(exc)})
                 write_json_atomic(state_path, state)
                 self._write_summary(root, manifest, completed, finished=False)
                 raise
             if entry["outcome"] == "infra_error":
+                completed_at = datetime.now(timezone.utc).isoformat()
                 state.update({"status": "failed", "outcome": "infra_error",
+                              "phase": "completed", "updated_at": completed_at,
+                              "completed_at": completed_at,
                               "stop_reason": "infra_error", "result": entry})
                 write_json_atomic(state_path, state)
                 self._write_summary(
@@ -161,7 +177,10 @@ class SWEbenchBatchRunner:
                     f"SWE-bench grader infrastructure failed: {instance_id}: "
                     f"{entry['oracle_status']}: {entry['oracle_detail']}"
                 )
+            completed_at = datetime.now(timezone.utc).isoformat()
             state.update({"status": "completed", "outcome": entry["outcome"],
+                          "phase": "completed", "updated_at": completed_at,
+                          "completed_at": completed_at,
                           "stop_reason": entry["stop_reason"], "result": entry})
             write_json_atomic(state_path, state)
             completed.append(entry)
@@ -292,7 +311,8 @@ class SWEbenchBatchRunner:
 
     def _write_summary(self, root: Path, manifest: dict, tasks: list[dict], *, finished: bool,
                        stop_reason: str | None = None,
-                       cost_guard: dict[str, object] | None = None) -> dict:
+                       cost_guard: dict[str, object] | None = None,
+                       current_task: dict[str, object] | None = None) -> dict:
         usages = [x.get("token_usage") for x in tasks]
         # 逐题汇总已经包含 request 计数；这里按字段保守聚合，旧结果缺失即 unavailable。
         request_items: list[dict | None] = []
@@ -321,7 +341,8 @@ class SWEbenchBatchRunner:
             "schema_version": 1, "run_id": manifest["run_id"], "selection_id": manifest["selection_id"],
             "finished": finished, "completed_tasks": len(tasks), "total_tasks": len(self.selection.instance_ids),
             "resolved": sum(x.get("oracle_passed") is True for x in tasks), "usage": usage,
-            "cost": cost, "stop_reason": stop_reason, "cost_guard": cost_guard, "tasks": tasks,
+            "cost": cost, "stop_reason": stop_reason, "cost_guard": cost_guard,
+            "current_task": current_task, "tasks": tasks,
             "outcomes": self._outcome_counts(root, tasks),
         }
         write_json_atomic(root / "batch-summary.json", summary)
@@ -356,6 +377,14 @@ def _non_negative_decimal(value: str | Decimal | None, label: str) -> Decimal | 
     if not result.is_finite() or result < 0:
         raise ValueError(f"{label}必须是非负有限数字")
     return result
+
+
+def _current_task(state: dict, index: int) -> dict[str, object]:
+    return {
+        "index": index, "instance_id": state["instance_id"], "attempt": state["attempt"],
+        "status": state["status"], "phase": state["phase"],
+        "started_at": state["started_at"], "updated_at": state["updated_at"],
+    }
 
 
 def _completed_outcome(result: SWEbenchRunResult) -> str:

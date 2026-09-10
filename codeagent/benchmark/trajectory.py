@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-from codeagent.benchmark.accounting import aggregate_usage
+from codeagent.benchmark.accounting import aggregate_usage, zero_usage
 from codeagent.session.events import SessionEvent
 
 
@@ -118,6 +118,7 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
         "step_exhausted": termination == "model_step_budget_exhausted",
         "output_truncated": termination == "output_truncated",
         "output_truncation_steps": sum(event.type == "model_output_truncated" for event in values),
+        "excessive_truncation": sum(event.type == "model_output_truncated" for event in values) >= 3,
         "protocol_error_count": sum(event.type == "model_protocol_error" for event in values),
         "tool_call_count": sum(
             len(event.payload.get("tool_calls", []))
@@ -147,7 +148,7 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
         "truncation_recovery": _truncation_recovery(values),
         "usage_by_purpose": {
             "main_agent": aggregate_usage(main_usage),
-            "context_condenser": aggregate_usage(condenser_usage),
+            "context_condenser": aggregate_usage(condenser_usage) if condenser_usage else zero_usage(),
         },
     }
 
@@ -283,7 +284,7 @@ def _condensation_detail(
             status: sum(event.payload.get("status") == status for event in attempts)
             for status in ("request_failed", "invalid_completion")
         },
-        "usage": aggregate_usage(usages),
+        "usage": aggregate_usage(usages) if usages else zero_usage(),
         "logical_covered_event_count": latest.get("logical_covered_event_count"),
         "logical_frontier_source_event_id": latest.get("logical_frontier_source_event_id"),
         "newly_covered_event_ids": latest.get("newly_covered_event_ids"),

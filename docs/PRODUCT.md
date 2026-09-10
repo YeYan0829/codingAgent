@@ -52,6 +52,10 @@ API Key 保存在 VS Code SecretStorage。输入框不会回显已经保存的�
 
 文件变化和测试结果也会显示在时间线中。界面不会展示或声称展示模型的隐藏推理。
 
+较早历史被语义压缩时，时间线会显示一个低干扰的 **Historical context summarized** Runtime/System 项；展开后可查看
+可可靠取得的覆盖数量、摘要大小、压缩前后估算和 condenser usage。它不是 Agent 回复。模型输出截断并自动恢复时，
+同一轮只显示聚合恢复提示；最终无法恢复或 Context 无法安全构造时才显示终止告警。
+
 ## 4. 处理权限请求
 
 第一次修改文件或运行受保护命令时，CodeAgent 会请求创建独立 worktree。
@@ -85,7 +89,7 @@ Stop 会在当前操作完成后生效。已经运行的命令不会被立即终
 
 点击 **Review Diff** 会在中央编辑区打开 VS Code 原生 Diff。Diff 是只读视图，关闭它不会改变代码。
 
-测试通过只证明当时那份代码通过了测试。如果 Agent 后来继续改动，界面会把旧测试结果标记为过期。
+Validation command 成功只证明该命令对当时那份代码以退出码 0 完成。如果 Agent 后来继续改动，界面会把旧证据标记为过期。
 
 重新运行测试后，新结果会对应当前修改。CodeAgent 只能确认该命令成功退出，不能判断测试范围是否充分。
 
@@ -104,7 +108,7 @@ Accept 与 Discard 按钮则不再显示。
 Applied Diff 保存的是这次 Agent 实际应用的修改。用户之后继续编辑 source 时，
 这些新改动不会混入该 Session 的历史 Diff。
 
-Applied 卡片显示 **Tests passed at that time**。它只说明应用修改前的测试结果，
+Applied 卡片显示 **Validation command succeeded at that time**。它只说明应用修改前的命令成功证据，
 不表示当前 source 仍处于已验证状态。
 
 CodeAgent `0.5.0` 不提供 Accept 后的一键撤销。直接反向应用旧修改可能覆盖用户之后的编辑，

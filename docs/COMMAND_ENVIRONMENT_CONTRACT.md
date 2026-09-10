@@ -243,6 +243,10 @@ Reject 路径没有执行安装、没有留下 grant 或 validation evidence，A
 
 - 没有语言、包管理器或测试框架枚举；
 - Runtime 不解析 Agent command 的业务语义；
+- `utility` 使用普通 Bash；只有显式 `purpose=validation` 使用
+  `/bin/bash --noprofile --norc -o pipefail -c`，本地 Bubblewrap 与 SWE-bench Docker 语义一致；
+- 因此 `pytest | tee report.log` 的前段失败会返回非零且不能形成 validation evidence；Runtime 不自动改写 purpose，
+  只为高置信度测试型 utility 命令记录诊断标志；
 - Snapshot 描述与 executor 实际环境来自同一构造结果；
 - Agent 能通过任意命令发现环境、看到完整失败并继续纠正；
 - 网络/额外写入仍经 Approval，Reject 不产生隐式 grant 或自动重试；

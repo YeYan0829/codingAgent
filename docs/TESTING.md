@@ -67,6 +67,11 @@ Context 测试还确认：完整 Session reasoning 不会
 去重、fixed/history/condenser budget、递归分块、rolling chain Resume、A/B/C 失败分类、四次调用上限、derived Event identity
 和 main/condenser usage 分离。完整 contract 见[上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)。
 
+`test_sandbox_executor.py` 和 `test_swebench_docker_executor.py` 锁定 validation-only `pipefail`：失败 pytest 即使通过
+`tee` 也必须返回非零，而 utility 保留原行为。Product/Extension 测试覆盖 context summary 的 System 投影、用户消息
+不重复、截断提示聚合、context fail-closed 告警和准确的 validation evidence 文案。Batch/trajectory 测试覆盖任务阶段
+时间戳、零 condenser accounting 和过量截断诊断。
+
 ## 真实 Bubblewrap 测试
 
 默认测试会跳过需要真实 Bubblewrap 的用例。确认 `bwrap` 可用后运行：

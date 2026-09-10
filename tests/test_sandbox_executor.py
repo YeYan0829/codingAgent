@@ -1,14 +1,20 @@
 import os
+import shlex
+import sys
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from codeagent.runtime.artifacts import CommandArtifactStore
+from codeagent.runtime.approval import AutoApprovalGate
 from codeagent.runtime.bubblewrap import BubblewrapFeatures
 from codeagent.runtime.command import CommandRequest, SandboxExecutionRequest
 from codeagent.runtime.command_environment import COMMAND_ENVIRONMENT_REVISION, build_command_environment
 from codeagent.runtime.bubblewrap import SandboxUnavailable
 from codeagent.runtime.permissions import EffectiveSandboxPolicy, NetworkMode
 from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
+from codeagent.runtime.command_service import CommandService
 from test_candidate_loop import execution_session
 
 
@@ -24,8 +30,8 @@ class HostFixtureBackend:
         return ["/usr/bin/env", "-i", *(f"{name}={value}" for name, value in environment.items()), *payload]
 
 
-def request(context, command, timeout=5):
-    raw = CommandRequest("exec", command, ".", timeout, "utility", (), context.workspace_revision,
+def request(context, command, timeout=5, purpose="utility"):
+    raw = CommandRequest("exec", command, ".", timeout, purpose, (), context.workspace_revision,
                          context.base_commit, 0, "tree", "hash")
     cache = context.active_root.parent / "cache"
     cache.mkdir(exist_ok=True)
@@ -41,6 +47,90 @@ def test_fixed_inner_bash_supports_real_shell_syntax(tmp_path):
     assert result.exit_code == 0 and result.payload_started
     assert result.stdout.strip() == "HELLO WORLD"
     assert (context.active_root / "result.txt").read_text() == "HELLO WORLD\n"
+
+
+def test_validation_pipefail_exposes_failed_pytest_before_tee_but_utility_keeps_legacy_semantics(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    test_file = context.active_root / "test_pipeline_failure.py"
+    test_file.write_text("def test_failure():\n    assert False\n", encoding="utf-8")
+    command = f"{shlex.quote(sys.executable)} -m pytest -q test_pipeline_failure.py | tee pytest.log"
+    executor = SandboxedCommandExecutor(HostFixtureBackend())
+
+    utility = request(context, command, purpose="utility")
+    utility_result = executor.execute(
+        utility, context, CommandArtifactStore(store).prepare(utility.command)
+    )
+    validation = replace(
+        request(context, command, purpose="validation"),
+        command=replace(request(context, command, purpose="validation").command,
+                        execution_id="validation-pipeline"),
+    )
+    validation_result = executor.execute(
+        validation, context, CommandArtifactStore(store).prepare(validation.command)
+    )
+
+    assert utility_result.exit_code == 0
+    assert validation_result.exit_code != 0
+
+
+@pytest.mark.parametrize("command", [
+    "false | tail -1",
+    "bash -c 'printf failure; exit 9' | grep failure",
+])
+def test_validation_pipefail_catches_failed_left_pipeline_commands(tmp_path, command):
+    _, store, context = execution_session(tmp_path)
+    executor = SandboxedCommandExecutor(HostFixtureBackend())
+    validation = request(context, command, purpose="validation")
+
+    result = executor.execute(
+        validation, context, CommandArtifactStore(store).prepare(validation.command)
+    )
+
+    assert result.exit_code != 0
+
+
+def test_validation_successful_pipeline_remains_successful(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    validation = request(context, "printf 'ok\\n' | tail -1", purpose="validation")
+
+    result = SandboxedCommandExecutor(HostFixtureBackend()).execute(
+        validation, context, CommandArtifactStore(store).prepare(validation.command)
+    )
+
+    assert result.exit_code == 0 and result.stdout == "ok\n"
+
+
+def test_failed_pytest_pipeline_cannot_create_validation_evidence(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    (context.active_root / "test_pipeline_failure.py").write_text(
+        "def test_failure():\n    assert False\n", encoding="utf-8"
+    )
+    command = f"{shlex.quote(sys.executable)} -m pytest -q test_pipeline_failure.py 2>&1 | tail -5"
+    commands = CommandService(
+        context, AutoApprovalGate(True), SandboxedCommandExecutor(HostFixtureBackend()),
+        store, CommandArtifactStore(store),
+    )
+
+    result = commands.run_command({"command": command, "purpose": "validation"})
+
+    assert not result.ok and result.metadata["exit_code"] != 0
+    assert not any(event.type == "validation_completed" for event in store.read_events())
+
+
+def test_successful_validation_pipeline_creates_current_revision_evidence(tmp_path):
+    _, store, context = execution_session(tmp_path)
+    commands = CommandService(
+        context, AutoApprovalGate(True), SandboxedCommandExecutor(HostFixtureBackend()),
+        store, CommandArtifactStore(store),
+    )
+
+    result = commands.run_command({
+        "command": "printf 'ok\\n' | tail -1", "purpose": "validation",
+    })
+
+    assert result.ok
+    evidence = [event for event in store.read_events() if event.type == "validation_completed"]
+    assert len(evidence) == 1 and evidence[0].payload["candidate_revision"] == 0
 
 
 def test_timeout_terminates_process_group(tmp_path):

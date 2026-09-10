@@ -37,6 +37,16 @@ def aggregate_usage(items: Iterable[dict | None]) -> dict[str, object]:
     return result
 
 
+def zero_usage() -> dict[str, object]:
+    """表示确定没有发生请求；区别于发生请求但 provider 未返回 usage。"""
+    return {
+        "requests": 0, "requests_with_usage": 0, "coverage": "complete", "coverage_ratio": "1",
+        **{field: 0 for field in TOKEN_FIELDS},
+        **{field + "_complete": True for field in TOKEN_FIELDS},
+        "cache_miss_input_tokens_derived": False,
+    }
+
+
 @dataclass(frozen=True)
 class PriceSnapshot:
     snapshot_id: str
