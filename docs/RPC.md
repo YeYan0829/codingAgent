@@ -80,7 +80,8 @@ Timeline 中失败的工具项带有 `failure`。其中包含分类、面向用�
 - temperature 省略或位于 0～2。
 
 `reasoningEnabled` 是布尔值，默认 `false`。`reasoningEffort` 是可选字符串。
-GLM-5.2 接受 `high`、`max`；DeepSeek V4 Flash/Pro 接受 `low`、`high`、`max`。
+GLM-5.2 接受 `high`、`max`；GLM-5.3 接受 `low`、`high`、`max` 且不能关闭 reasoning；
+DeepSeek V4 Flash/Pro 接受 `low`、`high`、`max`。官方 Extension 当前只把 GLM-5.2 加入产品 reasoning 模型白名单。
 启用 reasoning 时，不支持的 provider、model 或档位会使创建请求失败。
 
 `session/list` 和 `session/get` 返回 `reasoningEnabled` 与 `reasoningEffort`。隐藏推理正文不进入 Product Read Model。
@@ -110,9 +111,10 @@ Pending approval 通过 `session/get.pendingApproval` 获取。其 `summary` 是
 `validation.appliesToCurrentChanges` 表示最近成功的 validation 命令记录的修改序号与当前序号相同。
 它不是“测试充分”或 official grader 通过，也不是实时文件树证明。实际 Accept 会再次核对工作区、baseline 和文件树。
 
-`session/get.turns[].items` 还可能返回 `contextSummary`：它由 `context_condensed` Event 投影，包含可依赖的覆盖事件数、
-摘要估算大小及可展开诊断；摘要仍是 Runtime/System 信息。截断恢复使用 `notice(kind=truncationRecovery)`，同一 UserTurn
-内会聚合计数。旧 Session 没有这些 Event 时无需迁移，投影保持为空。
+`session/get.turns[].items` 还可能返回 `contextSummary`：它由 `context_condensed` Event 投影，并保留覆盖事件数、
+摘要估算和 condenser 等诊断字段；官方 Extension 只将它显示为一行 Runtime/System 提示，不展示摘要正文和诊断。
+截断恢复使用 `notice(kind=truncationRecovery)`，同一 UserTurn 内会聚合计数；Extension 同样只显示一行自动继续提示。
+旧 Session 没有这些 Event 时无需迁移，投影保持为空。
 
 `changes/get.state` 区分 `pending`、`applied`、`discarded` 和 `none`。Applied 状态返回 Accept 当时保存的文件统计，
 并把 validation 标记为历史结果。

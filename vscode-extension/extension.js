@@ -40,6 +40,17 @@ function renderToolFailureHtml(tool, key, esc) {
     + (failure.summary ? '<span>' + esc(failure.summary) + '</span>' : "") + output + '</div>';
 }
 
+function renderContextSummaryHtml() {
+  return '<div class="runtime-note">↳ Earlier activity was summarized to keep this task running.</div>';
+}
+
+function renderTruncationNoticeHtml(item) {
+  const message = item.tone === "warning"
+    ? "Tried to continue automatically after a model response was cut short."
+    : "Continued automatically after a model response was cut short.";
+  return '<div class="runtime-note">↳ ' + message + '</div>';
+}
+
 function renderChangesHtml(value, detail, esc) {
   if (!value?.available) {
     const receipt = detail?.deliveryReceipt;
@@ -471,7 +482,7 @@ function renderChat(detail, sessions, profile = DEFAULT_PROFILE, secretState = {
   .message-shell{position:relative}.message-copy{position:absolute;top:2px;right:2px;display:flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0;border-radius:5px;background:var(--vscode-toolbar-hoverBackground);color:var(--vscode-descriptionForeground);cursor:pointer;opacity:0;transition:opacity .1s}.message-shell:hover>.message-copy,.message-copy:focus-visible{opacity:1}.message-copy:hover{color:var(--vscode-foreground)}.message-copy.copied{opacity:1;color:var(--vscode-testing-iconPassed)}.user-message{display:flex;justify-content:flex-end}.user-message .message-shell{max-width:82%}.user-message .user-bubble{max-width:none;padding-right:34px}.agent-message{padding-right:30px}.copy-status{position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .tool-failure{margin-top:7px;padding:8px;border-left:2px solid var(--vscode-editorError-foreground);background:var(--vscode-textBlockQuote-background)}.tool-failure strong,.tool-failure span{display:block}.tool-failure span{margin-top:4px}.tool-failure details{margin:5px 0 0}.tool-output{max-height:260px;margin:4px 0 0;padding:7px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--vscode-textCodeBlock-background);color:var(--vscode-foreground);font-family:var(--vscode-editor-font-family);font-size:.9em}.output-truncated{display:block;margin-top:4px;color:var(--vscode-descriptionForeground)}
   .change-file:disabled{cursor:not-allowed;opacity:.65}.change-file:disabled:hover{background:transparent}.current-changes.applied{border-color:var(--vscode-testing-iconPassed)}
-  .context-summary{margin:8px 0;padding:7px 9px;border-left:2px solid var(--vscode-descriptionForeground);background:var(--vscode-textBlockQuote-background);color:var(--vscode-descriptionForeground)}.context-summary strong,.context-summary span{display:block}.context-summary strong{color:var(--vscode-foreground);font-size:.92em}.context-summary span{margin-top:3px;font-size:.9em}.context-summary pre{max-height:220px;overflow:auto;white-space:pre-wrap;color:var(--vscode-foreground)}
+  .runtime-note{margin:7px 0;color:var(--vscode-descriptionForeground);font-size:.9em;line-height:1.4}
   </style></head><body>
   <div id="app"><div class="empty">Loading CodeAgent…</div></div>
   <script nonce="${nonce}">
@@ -515,8 +526,8 @@ function renderChat(detail, sessions, profile = DEFAULT_PROFILE, secretState = {
     const toolFailure = (tool,key) => renderToolFailureHtml(tool,key,esc);
     const activity = (item,key) => '<details data-disclosure="'+esc(key)+'" ' + (item.defaultExpanded ? 'open' : '') + '><summary><span class="status ' + esc(item.status) + '"></span>' + esc(item.summary) + '</summary><div class="tools">' + item.tools.map(tool => '<div class="tool"><span class="tool-icon">' + (tool.status === 'denied' ? '⊘' : tool.status === 'cancelled' ? '■' : tool.status === 'failed' ? '×' : tool.status === 'running' ? '●' : '✓') + '</span><div class="tool-body"><code class="tool-name">' + esc(tool.tool) + '</code>' + (tool.argumentSummary ? '<div class="tool-args">' + esc(tool.argumentSummary) + '</div>' : '') + toolFailure(tool,key+':'+tool.callId) + '</div></div>').join('') + '</div></details>';
     const copyButton = (text,label) => {const id=copyPayloads.push(String(text??''))-1;return '<button type="button" class="message-copy" data-copy="'+id+'" aria-label="'+esc(label)+'" title="'+esc(label)+'">⧉</button>';};
-    const contextSummary = (item,key) => '<div class="context-summary"><strong>↳ ' + esc(item.title) + '</strong><span>' + esc(item.message) + '</span><details data-disclosure="' + esc(key) + '"><summary>Context details</summary>' + (item.reason ? '<div>Trigger: ' + esc(item.reason) + '</div>' : '') + (item.requestEstimatedTokensBefore != null ? '<div>Estimated request: ' + esc(item.requestEstimatedTokensBefore) + (item.rebuildRequestEstimatedTokens != null ? ' → ' + esc(item.rebuildRequestEstimatedTokens) : '') + ' tokens</div>' : '') + (item.retryCount ? '<div>Recovered retries: ' + esc(item.retryCount) + '</div>' : '') + (item.condenser?.model ? '<div>Condenser: ' + esc(item.condenser.model) + '</div>' : '') + (item.condenser?.usage?.total_tokens != null ? '<div>Condenser usage: ' + esc(item.condenser.usage.total_tokens) + ' tokens</div>' : '') + (item.summary ? '<pre>' + esc(item.summary) + '</pre>' : '') + '</details></div>';
-    const truncationNotice = (item,key) => '<div class="notice ' + esc(item.tone) + '">' + esc(item.message) + (item.records?.length ? '<details data-disclosure="' + esc(key) + '"><summary>Recovery details</summary><pre>' + esc(JSON.stringify(item.records,null,2)) + '</pre></details>' : '') + '</div>';
+    const contextSummary = ${renderContextSummaryHtml.toString()};
+    const truncationNotice = ${renderTruncationNoticeHtml.toString()};
     const turn = value => '<section class="turn"><div class="user-row user-message"><div class="message-shell"><div class="user-bubble">' + esc(value.userMessage) + '</div>'+copyButton(value.userMessage,'Copy user message')+'</div></div>' + value.items.map(item => item.type === 'markdown' ? '<div class="message-shell agent-message"><div class="agent-markdown">' + markdown(item.text) + '</div>'+copyButton(item.text,'Copy agent response')+'</div>' : item.type === 'activityGroup' ? activity(item,value.turnId+':'+item.eventSeq) : item.type === 'contextSummary' ? contextSummary(item,value.turnId+':context:'+item.eventSeq) : item.kind === 'truncationRecovery' ? truncationNotice(item,value.turnId+':truncation:'+item.eventSeq) : '<div class="notice ' + esc(item.tone) + '">' + esc(item.message) + '</div>').join('') + (value.changedFiles.length ? '<div class="result-card"><div class="result-title">Changed in this turn · ' + value.changedFiles.length + ' file' + (value.changedFiles.length === 1 ? '' : 's') + '</div>' + value.changedFiles.slice(0,5).map(file => '<div class="file">' + esc(file) + '</div>').join('') + (value.changedFiles.length > 5 ? '<div class="muted">+' + (value.changedFiles.length - 5) + ' more</div>' : '') + '</div>' : '') + (value.validation ? '<div class="validation ' + esc(value.validation.status) + '">' + validationLabel(value.validation,true) + (value.validation.command ? ' · ' + esc(value.validation.command) : '') + (value.validation.appliesToCurrentChanges ? '' : ' · now out of date') + '</div>' : '') + value.attention.map(item => '<div class="notice">' + esc(item.message) + '</div>').join('') + '</section>';
     const validationLabel = ${validationLabel.toString()};
     const renderChangesHtml = ${renderChangesHtml.toString()};
@@ -615,5 +626,6 @@ function deactivate() {}
 
 module.exports = {
   activate, deactivate, renderChat, safeJson, styles, ChatViewProvider, RuntimeConnection, sameWorkspace,
-  renderToolFailureHtml, renderChangesHtml, validationLabel, validateProfile,
+  renderToolFailureHtml, renderContextSummaryHtml, renderTruncationNoticeHtml,
+  renderChangesHtml, validationLabel, validateProfile,
 };

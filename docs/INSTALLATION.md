@@ -96,19 +96,24 @@ export GLM_API_KEY
 .venv/bin/codeagent start . --provider glm --model glm-5.2
 ```
 
-Reasoning 默认关闭，因此原有命令的行为不变。启用时，需要同时选择该 Provider 支持的档位：
+Reasoning 默认关闭；GLM-5.3 是例外，该模型必须显式启用 reasoning。启用时，可以选择该 Provider 支持的档位：
 
 ```bash
-# GLM-5.2 支持 high、max；省略档位时使用 max
+# GLM-5.2 支持 high、max；省略档位时使用 high
 .venv/bin/codeagent start . --provider glm --model glm-5.2 \
-  --reasoning --reasoning-effort max
+  --reasoning --reasoning-effort high
+
+# GLM-5.3 始终启用 reasoning，支持 low、high、max，默认 high
+.venv/bin/codeagent start . --provider glm --model glm-5.3 \
+  --reasoning --reasoning-effort high
 
 # DeepSeek V4 支持 low、high、max；省略档位时使用 high
 .venv/bin/codeagent start . --provider deepseek --model deepseek-v4-flash \
   --reasoning --reasoning-effort high
 ```
 
-VS Code 的 **Model settings** 提供同样的开关和档位。保存后的值只用于新建会话；已有会话继续使用创建时的设置。
+VS Code 的 **Model settings** 当前支持 GLM-5.2 和 DeepSeek V4 的 reasoning 开关与档位；GLM-5.3 是
+Runtime/CLI 和正式 benchmark 能力，尚未进入 Extension 的模型白名单。保存后的值只用于新建会话；已有会话继续使用创建时的设置。
 界面只显示 reasoning 是否启用，不展示模型返回的隐藏推理内容。
 
 使用 GLM Coding Plan 专属 endpoint 时，先设置：

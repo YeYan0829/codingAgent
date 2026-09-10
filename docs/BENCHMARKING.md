@@ -1,236 +1,175 @@
 # SWE-bench 评测
 
-SWE-bench 用真实开源仓库的 bug 修复任务检查 Coding Agent。CodeAgent 使用任务指定的 Docker 镜像，
-最后交给 SWE-bench 官方评分程序判断修复是否成立。
+本文记录 benchmark harness、运行身份、恢复、成本和 artifact contract。正式与开发结果见
+[评测结果](EVALUATION_RESULTS.md)。最终 HAL 50 尚未运行；本文不提供预测通过率。
 
-本页说明正式评测如何固定题目和运行条件。已经得到的结果见[评测结果](EVALUATION_RESULTS.md)。`v0.5.0-rc.2`
-配置保留为冻结历史，但输出截断与 reasoning 上下文问题使它不能用于启动或恢复正式成绩；本次
-Evaluation Candidate commit 是下一次 HAL 50 的唯一代码基线。
+## 正式题集身份
 
-## 正式题集
+`v0.5.0` 的正式题集是 **HAL SWE-bench Verified Mini** 的固定 50 个 instance。版本控制中的
+[selection](../benchmarks/swebench/selections/hal-verified-mini-50.json)记录：
 
-`v0.5.0-rc.2` 的正式题集是 **HAL SWE-bench Verified Mini**。HAL 发布了固定的 50 个 instance ID；
-CodeAgent 没有替换题目，也没有根据开发结果筛题。
+| 身份 | 固定值 |
+| --- | --- |
+| Selection ID | `hal-swebench-verified-mini-50-7b231a9` |
+| HAL harness revision | `7b231a952828022a43977f21acfd452adda5088c` |
+| 官方 task ID 文件 | `agent_eval_harness/benchmarks/swebench_verified_mini_task_ids.txt` |
+| 官方列表 SHA‑256 | `ee7dc327d73dd45402679beed9f6ab22e5295cb6a2bb3b76669ca5e1f60e526f` |
+| Selection 文件 SHA‑256 | `852042b05e2a1a95fd8e7dd01448f367aa8e332baf58eadbbd53167c2d90001f` |
+| `swe-bench-tasks` commit | `3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d` |
+| SWE-bench commit | `334882dd1f2664cc55c1abfe9de4884af023c0c0` |
 
-版本控制中的题集是
-[hal-verified-mini-50.json](../benchmarks/swebench/selections/hal-verified-mini-50.json)。它记录以下来源身份：
+HAL 列表没有难度标签。Harness 只为调度读取固定 `swe-bench-tasks` 的 `task.yaml`：20 Easy、24 Medium、
+6 Hard；组内保持 HAL 官方顺序。难度只改变执行先后，不改变模型、Context、步骤、timeout 或 attempt 配置。
 
-- HAL harness revision：`7b231a952828022a43977f21acfd452adda5088c`
-- 官方列表路径：`agent_eval_harness/benchmarks/swebench_verified_mini_task_ids.txt`
-- 官方列表 SHA-256：`ee7dc327d73dd45402679beed9f6ab22e5295cb6a2bb3b76669ca5e1f60e526f`
-- 获取日期：`2026-09-09`
+早期自定义题集 [verified-eval-50.json](../benchmarks/swebench/verified-eval-50.json)是 Development selection，
+不计入正式成绩。
 
-HAL 的列表没有难度标签。CodeAgent 只为安排运行先后读取固定版本
-`swe-bench-tasks` 中的 `task.yaml` 难度字段。20 题排为 Easy，24 题排为 Medium，6 题排为 Hard；
-同一组内保持 HAL 官方顺序。
+## Evaluation Candidate 绑定
 
-难度只决定哪道题先运行。所有题使用相同的模型设置、步骤上限、命令时限和尝试规则。
+[机器配置快照](../benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json)固定评测参数，
+其 release identity 是“包含该文件的 Evaluation Candidate commit”。实际运行时，`run-manifest.json` 记录：
 
-早期自定义 50 题保留在
-[verified-eval-50.json](../benchmarks/swebench/verified-eval-50.json)。它已经标记为 Development，
-不计入 `v0.5.0` 正式评测。
+- Runtime version、Git commit 和 dirty 状态；
+- selection path、ID 和 SHA‑256；
+- provider/model、endpoint identity 和 config fingerprint；
+- Runtime、Context、condenser 和 reasoning 配置；
+- SWE-bench 与 task repository identity；
+- started/finished 时间和逐题状态。
 
-来源：
-[HAL SWE-bench Verified Mini](https://hal.cs.princeton.edu/swebench_verified_mini)、
-[HAL harness](https://github.com/princeton-pli/hal-harness)。
+正式运行必须从该 commit 的干净 checkout 启动。历史 RC 或 dirty Development 的 artifact 不得恢复、拼接或计入这 50 题。
+配置 JSON 是审计快照；CLI 参数仍需与它机械核对。
 
-## 一道题如何运行
+## 固定模型与资源
 
-```text
-读取固定题目
-→ 从指定 Docker 镜像导出 /testbed
-→ 核对 Git commit、文件树和镜像 digest
-→ 创建宿主 Git worktree
-→ 在一次性 Docker container 中运行项目命令
-→ 导出最终 patch
-→ 使用 official grader 评分
-→ 立即保存结果、用量、成本和报告路径
-```
-
-搜索、读取和编辑文件使用宿主 Git worktree。每条项目命令在新的 Docker container 中运行，
-并把同一个 worktree 挂载为 `/testbed`。
-
-Docker 只提供项目命令的执行环境。Agent loop、文件工具和修改规则仍由本地 Runtime 负责。
-
-benchmark harness 使用预先允许的评测权限，不经过 VS Code 的人工 Accept。因此它不能证明产品界面的审批体验。
-
-官方答案和测试列表只用于环境检查与评分。它们不会主动加入模型输入。
-
-## 模型和统一资源上限
-
-正式模型固定为 GLM-5.3。该模型在当前 API 上始终启用推理，不能关闭。`rc.2` 历史配置使用
-`reasoning_effort=max`；旧轨迹显示它与长 reasoning 输出、空 patch 有明显相关性，因此下一候选配置改用
-`reasoning_effort=high`。`max` 仍是可显式选择的 Provider 能力，不再是 CodeAgent 的 GLM 默认值。
-
-50 题统一使用以下限制：
-
-| 设置 | 固定值 |
+| 设置 | 值 |
 | --- | ---: |
-| 单次输出上限 | 8,192 token |
-| Runtime 上下文上限 | 128,000 token |
-| 每个执行切片 | 12 次模型调用 |
-| 每题模型调用上限 | 72 次 |
-| 项目命令默认 timeout | 120 秒 |
-| 项目命令最大 timeout | 1,800 秒 |
-| 完成尝试 | 1 次 |
+| Provider / model | GLM / `glm-5.3` |
+| Temperature | `1.0` |
+| Reasoning | enabled，正常 effort `high` |
+| 截断紧邻恢复 effort | `low`，恢复后回到 `high` |
+| GLM `clear_thinking` | `true` |
+| 单次主输出上限 | 8,192 token |
+| Runtime context limit | 128,000 token |
+| generation / continuation / safety reserve | 8,192 / 4,000 / 2,000 token |
+| 可用输入预算 | 113,808 token |
+| 执行切片 / 每题 ModelStep 上限 | 12 / 72 |
+| Context events | max 80，target 40 |
+| Context token ratio | soft 0.8，target 0.5 |
+| Summary / condenser safety | 2,048 / 2,000 token |
+| Condenser 调用 | 每主步骤最多 4 次，其中 soft 最多 1 次，无 tools |
+| 命令 timeout | 默认 120 秒，最大 1,800 秒 |
+| 完成尝试 | 1；只有未完成异常恢复时 attempt 增加 |
 | 项目命令网络 | 默认关闭 |
 
-输入、输出、缓存输入和 reasoning token 是事后记账字段，不是每题总 token 上限。
-正式配置没有虚构 `max_total_tokens_per_task`。
+Input、output、cached input 和 reasoning token 是事后用量，不是每题总 token 上限。没有
+`max_total_tokens_per_task`。单条 ToolResult 的模型可见文本上限是 16,000 UTF-8 字节；Context 使用 rolling semantic
+summary 和连续 raw CCES tail，具体 contract 见[上下文参考](CONTEXT.md)。
 
-ContextManager 每次请求控制工具输出大小，单条 ToolResult 的文本最多展示 16,000 字符。较旧的连续 CCES prefix 由无工具 condenser
-生成 rolling semantic summary，近期 CCES 保持连续 raw tail；不再按固定四步把结果转换成 residue，也不做 completed-turn
-eviction。当前请求通过 Current Task Anchor 精确出现一次。
+## 单题数据流
 
-当前 UserTurn 只向下一次请求回传紧邻上一 ModelStep 的完整 reasoning/tool 协议，同一 ToolCall/Result 不会再由普通 raw
-renderer 重复生成。更旧 reasoning 不进入主请求或 condenser，Session 审计事件仍保留原文。GLM 主请求使用
-`clear_thinking=true`；condenser 使用独立预算、最低合法 reasoning effort 和 `purpose=context_condenser`。
+```text
+读取固定 task
+→ 从官方 instance image 导出 /testbed
+→ 核对 image digest、base commit、HEAD 和 tree
+→ 创建宿主 Candidate worktree
+→ AgentRunner 处理 problem statement
+→ 每条项目命令进入一次性 Docker container
+→ 导出 prediction patch
+→ official grader 评分
+→ 原子保存任务状态、trajectory、usage、cost 和报告路径
+```
 
-历史 `rc.2` 配置见
-[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)。下一轮唯一有效的机器配置是
-[v0.5.0-evaluation-candidate-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json)；
-它固定 `high`、8,192 output、12/72 steps 与当前 semantic-condensation 参数，不允许沿用 `rc.2` 的 `max`/旧 context 配置。
+搜索、读取和编辑发生在宿主 worktree；Docker 只提供项目命令环境，并把同一 worktree mount 到 `/testbed`。
+Benchmark 使用预先允许的评测权限，不经过 VS Code 的人工 Approval/Accept，因此不能证明产品交互体验。
 
-两道定向回归 selection 见
-[runtime-reasoning-regression-2.json](../benchmarks/swebench/selections/runtime-reasoning-regression-2.json)。它只包含旧轨迹中
-输出恰好达到 8,192 token 且仍产生非空 patch 的 `django__django-12304`、`sympy__sympy-15599`，属于
-Development，不计入正式 50 题。第一次 reasoning `high` 回归消除了两题的输出触顶，但请求数和输入 token 明显增加；
-语义压缩实现后的复测及截断恢复结果见[评测结果](EVALUATION_RESULTS.md)。截断后的紧邻恢复请求会临时使用 `low`
-reasoning effort，形成工具调用或最终回答后恢复主配置 `high`。
+Gold patch、FAIL_TO_PASS 和 PASS_TO_PASS 仅供 source preparation 与 official grader 使用，不加入 Agent prompt、Runtime
+Snapshot 或 ToolRegistry。这是 harness 数据流隔离，不是抵御 Docker daemon 或宿主管理员的独立安全边界。
 
-当前实现以[上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)为准，不引入 Active Code、
-Working Set、文件重要度、RepoMap 或 RAG。真实 condensation smoke 和定向回归已经完成；正式 HAL 50 仍等待
-Evaluation Candidate commit 冻结。
+## Validation 与 official grader
 
-## GLM-5.3 兼容性 smoke
+Agent 的 `run_command(purpose="validation")` 使用 Bash `pipefail`。退出码 0 只形成针对当时 Candidate tree 的 validation
+evidence；它不证明测试范围充分，也不等于 official grader resolved。
 
-2026-09-10 的 semantic-condensation smoke 在受控 Session 中真实触发 1 次无工具 condenser，再完成 1 次主请求；
-Anchor、raw tail、summary wrapper、coverage、usage 和预算检查全部通过。可复现入口见
-[run_semantic_condensation_smoke.py](../benchmarks/swebench/smoke/run_semantic_condensation_smoke.py)；生成结果不进入
-Evaluation Candidate commit。
+Official grader 独立使用 SWE-bench 任务定义判定 patch。结果必须分别记录：
 
-2026-09-09 的最小付费 smoke 使用 GLM-5.3 和 reasoning `max`。模型先推理并调用 `read_file`，
-收到工具结果后继续推理，再给出最终答案。
+- Agent 是否正常结束；
+- 是否产生 patch；
+- validation 命令及其身份；
+- grader 是否完成；
+- grader 是否判定 resolved。
 
-两次模型请求都有完整 usage。合计 6,588 token，其中 reasoning 48 token；
-按冻结价格快照计算为 `CNY 0.018128`。
+Empty patch 是 grader 正常完成的 `unresolved`，不是基础设施失败。
 
-同日的单题 Docker smoke 使用 `psf__requests-1766` 跑通源码准备、Agent、patch 导出和 official grader。
-它在 7 次模型请求后完成，grader 判定 resolved；重复同一 run ID 时直接复用结果，没有再次调用模型。
+## Batch 顺序与状态
 
-这些 smoke 证明 Provider 参数、工具回合、推理内容回传、usage、成本计算和 Docker benchmark path 可以工作。
-它们不计入正式 SWE-bench 成绩。机器记录见
-[glm-5.3-tool-roundtrip-2026-09-09.json](../benchmarks/swebench/smoke/glm-5.3-tool-roundtrip-2026-09-09.json)。
+`codeagent swebench-batch` 按 selection 顺序串行执行。正式 selection 顺序不符合 Easy → Medium → Hard 时，在模型请求前
+拒绝启动。每题启动前原子写入 `running`；执行中 `phase` 为 `agent` 或 `grader`，结束后为 `completed`。
 
-## 批次顺序和持久化
+每题 `task-state.json` 至少保存 instance、attempt、phase、timestamps、Agent/grader 状态和结果身份。批次级
+`batch-summary.json.current_task` 同步保存当前 instance、attempt、phase 和更新时间，因此完成数不增长时仍可判断正在运行的
+阶段。
 
-`codeagent swebench-batch` 按 selection 顺序串行执行。正式 selection 加载时会检查
-Easy → Medium → Hard 的顺序；顺序错误会在模型请求前被拒绝。
+完成 outcome 分为：
 
-每题启动前先原子写入 `running` 状态。正常完成后，Runner 立即写入这些信息：
+- `resolved`；
+- `unresolved`；
+- `budget_exhausted`；
+- `output_truncated`；
+- `provider_error`；
+- `infra_error`；
+- `not_started`（批次汇总派生）。
 
-- instance ID 和 attempt
-- completed 状态与结果分类
-- Agent 和 official grader 状态
-- token usage 与成本
-- prediction、执行摘要和 official report 路径
-- `started_at`、`updated_at`、`completed_at` 与当前 `phase=agent|grader|completed`
+正常 unresolved 是完整结果，恢复时跳过。Provider 或基础设施异常保存 failed 状态并停止 batch，不伪装成 completed。
+Trajectory 中的 excessive truncation 等字段只用于诊断，不改变 Agent 行为或 outcome。
 
-批次级 `batch-summary.json.current_task` 同步给出 instance、attempt、phase 和最新更新时间；因此完成题数暂时不增长时，
-可以区分 Agent 仍在工作、official grader 正在运行和真正停止更新。状态写入仍是原子的。
+## Artifact 结构
 
-结果分类至少区分：`resolved`、`unresolved`、`budget_exhausted`、`output_truncated`、`provider_error`、
-`infra_error` 和 `not_started`。
+```text
+benchmarks/swebench/runs/<run-id>/
+├── run-manifest.json
+├── batch-summary.json
+└── tasks/<index>-<instance-id>/
+    ├── task-state.json
+    ├── trajectory-summary.json
+    ├── prediction.json
+    └── runs/.../sessions/.../events.jsonl
+```
 
-official grader 正常完成但没有解决的题属于 `unresolved`。它也是一个完整结果，恢复时会跳过，
-不会因为分数为零而自动重跑。
-
-Agent 没有生成 patch 时，official grader 会把该题记录为 empty patch。CodeAgent 将它保存为正常的
-`unresolved`，并保留每题目录中的批次报告。它不是基础设施失败。
-
-Provider 或基础设施异常会保存为 failed，并立即停止 batch，不会标记为 completed。使用相同
-`--run-id` 恢复时，这道未完成题会重新执行，attempt 加一。一个正常完成的题只允许一个完成结果。
-
-当前记录保留最新一次未完成状态和最终完整结果。异常请求在产生完整单题 usage 前中断时，
-其费用可能无法进入批次总成本；正式报告必须说明这种缺口。
-
-没有发生 condenser 请求时，`usage_by_purpose.context_condenser` 和对应 cost 记录为 complete numeric zero；这与
-“发生了请求但 provider 没返回 usage”的 unavailable 明确区分。trajectory 还记录
-`excessive_truncation`（同题至少 3 次），只用于诊断，不改变 Agent 策略或结果分类。
-本轮没有增加 `suspicious_success_output`：跨 pytest/tox/npm 等工具可靠识别“exit 0 但其实失败”需要脆弱的输出文本分类，
-误报价值低于风险；exit status 与 validation purpose 仍是唯一行为依据。
+存在 official grader 输出时，`task-state.json` 和 trajectory 记录配置的 report path。每题完成后立即原子更新状态与批次汇总。
+Runtime-generated artifact 可以在正式 code freeze 期间新增，但不能反向修改 Runtime、harness 或评测语义。
 
 ## 断点恢复
 
-恢复前，Runner 会核对 selection ID、selection 文件哈希、模型配置、价格快照和成本保护设置。
-
-一个已完成结果还必须保留 prediction、执行摘要和唯一的会话事件文件。证据缺失时不会把它当作可跳过结果。
-
-恢复语义如下：
+使用相同 `--run-id` 恢复时，batch 复核 selection、模型 config fingerprint、价格快照和成本保护身份。可跳过的 completed
+结果还必须有 prediction、trajectory 和唯一 Session events；证据缺失时不视为可恢复完成。
 
 ```text
-resolved 或正常 unresolved → 跳过
-not started → 从这里继续
-provider / infra interrupted → 重新执行，attempt 加一
-配置或价格身份变化 → 拒绝恢复
+resolved / 正常 unresolved → 跳过
+not started → 继续
+provider / infra interrupted → 重新执行，attempt + 1
+身份或价格变化 → 拒绝恢复
 ```
 
-正式运行还要求从同一个干净的 release tag 启动，并使用固定 grader 命令。
-Runner 当前不会自行比较 grader 可执行文件的内容哈希。
+Harness 不会自行验证 grader executable 的内容哈希，因此正式操作记录还必须保存固定 grader repository commit 和命令。
 
-## 本地成本保护
+## Usage 与成本
 
-GLM 没有在本流程中使用稳定的官方账户余额查询接口。Runner 因此使用本地预算：
+每次 provider 响应按 `purpose=main_agent|context_condenser` 记账。没有 condenser 请求时，condenser requests、token 和 cost
+是 complete numeric zero；发生请求但 Provider 缺失 usage 时才标记 unavailable。
+
+正式 batch 使用[冻结价格快照](../benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json)。Reasoning token 已包含在
+output token 中，不重复计价。GLM 没有在此流程使用稳定的账户余额 API，因此成本保护采用本地公式：
 
 ```text
-初始预算 - 已完整记录的成本 = 估算剩余预算
+估算剩余 = 250 CNY 批次预算 - 已完整记录成本
 ```
 
-正式 batch 创建时必须同时提供 CNY 价格快照和 `--cost-budget-cny`。
-每道未完成题启动前都会重新计算。如果估算剩余预算低于 10 元，batch 保存汇总并停止。
+每道未完成题启动前重算；估算剩余低于 10 CNY 时保存汇总并停止。已启动题不因余额变化中断。已有请求缺少完整成本时，
+不启动下一题。这是本地保护值，不代表 Provider 真实余额，也不要求花完整个预算。
 
-已经启动的题不会因为余额变化被中途终止。已有结果缺少完整成本时，Runner 也不会启动下一题。
+## 正式运行入口
 
-这是本地成本预算保护，不一定等于 Provider 账户真实余额。
-
-GLM-5.3 价格快照见
-[glm-5.3-standard-api-2026-09-09.json](../benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json)。
-reasoning token 已包含在 output token 中，不会重复计价。
-
-## rc.2 历史运行入口
-
-下面的命令只用于复核 `rc.2` 冻结参数，不应重新启动正式运行。`INITIAL_BUDGET_RMB` 由运行者在首次启动时填写，
-并在恢复时保持不变。
-
-```bash
-export TASK_REPO="$PWD/reference/swe-bench-tasks"
-export SOURCE_CACHE="$PWD/benchmarks/swebench/source-cache"
-export RUNS_DIR="$PWD/benchmarks/swebench/runs"
-export GRADER_COMMAND="$PWD/reference/SWE-bench/.venv/bin/python -m swebench.harness.run_evaluation --max_workers 1 --timeout 1800"
-export INITIAL_BUDGET_RMB="<本次批准的批次预算>"
-
-.venv/bin/codeagent swebench-batch \
-  benchmarks/swebench/selections/hal-verified-mini-50.json \
-  --task-repo "$TASK_REPO" \
-  --source-cache "$SOURCE_CACHE" \
-  --output-root "$RUNS_DIR" \
-  --provider glm --model glm-5.3 \
-  --temperature 1.0 \
-  --reasoning --reasoning-effort max \
-  --max-tokens 8192 --slice-steps 12 --max-model-steps 72 \
-  --grader-command "$GRADER_COMMAND" \
-  --report-template "$PWD/logs/evaluation/{run_id}/codeagent__glm-5.3/{instance_id}/report.json" \
-  --price-snapshot benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json \
-  --cost-budget-cny "$INITIAL_BUDGET_RMB" \
-  --minimum-remaining-cost-cny 10 \
-  --run-id v0.5.0-rc2-hal-mini-50
-```
-
-恢复时使用完全相同的命令和 `--run-id`。
-
-## Evaluation Candidate 运行入口（审计后准备，尚未执行）
-
-最终 HAL 50 必须从本次 Evaluation Candidate 的干净 checkout 启动。准备好的首次启动命令如下；它尚未在本轮执行：
+下面的命令只在 Evaluation Candidate 已提交、全量验证通过且 working tree clean 后执行。本轮文档冻结不运行它。
 
 ```bash
 export TASK_REPO="$PWD/reference/swe-bench-tasks"
@@ -255,32 +194,31 @@ export GRADER_COMMAND="$PWD/reference/SWE-bench/.venv/bin/python -m swebench.har
   --run-id v0.5.0-evaluation-candidate-hal-mini-50
 ```
 
-`250` 是本地预算保护值，不是要求花完的金额。
+恢复必须使用完全相同的命令和 run ID。启动前保存 Evaluation Candidate SHA，并确认：
 
-运行前必须再次核对机器配置文件、`git status --short` 为空和 manifest 中的 Evaluation Candidate commit。不要恢复或拼接
-任何 `rc.2`/dirty Development 的 partial run。
-
-## Development 证据
-
-GLM-5.2 两题 smoke 和单题 Hard 校准都属于 Development。它们用于验证链路和选择统一资源上限，
-不会与 HAL 50 题合并计算成绩。
-
-Hard 校准样本 `django__django-15629` 使用 61 次模型调用后主动结束。Agent 的验证通过，
-official grader 判定 unresolved。这个结果支持 72 步和 8,192 单次输出的统一设置，
-不表示 GLM-5.3 的正式成绩。
-
-详细记录见
-[glm-5.2-hard-1-result.json](../benchmarks/swebench/calibration/glm-5.2-hard-1-result.json)。
+```bash
+git status --short
+git rev-parse HEAD
+sha256sum benchmarks/swebench/selections/hal-verified-mini-50.json
+```
 
 ## 正式报告边界
 
-正式 50 题完成前，不报告预测通过率。最终报告至少包含：
+Final HAL 50 result pending。完成前不报告预测通过率，也不把 partial/diagnostic/calibration run 合并成正式结果。
 
-- official grader 解决题数，分母固定为 50
-- 六类 task outcome
-- 每题 attempt 和停止原因
-- usage 覆盖率与完整成本
-- release commit、tag、selection 和价格快照身份
-- Docker image digest 和 grader report 路径
+最终报告至少包含：
 
-当前没有完整的分阶段时延统计。无法把源码准备、Agent 执行和 grader 分别报告为中位数与 P90。
+- official grader resolved 数，分母固定 50；
+- 全部 outcome、attempt 和停止原因；
+- usage coverage、main/condenser token 与冻结价格成本；
+- Evaluation Candidate、最终 release commit/tag、selection 和价格快照身份；
+- Docker image digest 和 grader report 路径；
+- Evaluation Candidate 到 release commit 是否仅有文档差异。
+
+当前没有完整分阶段时延统计，不能声称提供 source preparation、Agent 和 grader 的中位数/P90。
+
+## Development 证据
+
+Provider smoke、Docker smoke、GLM‑5.2 calibration、定向 reasoning/truncation 回归和未完成 HAL partial 都属于
+Development/diagnostic。它们可以证明链路或支持参数选择，但不计入正式 50 题。具体记录和分类见
+[评测结果](EVALUATION_RESULTS.md)。历史配置 JSON 保留用于审计，不是正式恢复入口。

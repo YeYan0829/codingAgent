@@ -121,8 +121,8 @@ CodeAgent 会在每次调用模型前重新整理上下文。它保留当前请�
 因此，长任务不会只是不断追加完整聊天记录。模型每一步都能看到当前工作区的关键事实。
 
 当前使用连续 CCES raw tail 和 rolling semantic summary；最低上下文仍无法容纳时会停止并保留现场。
-详细现状见[当前架构](docs/ARCHITECTURE.md)；完整的连续事件窗口和语义压缩规则见
-[上下文管理技术设计](docs/CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)。
+详细现状见[当前架构](docs/ARCHITECTURE.md)；连续事件窗口、语义压缩和预算 contract 见
+[上下文管理参考](docs/CONTEXT.md)。
 
 ### 3. 让测试结果对应当前代码
 
@@ -270,7 +270,7 @@ HAL SWE-bench Verified Mini 固定 50 题尚未运行，也没有预测成绩。
 | [安装与运行](docs/INSTALLATION.md) | 如何安装 Runtime 和 Extension |
 | [产品使用流程](docs/PRODUCT.md) | 任务执行时可以看到什么、做什么 |
 | [当前架构](docs/ARCHITECTURE.md) | Runtime 如何管理上下文、工具和修改 |
-| [上下文管理技术设计](docs/CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md) | 当前 CCES、连续 raw tail、rolling semantic summary 与预算 contract |
+| [上下文管理参考](docs/CONTEXT.md) | 当前 CCES、连续 raw tail、rolling semantic summary 与预算 contract |
 | [安全模型](docs/SECURITY.md) | sandbox 能保护什么，不能保护什么 |
 | [Product RPC](docs/RPC.md) | Extension 如何与 Runtime 通信 |
 | [Benchmark 说明](docs/BENCHMARKING.md) | SWE-bench 如何运行和记录证据 |

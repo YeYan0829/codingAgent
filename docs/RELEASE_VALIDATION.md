@@ -1,105 +1,88 @@
-# v0.5.0 发布验收与下一 Evaluation Candidate
+# v0.5.0 发布检查清单
 
-本页记录 `v0.5.0-rc.2` 的历史冻结条件。之后发现输出截断和 reasoning 上下文处理问题，因此该 tag 与已有产物
-只保留为历史证据，不能直接发布；正式 HAL 50 题等待新的候选版本。
+本文只记录机械发布门禁，不承担架构、设计或 benchmark 方法说明。当前阶段是：Runtime 与 Extension 已冻结为
+Evaluation Candidate，正式 HAL SWE-bench Verified Mini 50 结果待运行；尚未创建最终 tag 或 release artifact。
 
-## 冻结基线
+## Evaluation Candidate 门禁
 
-| 项目 | 值 |
-| --- | --- |
-| Branch | `feature/v0.4-candidate-loop` |
-| Release tag | `v0.5.0-rc.2` |
-| Commit | 使用 `git rev-parse v0.5.0-rc.2^{commit}` 获取；tag 与 commit 一一对应 |
-| Python package | `codeagent-runtime 0.5.0` |
-| Runtime | `codeagent.__version__ == 0.5.0` |
-| VS Code Extension | `0.5.0` |
-| 冻结后 working tree | clean |
+正式 HAL 50 启动前必须满足：
 
-Commit 不能在自身内容中保存自己的哈希，因此本页用注释 tag 作为版本控制内的稳定身份。
-发布记录和产物记录应保存命令解析出的完整 commit。
+- [x] validation pipeline 对 `purpose=validation` 启用 Bash `pipefail`；
+- [x] Context semantic condensation、reasoning 和 truncation recovery 实现及定向回归完成；
+- [x] VS Code Extension / timeline 人工验收完成；
+- [x] 当前架构、Context、命令环境、RPC、安全、测试和 benchmark 文档与代码一致；
+- [x] 已实现 TD 退出 active docs；
+- [x] Python full suite、Extension tests、`compileall` 和 `git diff --check` 通过；
+- [x] Candidate commit 后 working tree clean；
+- [ ] 从最终 Evaluation Candidate SHA 启动 HAL 50。
 
-## 自动验收
+Candidate SHA 和本轮实测数量记录在冻结报告中；commit 不能在自身内容里保存自己的 SHA。正式运行的
+`run-manifest.json` 必须再次记录同一个 commit 且 `runtime.dirty=false`。
 
-| 验证 | 状态 | 结果 |
-| --- | --- | --- |
-| Python full suite | PASS | 发布工作目录：`326 passed, 5 skipped` |
-| Clean clone full suite | PASS | `325 passed, 6 skipped`；clone 不含被忽略的本地 task repository，因此多跳过一个 opt-in 用例 |
-| Benchmark / Provider 定向回归 | PASS | selection、顺序、持久化、恢复、成本保护、grader、GLM、reasoning 和 accounting：`49 passed` |
-| Product / RPC 定向回归 | PASS | `36 passed` |
-| Extension | PASS | `node --check extension.js` 和 `npm test` |
-| 真实 Bubblewrap | PASS | `5 passed`；实际创建 namespace 并检查文件与网络边界 |
-| 真实 Docker projection | PASS | `1 passed`；从 SWE-bench 镜像准备并运行源码 |
-| GLM-5.3 Provider smoke | PASS | reasoning → tool → result → continued reasoning → final；usage 和成本完整 |
-| GLM-5.3 Docker benchmark smoke | PASS | 单题完成、official grader 正常、结果可恢复且没有重复模型调用 |
-| Empty-patch grader smoke | PASS | official batch report 正确保存；empty patch 记为正常 unresolved |
-| Clean clone / source install | PASS | 从 tag commit 建立全新 clone 和 venv；Fake Runtime 与 RPC smoke 通过 |
-| Wheel 独立安装 | PASS | fresh venv 安装后，版本、`codeagent --help` 和 `codeagent-rpc --help` 通过 |
-| VSIX 内容 | PASS | 8 个预期文件；版本、入口、commands、views 和 settings 正常 |
-| Runtime ↔ Extension | PASS | 解包 VSIX 后以 explicit path 和 PATH 两种方式连接 wheel RPC |
+## 正式 HAL 50 完成门禁
 
-需要显式开启的 Bubblewrap 和 Docker 用例就是 full suite 中的 5 个 skipped。它们已经在真实环境中单独通过。
+- [ ] `run-manifest.json.finished_at` 与 `batch-summary.json.finished=true`；
+- [ ] selection ID、SHA、50 题分母和 pinned repositories 与冻结配置一致；
+- [ ] 每题都有唯一 completed result，或在最终报告中明确合法停止原因；
+- [ ] official grader report path 与 task artifact 一致；
+- [ ] usage coverage、main/condenser 分项和成本状态完整说明；
+- [ ] partial、diagnostic 和 calibration artifact 未混入正式结果；
+- [ ] `docs/EVALUATION_RESULTS.md` 填入由 artifact 机械导出的最终数字；
+- [ ] README benchmark headline、成本和证据链接与同一 artifact 一致。
 
-## 人工 GUI 验收
+如果 HAL 暴露 Runtime、Context、tool、validation、reasoning、prompt 或 harness correctness bug，应停止并标记本轮
+evaluation，不得边修改 production code 边继续累计结果。
 
-用户已用 Quick Start 仓库验证安装、模型配置、任务时间线、Approval、隔离修改、验证状态、原生 Diff、
-Accept、Discard、Stop / Budget 和 History。History 导航与最后一轮 UI 修复也已回归通过。
+## 发布文档门禁
 
-人工 GUI 验收状态：**PASS**。
+HAL 完成后允许进行 documentation-only closure：
 
-## 发行产物
+- [ ] README 更新项目定位、Quick Start、最终 HAL 指标和证据链接；
+- [ ] `docs/EVALUATION_RESULTS.md` 区分 final、diagnostic、calibration；
+- [ ] CHANGELOG / release notes 只写已实现功能和最终确认结果；
+- [ ] Architecture、Context 和 RPC 不出现设计阶段状态或未实现承诺；
+- [ ] 所有 Markdown 相对链接有效；
+- [ ] tracked 文档无开发机绝对路径、secret 或临时 TODO；
+- [ ] release commit 与 Evaluation Candidate 的 production code tree 相同。
 
-构建统一设置 `SOURCE_DATE_EPOCH=1704067200`，使 wheel 和 VSIX 可以从干净 checkout 重现。
+若 HAL 后只有文档变更，最终 release commit SHA 可以不同于 Evaluation Candidate SHA，但发布记录必须同时列出两者并证明
+其 production code diff 为空。
 
-| 产物 | 路径 | SHA-256 |
-| --- | --- | --- |
-| wheel | `dist/codeagent_runtime-0.5.0-py3-none-any.whl` | `52eb7bc579ba1364fce04e560430fa4daa38fd2d02376605139e97f629de18d7` |
-| VSIX | `dist/codeagent-0.5.0.vsix` | `66716af365c65889ef855072b205e0b39cfa8b7de00a90b4294715cf311f869f` |
+## 安装与产物门禁
 
-VSIX 不包含 Python Runtime。目标机器需要分别安装同版本 wheel 和 VSIX。
+从最终 release commit 的 clean clone 执行：
 
-## 正式 benchmark 基线
+- [ ] Python source install；
+- [ ] `codeagent --help` 与 `codeagent-rpc --help`；
+- [ ] Python full suite；
+- [ ] opt-in 真实 Bubblewrap smoke；
+- [ ] 必要的真实 Docker projection smoke；
+- [ ] wheel build、fresh venv install 和版本检查；
+- [ ] VSIX build、内容清单和版本检查；
+- [ ] Runtime ↔ packaged Extension 连接 smoke；
+- [ ] Extension 人工 smoke：配置、任务、Approval、timeline、Diff、Accept/Discard、Stop/预算、History；
+- [ ] wheel 与 VSIX SHA‑256 保存到 release notes。
 
-| 项目 | 固定值 |
-| --- | --- |
-| Benchmark | HAL SWE-bench Verified Mini |
-| Selection | [hal-verified-mini-50.json](../benchmarks/swebench/selections/hal-verified-mini-50.json)，固定 50 题 |
-| Model | GLM-5.3 |
-| Reasoning | enabled，effort `max` |
-| 统一资源 | 72 次模型调用；单次输出 8,192；全部难度相同 |
-| 顺序 | Easy → Medium → Hard；难度只影响先后 |
-| Attempts | 每题一个正常完成结果；中断按固定恢复规则处理 |
-| 成本保护 | 下一题开始前检查本地估算余额；低于 10 CNY 停止 |
-| Resume | 每题完成后原子保存；恢复跳过 resolved 和正常 unresolved |
-| 正式成绩 | PENDING |
+构建命令和环境要求见[安装与运行](INSTALLATION.md)，自动化测试范围见[测试说明](TESTING.md)。不要复用历史 RC 产物的
+checksum 作为最终 release 证据。
 
-旧自定义 50 题和 GLM-5.2 运行只属于 Development。它们不会并入 HAL 正式结果。
+## 版本与仓库门禁
 
-GLM-5.3 smoke 机器记录见
-[glm-5.3-tool-roundtrip-2026-09-09.json](../benchmarks/swebench/smoke/glm-5.3-tool-roundtrip-2026-09-09.json)。
-完整方法和启动命令见[评测方法](BENCHMARKING.md)。
+- [ ] `pyproject.toml`、`codeagent.__version__`、Extension `package.json` 和用户文档版本一致；
+- [ ] `git status --short` 为空；
+- [ ] `git diff --check` 通过；
+- [ ] tracked files 不包含 session、API key、本地缓存、临时回放 repo 或未分类 benchmark 输出；
+- [ ] public repository 中的 license、安装命令、图片和链接有效；
+- [ ] release tag 指向最终 release commit；
+- [ ] tag、GitHub release、artifact checksum 和 benchmark evidence 相互引用同一版本。
 
-## Release blockers
+## 当前已知发布边界
 
-当前发布阻断项：
+以下不是 HAL 启动 blocker，但必须在最终发布前关闭：
 
-- Provider `finish_reason`、输出截断自动续跑和有界终止已经完成代码与单元测试。
-- GLM 默认 reasoning effort 已从 `max` 调整为 `high`。
-- Session 保留完整 reasoning；主请求只保留紧邻上一 ModelStep 的 reasoning/tool 协议，更旧 reasoning 不进入模型
-  Context，也不生成 residue。
-- [上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)的 Phase 1–3 已实现：连续 CCES tail、
-  Current Task Anchor、rolling semantic summary、双预算和有界失败状态机已经替代固定四步窗口、历史 residue 与
-  whole-turn eviction。
-- 真实 GLM semantic-condensation smoke 已触发 1 次 condenser 并通过 Anchor、coverage、raw tail、usage 和继续执行检查。
-- `django__django-12304` 优先回归 official resolved；该题低于压缩阈值，19 个主请求内完成，没有 condenser call。
-- 后续两题回归暴露一次 SymPy 过度 reasoning：44 个请求、8 次截断后有界终止。截断后的紧邻请求现临时降为
-  `low` effort；修复后 SymPy 真实重跑在 1 次截断后成功工具续写，恢复 `high`，19 个请求完成且 official resolved。
-- 当前代码与验证已具备创建 Evaluation Candidate commit 的条件；在具体 commit SHA 冻结前，不创建新 tag、不重建
-  正式 wheel/VSIX，也不启动正式 HAL 50 题。
-- 发布前审计补上 validation-only Bash `pipefail`，避免测试管道前段失败形成成功证据；UI 现在明确区分命令成功证据、
-  当前 revision 证据与独立 official grader。Context condensation 和截断恢复以 Runtime/System 项显示，不伪装成回复。
-- 无 condenser 调用按完整数值零记账；batch task-state 与 summary 暴露 `agent|grader|completed` phase 和更新时间。
-- 阶段性 HAL 运行约 30 题、26 resolved，但它来自 dirty Development Runtime 且未完成，已作废，不作为正式成绩。
+- 正式 HAL 50 结果仍是 **PENDING**；
+- README 最终 benchmark 指标与发布叙事尚未更新；
+- 最终 wheel/VSIX 尚未从 release commit 重建；
+- 最终 tag 和 GitHub Release 尚未创建。
 
-`v0.5.0-rc.1` 的首次正式运行发现 grader adapter 会把 empty patch 误记为基础设施失败，
-并让 resume 错误跳过。该运行已停止并作废，不计入成绩。修复进入 `v0.5.0-rc.2` 后，正式 HAL
-50 题仍从头运行。
+评测方法见[Benchmark 文档](BENCHMARKING.md)，当前系统事实见[架构](ARCHITECTURE.md)。

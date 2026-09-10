@@ -12,7 +12,8 @@ Module._load = function(request, parent, isMain) {
 };
 
 const {
-  renderChat, ChatViewProvider, sameWorkspace, renderToolFailureHtml, renderChangesHtml, validateProfile,
+  renderChat, ChatViewProvider, sameWorkspace, renderToolFailureHtml, renderContextSummaryHtml,
+  renderTruncationNoticeHtml, renderChangesHtml, validateProfile,
 } = require("../extension.js");
 
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
@@ -162,19 +163,28 @@ test("embedded state escapes script-breaking markup", () => {
   assert.match(html, /\\u003c\/script\\u003e/);
 });
 
-test("context condensation renders as a compact system item with expandable details", () => {
-  const html = renderChat({sessionId: "s1", title: "Context", turns: [{
-    turnId: "t1", userMessage: "Continue", changedFiles: [], validation: null, attention: [],
-    items: [{type: "contextSummary", title: "Historical context summarized",
-      message: "40 earlier events · ~512 token summary", summary: "GOAL: finish fix",
-      reason: "soft_limit", retryCount: 1, condenser: {model: "glm-5.3"}, eventSeq: 7}],
-  }]}, []);
+test("context condensation renders as a short product note without diagnostics", () => {
+  const html = renderContextSummaryHtml({
+    title: "Historical context summarized", message: "40 earlier events · ~512 token summary",
+    summary: "USER_REQUIREMENTS: finish fix", reason: "soft_limit", retryCount: 1,
+    condenser: {model: "private-condenser"}, eventSeq: 7,
+  });
 
-  assert.match(html, /Historical context summarized/);
-  assert.match(html, /40 earlier events/);
-  assert.match(html, /Context details/);
-  assert.match(html, /GOAL: finish fix/);
-  assert.doesNotMatch(html, /agent-markdown">GOAL: finish fix/);
+  assert.match(html, /Earlier activity was summarized to keep this task running\./);
+  assert.doesNotMatch(html, /Historical context summarized|Context details|USER_REQUIREMENTS|private-condenser/);
+});
+
+test("output truncation recovery renders as a short product note without diagnostics", () => {
+  const item = {type: "notice", kind: "truncationRecovery", tone: "info",
+    message: "Runtime recovered from 2 truncated model outputs.",
+    records: [{finishReason: "length", originalReasoningEffort: "high",
+      recoveryReasoningEffort: "low"}], eventSeq: 8};
+  const html = renderTruncationNoticeHtml(item);
+  const warning = renderTruncationNoticeHtml({...item, tone: "warning"});
+
+  assert.match(html, /Continued automatically after a model response was cut short\./);
+  assert.match(warning, /Tried to continue automatically after a model response was cut short\./);
+  assert.doesNotMatch(html + warning, /Recovery details|finishReason|ReasoningEffort|Runtime recovered/);
 });
 
 test("composer clears submitted text and restores it only after rejection", () => {

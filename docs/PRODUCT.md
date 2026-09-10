@@ -25,7 +25,7 @@ Extension 使用 VS Code 中第一个 workspace folder。新建会话时，它�
 齿轮页可以设置 provider、model、reasoning、temperature、最大输出 token 和步骤预算。
 这些设置只影响之后新建的会话。
 
-GLM-5.3 的 reasoning 档位为 `high`、`max`，默认选择 `high`。DeepSeek V4 的档位为
+Extension 当前支持 GLM-5.2 的 `high`、`max` reasoning 档位，默认选择 `high`。DeepSeek V4 的档位为
 `low`、`high`、`max`，默认选择 `high`。关闭 reasoning 时，Runtime 不会发送 reasoning effort。
 
 设置保存到 VS Code 的本地状态。新建会话后，标题栏会显示这次会话使用的 reasoning 状态。
@@ -52,9 +52,11 @@ API Key 保存在 VS Code SecretStorage。输入框不会回显已经保存的�
 
 文件变化和测试结果也会显示在时间线中。界面不会展示或声称展示模型的隐藏推理。
 
-较早历史被语义压缩时，时间线会显示一个低干扰的 **Historical context summarized** Runtime/System 项；展开后可查看
-可可靠取得的覆盖数量、摘要大小、压缩前后估算和 condenser usage。它不是 Agent 回复。模型输出截断并自动恢复时，
-同一轮只显示聚合恢复提示；最终无法恢复或 Context 无法安全构造时才显示终止告警。
+较早历史被语义压缩时，时间线只显示一行低干扰提示，说明 Runtime 已压缩较早活动以继续任务。产品界面不展示
+语义摘要正文、内部 section、token 估算、触发原因、condenser 模型或 usage；这些数据仍保留在 Event Store 和 RPC 诊断字段中。
+
+模型输出截断并自动恢复时，同一轮只显示一行继续提示，不展示 `finish_reason`、reasoning effort 或恢复记录 JSON。
+最终无法恢复或 Context 无法安全构造时才显示终止告警。
 
 ## 4. 处理权限请求
 

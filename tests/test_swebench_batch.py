@@ -151,7 +151,7 @@ def test_evaluation_candidate_machine_config_matches_runtime_contract():
     assert value["runtime"]["context"] == {
         "max_events": 80, "target_events": 40, "soft_token_ratio": 0.8,
         "target_token_ratio": 0.5, "minimum_progress": 0.1,
-        "tool_result_max_chars": 16000,
+        "tool_result_max_bytes": 16000,
     }
     assert value["runtime"]["condenser"]["summary_max_tokens"] == 2048
     assert value["runtime"]["condenser"]["safety_margin"] == 2000

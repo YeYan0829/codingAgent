@@ -2,17 +2,16 @@
 
 本页把开发验证和正式成绩分开记录。开发 smoke 用于发现链路问题，不能与正式 50 题合并计算。
 
-## Final：HAL SWE-bench Verified Mini（待重新冻结）
+## Final：HAL SWE-bench Verified Mini（待正式运行）
 
-`v0.5.0-rc.2` 原计划使用 HAL 发布的固定 50 题和 GLM-5.3。输出截断和 reasoning 上下文问题发现后，
-该计划已被后续候选取代；`rc.2` 配置保留为历史证据，不产生正式成绩。本次 Evaluation Candidate commit
-是下一轮唯一代码基线。
+历史 `v0.5.0-rc.2` 计划已被当前 Evaluation Candidate 取代；其配置和不完整运行只作为历史证据，
+不产生正式成绩。正式 HAL 50 必须从最终 Evaluation Candidate commit 的干净 checkout 开始。
 
 | 项目 | 冻结设置或当前状态 |
 | --- | --- |
 | 题集 | HAL SWE-bench Verified Mini，固定 50 题 |
 | 调度 | 20 Easy → 24 Medium → 6 Hard；难度来自固定版本的 `swe-bench-tasks` |
-| 模型 | GLM-5.3；下一候选 reasoning `high` |
+| 模型 | GLM-5.3；Evaluation Candidate reasoning `high` |
 | 资源 | 全部题目统一使用 72 次模型调用上限和 8,192 单次输出上限 |
 | 尝试 | 每题一个正常完成结果；中断题按恢复规则重跑并增加 attempt |
 | Agent 运行 | **PENDING** |
@@ -23,7 +22,7 @@
 正式 selection 见
 [hal-verified-mini-50.json](../benchmarks/swebench/selections/hal-verified-mini-50.json)。
 历史 `rc.2` 运行配置见
-[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)；下一轮配置见
+[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)；正式候选配置见
 [Evaluation Candidate HAL 50](../benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json)。
 
 下一次正式运行必须从本次 Evaluation Candidate commit 的干净 checkout 启动。每题结束后立即保存结果，中断后使用
@@ -39,7 +38,7 @@
 `sympy__sympy-15599` 产生非空 patch。这两题作为 Runtime 修复后的定向真实回归，不计入正式成绩。
 
 该数据支持先把 GLM reasoning 默认值从 `max` 调整为 `high`，并修复 finish reason、截断续跑和 reasoning 历史构造；
-它不支持直接提高 8,192 单次输出上限。是否调整 output token budget 将在新策略的定向回归之后决定。
+它不支持直接提高 8,192 单次输出上限。后续定向回归消除了这两题的输出触顶，因此最终保留 8,192 上限。
 
 ### Runtime reasoning `high` 两题回归
 
@@ -53,10 +52,10 @@
 
 合计 reasoning token 从 26,511 降到 18,270，但请求数从 17 增到 49，input token 从 187,940 增到
 603,007。Django 虽然得到正确 patch，却出现明显的重复探索和多次纠错。这说明 `high` 有效降低单次长推理，
-但“请求上下文只保留紧邻上一 ModelStep reasoning”的连续性与效率仍需复查，当前结果不能用于冻结发布。
+但当时的 Context 连续性与效率仍需复查，因此这组结果没有用于冻结发布。
 
-后续修复以[上下文管理与语义压缩技术设计](CONTEXT_MANAGEMENT_TECHNICAL_DESIGN.md)为准：连续事件尾窗和滚动语义摘要
-将取代固定四步原文窗口与历史 residue，不恢复 Active Code/Working Set。
+该组数据随后由已实现的连续 raw CCES tail、rolling semantic summary 和有界截断恢复所取代。
+当前 contract 见[上下文管理参考](CONTEXT.md)。
 
 生成结果和完整运行证据保存在本地 `benchmarks/swebench/runs/runtime-reasoning-high-regression-2-20260909/`，
 不进入 Evaluation Candidate commit。
