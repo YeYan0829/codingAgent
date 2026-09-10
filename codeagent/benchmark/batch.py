@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable
 
-from codeagent.benchmark.accounting import PriceSnapshot, aggregate_usage, calculate_cost
+from codeagent.benchmark.accounting import PriceSnapshot, aggregate_usage, calculate_cost, zero_usage
 from codeagent.benchmark.manifest import build_run_manifest, write_json_atomic
 from codeagent.benchmark.swebench_harness import SWEbenchHarness, SWEbenchRunResult, SWEbenchTask
 from codeagent.benchmark.trajectory import analyze_trajectory, load_events, save_trajectory
@@ -120,7 +120,8 @@ class SWEbenchBatchRunner:
             if reused is not None:
                 completed.append(reused)
                 continue
-            guard = self._cost_guard(completed)
+            failed_attempts = self._load_failed_attempts(root, manifest)
+            guard = self._cost_guard([*completed, *failed_attempts])
             if guard is not None and not guard["can_start_next_task"]:
                 return self._write_summary(
                     root, manifest, completed, finished=False,
@@ -139,6 +140,7 @@ class SWEbenchBatchRunner:
             write_json_atomic(state_path, state)
             self._write_summary(root, manifest, completed, finished=False,
                                 current_task=_current_task(state, index))
+            existing_event_paths = set(task_root.joinpath("runs").rglob("events.jsonl"))
 
             def progress(phase: str) -> None:
                 state.update({"phase": phase, "updated_at": datetime.now(timezone.utc).isoformat()})
@@ -156,12 +158,19 @@ class SWEbenchBatchRunner:
             except Exception as exc:
                 outcome = _exception_outcome(exc)
                 completed_at = datetime.now(timezone.utc).isoformat()
+                failed_attempt = self._finish_failed_attempt(
+                    task_root, instance_id, attempt, manifest, started_at, completed_at,
+                    outcome, exc, existing_event_paths,
+                )
                 state.update({"status": "failed", "outcome": outcome, "stop_reason": outcome,
                               "phase": "completed", "updated_at": completed_at,
                               "completed_at": completed_at,
-                              "error_type": type(exc).__name__, "error": str(exc)})
+                              "error_type": type(exc).__name__, "error": str(exc),
+                              "failed_attempt_path": failed_attempt["attempt_path"]})
                 write_json_atomic(state_path, state)
-                self._write_summary(root, manifest, completed, finished=False)
+                self._write_summary(
+                    root, manifest, completed, finished=False, stop_reason=outcome
+                )
                 raise
             if entry["outcome"] == "infra_error":
                 completed_at = datetime.now(timezone.utc).isoformat()
@@ -226,6 +235,68 @@ class SWEbenchBatchRunner:
             "cost_by_purpose": cost_by_purpose,
         }
 
+    def _finish_failed_attempt(
+        self, task_root: Path, instance_id: str, attempt: int, manifest: dict,
+        started_at: str, finished_at: str, outcome: str, exc: Exception,
+        existing_event_paths: set[Path],
+    ) -> dict:
+        new_event_paths = sorted(
+            set(task_root.joinpath("runs").rglob("events.jsonl")) - existing_event_paths
+        )
+        trajectory_path: Path | None = None
+        events_path: Path | None = None
+        if len(new_event_paths) == 1:
+            events_path = new_event_paths[0]
+            events = load_events(events_path)
+            trajectory = analyze_trajectory(events, {"agent_status": outcome})
+            usage_by_purpose = trajectory.get("usage_by_purpose") or {}
+            token_usage = _usage_from_events(events)
+            cost_by_purpose = {
+                purpose: calculate_cost(usage, self.price_snapshot)
+                if self.price_snapshot and isinstance(usage, dict) else None
+                for purpose, usage in usage_by_purpose.items()
+            }
+            trajectory["cost_by_purpose"] = cost_by_purpose
+            trajectory_path = task_root / "attempts" / f"{attempt:04d}-trajectory.json"
+            trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+            save_trajectory(trajectory_path, trajectory)
+        elif not new_event_paths:
+            token_usage = zero_usage()
+            usage_by_purpose = {
+                "main_agent": zero_usage(), "context_condenser": zero_usage(),
+            }
+            cost_by_purpose = {
+                purpose: calculate_cost(usage, self.price_snapshot)
+                if self.price_snapshot else None
+                for purpose, usage in usage_by_purpose.items()
+            }
+        else:
+            token_usage = None
+            usage_by_purpose = {}
+            cost_by_purpose = {}
+        cost = (
+            calculate_cost(token_usage, self.price_snapshot)
+            if self.price_snapshot and isinstance(token_usage, dict) else None
+        )
+        attempt_path = task_root / "attempts" / f"{attempt:04d}.json"
+        attempt_path.parent.mkdir(parents=True, exist_ok=True)
+        value = {
+            "schema_version": 1, "instance_id": instance_id, "attempt": attempt,
+            "status": "failed", "outcome": outcome,
+            "error_type": type(exc).__name__, "error": str(exc),
+            "events_path": str(events_path) if events_path else None,
+            "trajectory_path": str(trajectory_path) if trajectory_path else None,
+            "token_usage": token_usage, "cost": cost,
+            "usage_by_purpose": usage_by_purpose, "cost_by_purpose": cost_by_purpose,
+            "evaluation_commit_sha": manifest["runtime"]["git_commit"],
+            "config_fingerprint": manifest["model"]["config_fingerprint"],
+            "selection_sha256": manifest["selection_sha256"],
+            "started_at": started_at, "finished_at": finished_at,
+        }
+        value["attempt_path"] = str(attempt_path)
+        write_json_atomic(attempt_path, value)
+        return value
+
     @staticmethod
     def _next_attempt(path: Path) -> int:
         if not path.exists():
@@ -262,6 +333,28 @@ class SWEbenchBatchRunner:
             return None
         save_trajectory(result["trajectory_path"], analyze_trajectory(load_events(matching[0]), result))
         return result
+
+    @staticmethod
+    def _load_failed_attempts(root: Path, manifest: dict) -> list[dict]:
+        attempts = []
+        for path in sorted(root.joinpath("tasks").glob("*/attempts/[0-9][0-9][0-9][0-9].json")):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise BatchCompatibilityError(f"失败 attempt artifact 无法读取: {path}") from exc
+            identities = (
+                ("config_fingerprint", manifest["model"]["config_fingerprint"]),
+                ("evaluation_commit_sha", manifest["runtime"]["git_commit"]),
+                ("selection_sha256", manifest["selection_sha256"]),
+            )
+            if any(value.get(name) != expected for name, expected in identities):
+                raise BatchCompatibilityError(f"失败 attempt identity 不兼容: {path}")
+            if value.get("status") != "failed" or value.get("outcome") not in {
+                "provider_error", "infra_error",
+            }:
+                raise BatchCompatibilityError(f"失败 attempt artifact 状态无效: {path}")
+            attempts.append(value)
+        return attempts
 
     @staticmethod
     def _validate_resume(old: dict, new: dict) -> None:
@@ -313,36 +406,25 @@ class SWEbenchBatchRunner:
                        stop_reason: str | None = None,
                        cost_guard: dict[str, object] | None = None,
                        current_task: dict[str, object] | None = None) -> dict:
-        usages = [x.get("token_usage") for x in tasks]
-        # 逐题汇总已经包含 request 计数；这里按字段保守聚合，旧结果缺失即 unavailable。
-        request_items: list[dict | None] = []
-        for usage in usages:
-            if not isinstance(usage, dict):
-                request_items.append(None)
-                continue
-            count = int(usage.get("requests", 0))
-            known = int(usage.get("requests_with_usage", 0))
-            request_items.extend([{}] * known + [None] * max(0, count - known))
-        coverage = aggregate_usage(request_items)
-        totals = {}
-        for field in ("input_tokens", "output_tokens", "total_tokens", "cached_input_tokens",
-                      "cache_miss_input_tokens", "reasoning_tokens"):
-            vals = [u.get(field) for u in usages if isinstance(u, dict)]
-            totals[field] = sum(vals) if vals and all(isinstance(x, int) for x in vals) else None
-            totals[field + "_complete"] = bool(usages) and all(
-                isinstance(u, dict) and u.get(field + "_complete") is True for u in usages
-            )
-        totals["cache_miss_input_tokens_derived"] = bool(usages) and all(
-            isinstance(u, dict) and u.get("cache_miss_input_tokens_derived") is True for u in usages
-        )
-        usage = {**coverage, **totals}
+        failed_attempts = self._load_failed_attempts(root, manifest)
+        scored_usage = _aggregate_entry_usage(tasks, empty_is_zero=True)
+        retry_usage = _aggregate_entry_usage(failed_attempts, empty_is_zero=True)
+        usage = _aggregate_entry_usage([*tasks, *failed_attempts])
         cost = calculate_cost(usage, self.price_snapshot) if self.price_snapshot else None
+        scored_cost = calculate_cost(scored_usage, self.price_snapshot) if self.price_snapshot else None
+        retry_cost = calculate_cost(retry_usage, self.price_snapshot) if self.price_snapshot else None
         summary = {
             "schema_version": 1, "run_id": manifest["run_id"], "selection_id": manifest["selection_id"],
             "finished": finished, "completed_tasks": len(tasks), "total_tasks": len(self.selection.instance_ids),
             "resolved": sum(x.get("oracle_passed") is True for x in tasks), "usage": usage,
             "cost": cost, "stop_reason": stop_reason, "cost_guard": cost_guard,
             "current_task": current_task, "tasks": tasks,
+            "cost_breakdown": {
+                "scored_usage": scored_usage, "scored_cost": scored_cost,
+                "retry_overhead_attempts": len(failed_attempts),
+                "retry_overhead_usage": retry_usage, "retry_overhead_cost": retry_cost,
+            },
+            "failed_attempts": failed_attempts,
             "outcomes": self._outcome_counts(root, tasks),
         }
         write_json_atomic(root / "batch-summary.json", summary)
@@ -377,6 +459,55 @@ def _non_negative_decimal(value: str | Decimal | None, label: str) -> Decimal | 
     if not result.is_finite() or result < 0:
         raise ValueError(f"{label}必须是非负有限数字")
     return result
+
+
+def _usage_from_events(events: list) -> dict[str, object]:
+    usages = [
+        event.payload.get("usage") if isinstance(event.payload.get("usage"), dict) else None
+        for event in events if event.type == "model_usage"
+    ]
+    return aggregate_usage(usages) if usages else zero_usage()
+
+
+def _aggregate_entry_usage(
+    entries: list[dict], *, empty_is_zero: bool = False,
+) -> dict[str, object]:
+    usages = [entry.get("token_usage") for entry in entries]
+    if not usages and empty_is_zero:
+        return zero_usage()
+    if usages and all(
+        isinstance(usage, dict) and usage.get("requests") == 0
+        and usage.get("coverage") == "complete"
+        for usage in usages
+    ):
+        return zero_usage()
+    request_items: list[dict | None] = []
+    for usage in usages:
+        if not isinstance(usage, dict):
+            request_items.append(None)
+            continue
+        count = int(usage.get("requests", 0))
+        known = int(usage.get("requests_with_usage", 0))
+        request_items.extend([{}] * known + [None] * max(0, count - known))
+    coverage = aggregate_usage(request_items)
+    totals: dict[str, object] = {}
+    for field in (
+        "input_tokens", "output_tokens", "total_tokens", "cached_input_tokens",
+        "cache_miss_input_tokens", "reasoning_tokens",
+    ):
+        values = [usage.get(field) for usage in usages if isinstance(usage, dict)]
+        totals[field] = (
+            sum(values) if values and all(isinstance(item, int) for item in values) else None
+        )
+        totals[field + "_complete"] = bool(usages) and all(
+            isinstance(usage, dict) and usage.get(field + "_complete") is True
+            for usage in usages
+        )
+    totals["cache_miss_input_tokens_derived"] = bool(usages) and all(
+        isinstance(usage, dict) and usage.get("cache_miss_input_tokens_derived") is True
+        for usage in usages
+    )
+    return {**coverage, **totals}
 
 
 def _current_task(state: dict, index: int) -> dict[str, object]:

@@ -60,9 +60,11 @@
     "execution_order": ["easy", "medium", "hard"],
     "difficulty_changes_task_config": false,
     "persist_result": "atomic_after_each_task",
+    "persist_failed_attempt_usage_and_cost": true,
     "task_progress": "agent|grader|completed with timestamps",
     "resume": "same_run_id_skips_completed_instances",
     "normal_unresolved_is_completed": true,
+    "provider_or_infra_failure_requires_manual_resume": true,
     "empty_patch_is_unresolved": true,
     "grader_infrastructure_failure_is_completed": false,
     "cost_guard": {

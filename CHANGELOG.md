@@ -21,6 +21,7 @@
 - Validation 命令现在仅在 `purpose=validation` 下启用 Bash `pipefail`，管道前段失败不再生成成功证据；
 - UI 不再把 validation command success、当前 revision evidence 和 official grader 混称为 “Validation passed”；
 - Timeline 不再展示语义摘要正文、token/model 诊断或截断恢复 JSON；
+- Batch 保存 Provider/基础设施失败 attempt 的 trajectory、usage 和 cost，并在恢复后将其作为 retry overhead 纳入成本保护；
 - 无 condenser 调用时按完整数值零记账，GLM 旧配置缺省 effort 统一迁移为 `high`。
 
 正式版本号、发布日期和 release commit 将在发布候选完成干净安装与验收后记录。

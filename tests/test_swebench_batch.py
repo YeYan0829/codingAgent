@@ -51,6 +51,30 @@ class FakeHarness:
              "dataset_base_commit": "b", "prepared_head": "h", "prepared_tree": "t"})
 
 
+class APIError(RuntimeError):
+    pass
+
+
+class UsageThenProviderFailureHarness(FakeHarness):
+    def run(self, task, model, model_config, output_root, runtime_config=None,
+            progress_callback=None):
+        self.calls.append(task.instance_id)
+        if progress_callback:
+            progress_callback("agent")
+        session = Path(output_root) / "failed-run" / "sessions" / "session-failed"
+        session.mkdir(parents=True)
+        (session / "events.jsonl").write_text(json.dumps({
+            "type": "model_usage", "payload": {
+                "purpose": "main_agent", "usage": {
+                    "input_tokens": 3, "output_tokens": 2, "total_tokens": 5,
+                    "cached_input_tokens": 0, "cache_miss_input_tokens": 3,
+                    "reasoning_tokens": 0,
+                },
+            },
+        }) + "\n")
+        raise APIError("provider unavailable")
+
+
 def make_selection(tmp_path):
     path = tmp_path / "selection.json"
     path.write_text(json.dumps({"selection_id": "three", "tasks": [
@@ -168,6 +192,43 @@ def test_failure_keeps_completed_and_resume_skips_it(tmp_path):
     resumed = FakeHarness(); summary = make_runner(tmp_path, resumed).run("batch-2")
     assert resumed.calls == ["two", "three"] and summary["completed_tasks"] == 3
     retried_state = next((tmp_path / "out/batch-2/tasks").glob("0001-*/task-state.json"))
+    assert json.loads(retried_state.read_text())["attempt"] == 2
+
+
+def test_provider_failure_usage_is_persisted_and_counted_by_resume_cost_guard(tmp_path):
+    failed = UsageThenProviderFailureHarness()
+    runner = make_runner(
+        tmp_path, failed, price_snapshot=cny_snapshot(),
+        cost_budget_cny="15", minimum_remaining_cost_cny="10",
+    )
+    with pytest.raises(APIError, match="provider unavailable"):
+        runner.run("batch-provider-retry")
+
+    root = tmp_path / "out/batch-provider-retry"
+    summary = json.loads((root / "batch-summary.json").read_text())
+    attempt = json.loads(next(root.glob("tasks/0000-*/attempts/0001.json")).read_text())
+    assert summary["stop_reason"] == "provider_error"
+    assert summary["usage"]["requests"] == 1
+    assert summary["cost"]["total"] == "5"
+    assert summary["cost_breakdown"]["retry_overhead_attempts"] == 1
+    assert summary["cost_breakdown"]["retry_overhead_cost"]["total"] == "5"
+    assert attempt["token_usage"]["total_tokens"] == 5
+    assert attempt["cost"]["total"] == "5"
+    assert Path(attempt["trajectory_path"]).is_file()
+
+    resumed = FakeHarness()
+    resumed_summary = make_runner(
+        tmp_path, resumed, price_snapshot=cny_snapshot(),
+        cost_budget_cny="15", minimum_remaining_cost_cny="10",
+    ).run("batch-provider-retry")
+    assert resumed.calls == ["one"]
+    assert resumed_summary["completed_tasks"] == 1
+    assert resumed_summary["cost"]["total"] == "10"
+    assert resumed_summary["cost_breakdown"]["scored_cost"]["total"] == "5"
+    assert resumed_summary["cost_breakdown"]["retry_overhead_cost"]["total"] == "5"
+    assert resumed_summary["stop_reason"] == "remaining_cost_below_threshold"
+    assert resumed_summary["cost_guard"]["spent"] == "10"
+    retried_state = next(root.glob("tasks/0000-*/task-state.json"))
     assert json.loads(retried_state.read_text())["attempt"] == 2
 
 

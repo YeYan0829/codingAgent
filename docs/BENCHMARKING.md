@@ -58,7 +58,7 @@ HAL 列表没有难度标签。Harness 只为调度读取固定 `swe-bench-tasks
 | Summary / condenser safety | 2,048 / 2,000 token |
 | Condenser 调用 | 每主步骤最多 4 次，其中 soft 最多 1 次，无 tools |
 | 命令 timeout | 默认 120 秒，最大 1,800 秒 |
-| 完成尝试 | 1；只有未完成异常恢复时 attempt 增加 |
+| 完成尝试 | 1；Provider/基础设施中断后人工恢复时 attempt 增加 |
 | 项目命令网络 | 默认关闭 |
 
 Input、output、cached input 和 reasoning token 是事后用量，不是每题总 token 上限。没有
@@ -105,7 +105,8 @@ Empty patch 是 grader 正常完成的 `unresolved`，不是基础设施失败�
 `codeagent swebench-batch` 按 selection 顺序串行执行。正式 selection 顺序不符合 Easy → Medium → Hard 时，在模型请求前
 拒绝启动。每题启动前原子写入 `running`；执行中 `phase` 为 `agent` 或 `grader`，结束后为 `completed`。
 
-每题 `task-state.json` 至少保存 instance、attempt、phase、timestamps、Agent/grader 状态和结果身份。批次级
+每题 `task-state.json` 至少保存 instance、attempt、phase、timestamps、Agent/grader 状态和结果身份。Provider 或基础设施
+异常还会在 `attempts/` 保存该次尝试的 Event 引用、trajectory、usage、cost 和错误。批次级
 `batch-summary.json.current_task` 同步保存当前 instance、attempt、phase 和更新时间，因此完成数不增长时仍可判断正在运行的
 阶段。
 
@@ -119,7 +120,8 @@ Empty patch 是 grader 正常完成的 `unresolved`，不是基础设施失败�
 - `infra_error`；
 - `not_started`（批次汇总派生）。
 
-正常 unresolved 是完整结果，恢复时跳过。Provider 或基础设施异常保存 failed 状态并停止 batch，不伪装成 completed。
+正常 unresolved 是完整结果，恢复时跳过。Provider 或基础设施异常保存 failed 状态和 attempt 账本并停止 batch，
+不伪装成 completed，也不会自动重跑整道题。
 Trajectory 中的 excessive truncation 等字段只用于诊断，不改变 Agent 行为或 outcome。
 
 ## Artifact 结构
@@ -130,6 +132,8 @@ benchmarks/swebench/runs/<run-id>/
 ├── batch-summary.json
 └── tasks/<index>-<instance-id>/
     ├── task-state.json
+    ├── attempts/<attempt>.json
+    ├── attempts/<attempt>-trajectory.json
     ├── trajectory-summary.json
     ├── prediction.json
     └── runs/.../sessions/.../events.jsonl
@@ -146,7 +150,7 @@ Runtime-generated artifact 可以在正式 code freeze 期间新增，但不能�
 ```text
 resolved / 正常 unresolved → 跳过
 not started → 继续
-provider / infra interrupted → 重新执行，attempt + 1
+provider / infra interrupted → 人工恢复后重新执行，attempt + 1；保留旧 attempt 成本
 身份或价格变化 → 拒绝恢复
 ```
 
@@ -156,6 +160,10 @@ Harness 不会自行验证 grader executable 的内容哈希，因此正式操�
 
 每次 provider 响应按 `purpose=main_agent|context_condenser` 记账。没有 condenser 请求时，condenser requests、token 和 cost
 是 complete numeric zero；发生请求但 Provider 缺失 usage 时才标记 unavailable。
+
+批次顶层 `usage` 和 `cost` 表示所有已确认支出，包括最终参与评分的完成尝试和 Provider/基础设施中断前已经成功返回 usage
+的请求。`cost_breakdown.scored_*` 只聚合完成题目；`retry_overhead_*` 单列失败 attempt。成本保护使用二者之和，而
+resolved rate 仍只由 official grader 完成结果决定。没有 usage 的失败 HTTP 请求不推测 token 或费用。
 
 正式 batch 使用[冻结价格快照](../benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json)。Reasoning token 已包含在
 output token 中，不重复计价。GLM 没有在此流程使用稳定的账户余额 API，因此成本保护采用本地公式：
