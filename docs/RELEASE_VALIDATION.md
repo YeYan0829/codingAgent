@@ -28,12 +28,13 @@
 - [x] `git diff --check` 通过；
 - [x] 本轮变更范围仅为发布文档、包元数据和机器可读评测摘要。
 
-当前工作树包含本轮待审核的发布整理，这是预期状态。创建 release commit 后仍需在 clean checkout 重复版本、链接和产物哈希
-检查；release commit 与 Candidate commit 可以不同，但 production code tree 必须继续保持一致。
+最终 release commit 已从 clean checkout 完成版本、链接和产物复核。它与 Evaluation Candidate 的 production code tree
+保持一致；二者之间只有发布文档、包元数据和机器可读评测摘要发生变化。
 
 ## 自动化与隔离验证
 
 - [x] Python full suite：381 passed、5 skipped；
+- [x] clean checkout full suite：380 passed、6 skipped；额外 skip 是未安装被忽略的固定 task repository；
 - [x] Extension tests：1 passed；
 - [x] `compileall` 通过；
 - [x] 产品元数据与文档定向检查：16 passed；
@@ -61,6 +62,7 @@
 - [x] packaged Extension 到 fresh-wheel RPC 的显式路径与 PATH 连接 smoke 均通过，缺失 executable 能正确拒绝；
 - [x] `dist/SHA256SUMS` 对两个文件校验通过；
 - [x] wheel 与 VSIX 未发现密钥或开发机绝对路径。
+- [x] 从 GitHub Release 重新下载三项资产，checksum、fresh wheel install、Fake provider、VSIX install、activation 和 RPC smoke 均通过。
 
 VS Code 的完整可视化流程已在代码冻结前人工审核；本轮只验证重新打包后的内容和 Runtime 连接，没有重复声称执行 GUI 人工验收。
 
@@ -74,15 +76,16 @@ VS Code 的完整可视化流程已在代码冻结前人工审核；本轮只验
 
 ## 发布操作
 
-以下是审核通过后的发布动作，不是代码或文档缺陷：
+以下发布动作已经完成：
 
-- [ ] 审核并提交本轮 release-only 变更；
-- [ ] 从最终 release commit 的 clean checkout 复核版本、链接和 checksum；
-- [ ] 创建并推送 `v0.5.0` tag；
-- [ ] 创建 GitHub Release，上传 wheel、VSIX 和 `SHA256SUMS`；
-- [ ] 在 Release Notes 中同时记录 Candidate SHA、release SHA、HAL 结果与 artifact checksum。
+- [x] 审核并提交本轮 release-only 变更；
+- [x] 从最终 release commit 的 clean checkout 复核版本、链接和 checksum；
+- [x] 创建并推送 `v0.5.0` annotated tag；
+- [x] 创建 GitHub Release，上传 wheel、VSIX 和 `SHA256SUMS`；
+- [x] Release Notes 同时记录 Candidate SHA、release SHA、HAL 结果与 artifact checksum；
+- [x] 从 GitHub Release 下载正式资产并重复安装与连接验证。
 
-在上述发布动作完成前，不应把本地构建产物描述为已经公开发布。
+Release 页面：<https://github.com/YeYan0829/codingAgent/releases/tag/v0.5.0>。
 
 ## 已知边界
 
@@ -92,4 +95,4 @@ VS Code 的完整可视化流程已在代码冻结前人工审核；本轮只验
 - 单次正式运行成本约 ¥150.04，只是该配置和该轮运行的实测，不是固定产品价格；
 - v0.5.0 仍是本地单任务 Runtime，不提供后台队列、远程执行、多租户或无人值守自治。
 
-在不继续修改 production code 的前提下，当前状态可进入 release commit、clean-checkout 复核、打 tag 和上传产物阶段。
+v0.5.0 已完成发布并进入维护状态；后续改进不再扩大本版本范围。
