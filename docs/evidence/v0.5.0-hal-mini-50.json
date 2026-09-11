@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "status": "final",
+  "benchmark": "HAL SWE-bench Verified Mini",
+  "run_id": "v0.5.0-evaluation-candidate-932b52f-hal-mini-50",
+  "runtime": {
+    "version": "0.5.0",
+    "evaluation_commit": "932b52ffff4209a748c6646a056d2ab43111637e",
+    "dirty": false
+  },
+  "selection": {
+    "id": "hal-swebench-verified-mini-50-7b231a9",
+    "sha256": "852042b05e2a1a95fd8e7dd01448f367aa8e332baf58eadbbd53167c2d90001f",
+    "task_count": 50,
+    "difficulty_source": "swe-bench-tasks task.yaml at pinned task repository commit",
+    "difficulty_is_hal_official": false
+  },
+  "model": {
+    "provider": "glm",
+    "model": "glm-5.3",
+    "temperature": 1.0,
+    "reasoning_enabled": true,
+    "reasoning_effort": "high",
+    "max_output_tokens": 8192,
+    "max_model_steps_per_task": 72
+  },
+  "result": {
+    "resolved": 35,
+    "total": 50,
+    "resolved_rate": 0.7,
+    "by_difficulty": {
+      "easy": {"resolved": 16, "total": 20},
+      "medium": {"resolved": 17, "total": 24},
+      "hard": {"resolved": 2, "total": 6}
+    },
+    "outcomes": {
+      "resolved": 35,
+      "unresolved": 13,
+      "budget_exhausted": 2,
+      "output_truncated": 0,
+      "provider_error": 0,
+      "infra_error": 0,
+      "not_started": 0
+    },
+    "non_empty_patches": 50,
+    "completed_within_model_step_budget": 48
+  },
+  "runtime_diagnostics": {
+    "output_truncation_events": 25,
+    "tasks_with_output_truncation": 13,
+    "semantic_condensation_calls": 7,
+    "semantic_condensation_successes": 7,
+    "semantic_condensation_failures": 0,
+    "context_exceeded_tasks": 0,
+    "protocol_errors": 1,
+    "provider_errors": 0,
+    "infrastructure_errors": 0,
+    "retry_overhead_attempts": 0
+  },
+  "usage": {
+    "requests": 1229,
+    "input_tokens": 31582505,
+    "output_tokens": 940359,
+    "total_tokens": 32522864,
+    "cached_input_tokens": 21491648,
+    "cache_miss_input_tokens": 10090857,
+    "reasoning_tokens": 714244,
+    "coverage": "complete"
+  },
+  "cost": {
+    "currency": "CNY",
+    "total": "150.040204",
+    "price_snapshot_id": "glm-5.3-standard-api-cny-2026-09-09",
+    "complete": true,
+    "note": "这是本次固定评测的实测成本，不是产品运行的固定成本。"
+  },
+  "unresolved_instance_ids": [
+    "sympy__sympy-18763",
+    "astropy__astropy-7336",
+    "matplotlib__matplotlib-23476",
+    "sympy__sympy-15875",
+    "django__django-13346",
+    "django__django-13809",
+    "django__django-14725",
+    "sympy__sympy-17318",
+    "django__django-16950",
+    "sympy__sympy-20428",
+    "scikit-learn__scikit-learn-25747",
+    "pylint-dev__pylint-4551",
+    "django__django-14011"
+  ],
+  "budget_exhausted_instance_ids": [
+    "django__django-15629",
+    "sphinx-doc__sphinx-9461"
+  ],
+  "source_artifacts": {
+    "run_manifest_sha256": "2fb25bb7caa709ca46de34c113b877ea293f5c380b83fae26e030a7430fff18e",
+    "batch_summary_sha256": "6b61d219954af99399de56b910fae71405cd7d34c24d68fe934d04434137e98d",
+    "selection_sha256": "852042b05e2a1a95fd8e7dd01448f367aa8e332baf58eadbbd53167c2d90001f",
+    "config_sha256": "45a0cee467c3f169dcb014087ff47768712e2949063c7a46aa457a951680d0bd"
+  },
+  "limitations": [
+    "这是一次 temperature 1.0 采样，不能估计多次运行之间的方差。",
+    "结果衡量模型、提示词、Runtime、工具、环境和 grader 的联合流程。",
+    "抽查的压缩轨迹中没有发现由上下文丢失直接造成的失败；这不能证明语义压缩对任务成功率没有影响。"
+  ]
+}

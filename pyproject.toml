@@ -6,7 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "codeagent-runtime"
 version = "0.5.0"
 description = "Auditable local coding agent runtime with reviewed workspace changes."
+readme = "README.md"
 requires-python = ">=3.11"
+license = {file = "LICENSE"}
 dependencies = [
   "typer>=0.12",
   "rich>=13.0",
@@ -22,6 +24,12 @@ dev = ["pytest>=8.0"]
 codeagent = "codeagent.cli:app"
 codeagent-rpc = "codeagent.product.rpc:main"
 codeagent-product-demo = "codeagent.product.demo:main"
+
+[project.urls]
+Homepage = "https://github.com/YeYan0829/codingAgent"
+Repository = "https://github.com/YeYan0829/codingAgent.git"
+Issues = "https://github.com/YeYan0829/codingAgent/issues"
+Documentation = "https://github.com/YeYan0829/codingAgent/tree/main/docs"
 
 [tool.setuptools.packages.find]
 include = ["codeagent*"]

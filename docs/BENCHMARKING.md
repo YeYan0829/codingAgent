@@ -1,7 +1,7 @@
 # SWE-bench 评测
 
 本文记录 benchmark harness、运行身份、恢复、成本和 artifact contract。正式与开发结果见
-[评测结果](EVALUATION_RESULTS.md)。最终 HAL 50 尚未运行；本文不提供预测通过率。
+[评测结果](EVALUATION_RESULTS.md)。`0.5.0` 的最终 HAL 50 已完成，结果为 35/50 resolved；本文重点说明该结果如何产生和追溯。
 
 ## 正式题集身份
 
@@ -36,8 +36,9 @@ HAL 列表没有难度标签。Harness 只为调度读取固定 `swe-bench-tasks
 - SWE-bench 与 task repository identity；
 - started/finished 时间和逐题状态。
 
-正式运行必须从该 commit 的干净 checkout 启动。历史 RC 或 dirty Development 的 artifact 不得恢复、拼接或计入这 50 题。
-配置 JSON 是审计快照；CLI 参数仍需与它机械核对。
+正式运行从 commit `932b52ffff4209a748c6646a056d2ab43111637e` 的干净 checkout 启动，实际 `run-manifest.json`
+记录 `runtime.dirty=false`。历史 RC 或 dirty Development 的 artifact 未恢复、拼接或计入这 50 题。配置 JSON 是审计快照；
+CLI 参数与实际 manifest 已机械核对。
 
 ## 固定模型与资源
 
@@ -177,7 +178,7 @@ output token 中，不重复计价。GLM 没有在此流程使用稳定的账户
 
 ## 正式运行入口
 
-下面的命令只在 Evaluation Candidate 已提交、全量验证通过且 working tree clean 后执行。本轮文档冻结不运行它。
+正式运行使用下面的参数组合。它保留在文档中用于复核，不应因为文档整理再次运行。
 
 ```bash
 export TASK_REPO="$PWD/reference/swe-bench-tasks"
@@ -199,7 +200,7 @@ export GRADER_COMMAND="$PWD/reference/SWE-bench/.venv/bin/python -m swebench.har
   --price-snapshot benchmarks/swebench/prices/glm-5.3-standard-api-2026-09-09.json \
   --cost-budget-cny 250 \
   --minimum-remaining-cost-cny 10 \
-  --run-id v0.5.0-evaluation-candidate-hal-mini-50
+  --run-id v0.5.0-evaluation-candidate-932b52f-hal-mini-50
 ```
 
 恢复必须使用完全相同的命令和 run ID。启动前保存 Evaluation Candidate SHA，并确认：
@@ -212,16 +213,12 @@ sha256sum benchmarks/swebench/selections/hal-verified-mini-50.json
 
 ## 正式报告边界
 
-Final HAL 50 result pending。完成前不报告预测通过率，也不把 partial/diagnostic/calibration run 合并成正式结果。
+Final HAL 50 为 35/50 resolved。完整 outcome 为 35 resolved、13 unresolved、2 budget exhausted；没有 provider、infra、
+output-truncated 或 not-started outcome。正式结果、usage、成本和失败归因见[评测结果](EVALUATION_RESULTS.md)，核心机器数据见
+[发布证据](evidence/v0.5.0-hal-mini-50.json)。Partial、diagnostic 和 calibration run 没有合并进该结果。
 
-最终报告至少包含：
-
-- official grader resolved 数，分母固定 50；
-- 全部 outcome、attempt 和停止原因；
-- usage coverage、main/condenser token 与冻结价格成本；
-- Evaluation Candidate、最终 release commit/tag、selection 和价格快照身份；
-- Docker image digest 和 grader report 路径；
-- Evaluation Candidate 到 release commit 是否仅有文档差异。
+最终 release commit 可以在 Evaluation Candidate 之后仅包含文档和打包元数据修改。Release 记录应同时保留 Evaluation
+Candidate SHA 和最终 release commit/tag，不能把后者误写成实际接受模型请求的代码身份。
 
 当前没有完整分阶段时延统计，不能声称提供 source preparation、Agent 和 grader 的中位数/P90。
 

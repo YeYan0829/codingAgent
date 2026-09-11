@@ -1,170 +1,147 @@
-# 评测结果
+# v0.5.0 评测结果
 
-本页把开发验证和正式成绩分开记录。开发 smoke 用于发现链路问题，不能与正式 50 题合并计算。
+本页记录 CodeAgent `0.5.0` 的正式 HAL SWE-bench Verified Mini 50 结果、运行可靠性和失败边界。开发 smoke、历史
+calibration 和未完成运行不与正式成绩合并。
 
-## Final：HAL SWE-bench Verified Mini（待正式运行）
+## 正式结果
 
-历史 `v0.5.0-rc.2` 计划已被当前 Evaluation Candidate 取代；其配置和不完整运行只作为历史证据，
-不产生正式成绩。正式 HAL 50 必须从最终 Evaluation Candidate commit 的干净 checkout 开始。
-
-| 项目 | 冻结设置或当前状态 |
+| 项目 | 结果 |
 | --- | --- |
-| 题集 | HAL SWE-bench Verified Mini，固定 50 题 |
-| 调度 | 20 Easy → 24 Medium → 6 Hard；难度来自固定版本的 `swe-bench-tasks` |
-| 模型 | GLM-5.3；Evaluation Candidate reasoning `high` |
-| 资源 | 全部题目统一使用 72 次模型调用上限和 8,192 单次输出上限 |
-| 尝试 | 每题一个正常完成结果；中断题按恢复规则重跑并增加 attempt |
-| Agent 运行 | **PENDING** |
-| 解决题数 | **PENDING，不提供预测值** |
-| Token 与成本 | **PENDING** |
-| 逐题报告 | **PENDING** |
+| Benchmark | HAL SWE-bench Verified Mini，固定 50 题 |
+| Evaluation Candidate | `932b52ffff4209a748c6646a056d2ab43111637e`，clean worktree |
+| Provider / model | GLM / `glm-5.3` |
+| Sampling | temperature `1.0`，reasoning `high` |
+| 资源上限 | 单次输出 8,192 token；每题最多 72 个主 ModelStep |
+| Official grader resolved | **35 / 50（70%）** |
+| 难度分布 | Easy 16/20；Medium 17/24；Hard 2/6 |
+| Outcome | 35 resolved；13 unresolved；2 budget exhausted |
+| Patch | 50 / 50 非空 |
+| Provider / infrastructure error | 0 / 0 |
+| 正式运行成本 | CNY 150.040204 |
 
-正式 selection 见
-[hal-verified-mini-50.json](../benchmarks/swebench/selections/hal-verified-mini-50.json)。
-历史 `rc.2` 运行配置见
-[v0.5.0-rc2-hal-mini-50.json](../benchmarks/swebench/configs/v0.5.0-rc2-hal-mini-50.json)；正式候选配置见
-[Evaluation Candidate HAL 50](../benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json)。
+难度来自固定版本 `swe-bench-tasks` 的 `task.yaml`，用于执行排序，不是 HAL 官方标签，也不改变题目配置。
 
-下一次正式运行必须从本次 Evaluation Candidate commit 的干净 checkout 启动。每题结束后立即保存结果，中断后使用
-同一个 run ID 恢复；此阶段不要求或创建新的 release tag。
+正式运行身份：
 
-`v0.5.0-rc.1` 的首次运行发现 grader adapter 会把 empty patch 误记为基础设施失败。
-该运行已经停止并作废，不计入正式成绩，也不会与 `rc.2` 的结果合并。
+| 身份 | 值 |
+| --- | --- |
+| Run ID | `v0.5.0-evaluation-candidate-932b52f-hal-mini-50` |
+| Selection ID | `hal-swebench-verified-mini-50-7b231a9` |
+| Selection SHA-256 | `852042b05e2a1a95fd8e7dd01448f367aa8e332baf58eadbbd53167c2d90001f` |
+| Model config fingerprint | `c5c997fd066a693189d4543d248bb1dfcc42bd17c44282cb61c34f2bf9472bb1` |
+| SWE-bench commit | `334882dd1f2664cc55c1abfe9de4884af023c0c0` |
+| Task repository commit | `3d07b464b7b311a0cbfb5ed5b2d8a3b96f84a33d` |
 
-### rc.1 作废轨迹的 Runtime 诊断
+[机器可读发布证据](evidence/v0.5.0-hal-mini-50.json)保存核心数字、未解决题目、usage、成本和本地正式 artifact 的
+SHA-256；[固定 selection](../benchmarks/swebench/selections/hal-verified-mini-50.json)与
+[运行配置](../benchmarks/swebench/configs/v0.5.0-evaluation-candidate-hal-mini-50.json)进入版本控制。包含完整 Session、模型
+事件和 grader 路径的 `benchmarks/swebench/runs/` 按仓库策略保存在本地，不作为源码发布物提交。
 
-作废运行已完成 41 题：19 resolved、4 个有 patch 的 unresolved、18 empty patch。总计 566 次模型请求中，
-20 次输出恰好达到 8,192 token；其中 18 题最终 empty patch，只有 `django__django-12304` 和
-`sympy__sympy-15599` 产生非空 patch。这两题作为 Runtime 修复后的定向真实回归，不计入正式成绩。
+## Runtime 运行结果
 
-该数据支持先把 GLM reasoning 默认值从 `max` 调整为 `high`，并修复 finish reason、截断续跑和 reasoning 历史构造；
-它不支持直接提高 8,192 单次输出上限。后续定向回归消除了这两题的输出触顶，因此最终保留 8,192 上限。
+50 道题总计产生 1,229 次有完整 usage 的 Provider 响应：
 
-### Runtime reasoning `high` 两题回归
-
-修复后的 dirty development Runtime 使用相同 8,192 输出上限和 72 步总上限重跑上述两题。两题都正常完成，
-没有 `model_output_truncated`；最大单次输出分别为 4,208 和 3,495 token，因此本轮不提高 output token budget。
-
-| Instance | rc.1 | 新回归 | 旧/新模型步骤 | 旧/新 total token | 旧/新 reasoning token |
-| --- | --- | --- | ---: | ---: | ---: |
-| `django__django-12304` | unresolved | resolved | 7 / 37 | 67,643 / 460,689 | 9,292 / 7,345 |
-| `sympy__sympy-15599` | unresolved | unresolved，patch SHA 相同 | 10 / 12 | 149,309 / 167,557 | 17,219 / 10,925 |
-
-合计 reasoning token 从 26,511 降到 18,270，但请求数从 17 增到 49，input token 从 187,940 增到
-603,007。Django 虽然得到正确 patch，却出现明显的重复探索和多次纠错。这说明 `high` 有效降低单次长推理，
-但当时的 Context 连续性与效率仍需复查，因此这组结果没有用于冻结发布。
-
-该组数据随后由已实现的连续 raw CCES tail、rolling semantic summary 和有界截断恢复所取代。
-当前 contract 见[上下文管理参考](CONTEXT.md)。
-
-生成结果和完整运行证据保存在本地 `benchmarks/swebench/runs/runtime-reasoning-high-regression-2-20260909/`，
-不进入 Evaluation Candidate commit。
-
-### Semantic condensation 实现后回归
-
-2026-09-10 的 dirty Development Runtime 完成了正式 HAL 50 前验证，不计入正式成绩。
-
-- 受控真实 GLM smoke 确定触发 1 次 condenser，随后主请求正常完成；总计 7,245 token，成本 CNY 0.063340。
-- Django 优先单题在 19 个主请求内 official resolved，成本 CNY 0.853512。首次目标文件读取为
-  `django/db/models/enums.py:1-81`，CCES source 为 `seq:12/seq:14`；该题始终低于 soft threshold，证据一直留在
-  raw tail，没有进入 summary，也没有重新读取同一目标文件。
-- 随后的原两题 selection 为 Django resolved、SymPy output-truncated。SymPy 因把 `read_file` 返回 hash 的一个字符
-  抄错而反复触发安全 edit conflict，继而放大探索；44 个请求中出现 8 次长度截断，最后连续 3 次后有界停止。
-  该运行没有 condenser call，因此不能归因于摘要丢失。
-- Runtime 随后把紧邻长度截断的恢复请求临时降为 `low` reasoning effort。SymPy 单题复测实际出现 1 次
-  `high` 截断；下一请求以 `low` 返回工具调用，再恢复 `high`，最终 19 个请求完成且 official resolved，成本
-  CNY 2.568668。
-
-这些数据支持继续保留 8,192 单次输出上限：不提高全局输出预算，而在截断的立即恢复边界压低推理强度。
-真实 benchmark 题都没有达到语义压缩阈值，因此 summary 质量的真实 Provider 证据来自受控 smoke，不能把两题结果
-解释为摘要效果。完整机器摘要和 Session 证据保存在本地 benchmark artifact 中，不进入 Evaluation Candidate commit。
-
-### HAL 50 阶段性诊断运行（作废，不计分）
-
-2026-09-10 在 dirty Development Runtime 上启动的 HAL 固定 selection 因成本控制主动停止于约 30/50；已完成结果为
-26 resolved / 4 unresolved。该运行不是干净 Evaluation Candidate、没有完成 50 题，不能作为正式通过率，也不会被续跑或
-拼接到最终成绩。
-
-已有事件显示 5 次 semantic condensation 均成功，压缩后下一主请求估算下降约 33%–46%；22 次输出截断分布于 7 题，
-其中 20 次在一个请求内恢复、2 次重复，没有 context budget 或 step budget 终止。四道失败主要表现为补丁/测试语义缺口，
-没有摘要丢失、协议错误或 Runtime fail-close 证据。审计同时发现大量测试管道未启用 `pipefail`，可能把前段测试失败误记为
-validation command success；因此这批 validation 数据只能作为诊断线索，不能反推 Agent 或 official grader 结果。
-
-本轮发布前修复仅增加 validation-only `pipefail`、准确的 UI 证据文案、零 condenser accounting、batch phase 心跳和稳定
-诊断字段；不调整 8,192 output budget、上下文窗口或 Agent 策略。最终 HAL 50 必须从新的干净 Evaluation Candidate
-重新运行一次。
-
-## Development：GLM-5.3 Provider smoke
-
-2026-09-09 的最小真实请求完成了下面的链路：
-
-```text
-reasoning → read_file → tool result → continued reasoning → final answer
-```
-
-| 指标 | 结果 |
+| Runtime 指标 | 结果 |
 | --- | ---: |
-| 模型请求 | 2 |
-| 工具调用 / 结果 | 1 / 1 |
-| input / output / total token | 6,512 / 76 / 6,588 |
-| reasoning token | 48 |
-| usage 覆盖 | complete |
-| 按价格快照计算的成本 | CNY 0.018128 |
+| 正常结束 Agent loop | 48 / 50 |
+| Model-step budget exhausted | 2 / 50 |
+| Context exceeded | 0 |
+| 输出截断事件 | 25，分布于 13 题 |
+| Semantic condensation | 7 / 7 成功 |
+| Protocol error | 1，后续恢复 |
+| Provider / infrastructure error | 0 / 0 |
+| Retry overhead attempt | 0 |
 
-该结果只证明 GLM-5.3 Provider 参数、工具回合、推理回传和计费链路可用。
-它不是 SWE-bench 成绩。机器记录见
-[GLM-5.3 smoke](../benchmarks/swebench/smoke/glm-5.3-tool-roundtrip-2026-09-09.json)。
+总 usage 为 31,582,505 input token、940,359 output token、32,522,864 total token；其中 cached input 为
+21,491,648，reasoning token 为 714,244。按冻结价格快照计算，本次固定评测成本为 CNY 150.040204；这不是运行产品的
+固定成本。
 
-同日还用 `psf__requests-1766` 完成一次 GLM-5.3 Docker benchmark smoke。源码准备、Agent、patch 导出和
-official grader 均完成；7 次模型请求的 usage 完整，成本为 CNY 0.294200。再次使用同一 run ID 时，
-Runner 跳过了已完成题，没有再次调用模型。该单题仍只算 Development 链路验证。
+输出截断和语义压缩更多出现在较长、较难的任务中。发生截断的 13 题中 5 题 resolved，未发生截断的 37 题中 30 题
+resolved；该相关性受到任务长度和难度混杂，不能解释成截断导致失败。
 
-## Development：GLM-5.2 Hard 校准
+对发生压缩的失败轨迹抽查显示，摘要保留了任务目标、修改文件、验证证据和 pending 工作，压缩后 Agent 继续执行了工具调用。
+本轮没有识别到由压缩信息断裂直接造成的失败；这不等于证明压缩对所有任务的成功率没有影响。
 
-历史预算校准使用 GLM-5.2 和 reasoning `max`。`django__django-15629` 在 61 次模型调用后主动结束；
-Agent 的验证通过，official grader 判定 unresolved。
+两道 hard 题在 72 个主 ModelStep 后终止：
 
-该次运行记录 1,616,580 total token，按当时价格快照计算为 CNY 8.742844。
-它只用于选择所有正式题共用的资源上限。
+- `django__django-15629`：创建 FK 的目标测试通过，但修改已有 PK collation 的路径仍失败；
+- `sphinx-doc__sphinx-9461`：实现未收口，三个目标测试仍失败。
 
-HAL 官方固定列表也包含 `django__django-15629`。CodeAgent 没有因此替换该题；
-正式选择保持 HAL 原样。历史运行使用不同模型，并明确保留为 Development 证据。
+步骤上限直接影响了这两题的 outcome，但继续增加预算不保证修正其实现方向。本次发布不提高预算，也不重跑正式 50 题。
 
-详细记录见
-[glm-5.2-hard-1-result.json](../benchmarks/swebench/calibration/glm-5.2-hard-1-result.json)。
+## 失败分布
 
-## Development：GLM-5.2 两题 smoke
+| 难度 | Resolved | Unresolved / budget exhausted |
+| --- | ---: | ---: |
+| Easy | 16 / 20 | 4 |
+| Medium | 17 / 24 | 7 |
+| Hard | 2 / 6 | 4 |
 
-2026-09-04 的两题运行用于检查 Docker、patch 导出和 official grader 链路。
-它来自 dirty 开发目录，因此不是冻结版本成绩。
+最后 10 个执行位置为 4/10，其中包含全部 6 道 hard。后半程通过率下降与固定的 Easy → Medium → Hard 调度一致，不能解释为
+Runtime 随运行时间退化。
 
-| 指标 | 结果 |
-| --- | ---: |
-| 题目 | `pytest-dev__pytest-7205`、`sympy__sympy-20590` |
-| official grader 通过 | 2/2 |
-| 有 usage 的响应 | 46/46 |
-| input / output / total token | 577,756 / 8,232 / 585,988 |
-| 按历史价格快照计算的成本 | CNY 3.556160 |
+按主要失败原因归类：
 
-[公开证据摘录](evidence/glm52-smoke-20260904.json)记录了当时的代码版本、题集哈希、Docker 镜像、
-patch 哈希和 grader 报告。
+| 类别 | 数量 | 说明 |
+| --- | ---: | --- |
+| 任务语义错误或实现覆盖不足 | 12 | 找到相关代码但边界、公开 API、backend 分支或兼容行为不符合 official tests |
+| Official test patch 组合冲突 | 1 | `astropy__astropy-7336` 修改了官方补丁随后重命名的测试文件 |
+| ModelStep 预算耗尽 | 2 | 已产生非空但未完成的 Candidate patch |
+| Provider / infrastructure failure | 0 | 正式运行没有此类中断 |
 
-## Development：旧自定义题集
+13 道正常结束但未解决的任务都被 Agent 记录为 `validation_passed=true`。这说明当前 validation 只能证明所选命令在对应
+Candidate 上成功退出，不能证明测试覆盖了真实规格。失败补丁常见模式是模型新增的测试与自己的实现假设一致，但没有覆盖相邻
+兼容行为或 official test 的反例。
 
-早期固定十题和自定义 50 题仍保留，方便复查历史实验。自定义 50 题已经标记为
-`development_custom_selection`，不会作为 `v0.5.0` 正式基线。
+## 逐题失败摘要
 
-这些运行不能与 HAL 50 题合并成一条成绩趋势。模型正常结束、Agent 测试通过和 official grader 通过
-也必须分别统计。
+| Instance | 主要原因 |
+| --- | --- |
+| `sympy__sympy-18763` | `strict=True` 使乘法表达式没有按要求加括号。 |
+| `astropy__astropy-7336` | 预测补丁与官方测试文件重命名冲突，grader 无法组合应用；实现范围也宽于原需求。 |
+| `matplotlib__matplotlib-23476` | 保留 `_original_dpi`，但没有在序列化时丢弃设备像素比放大的 `_dpi`。 |
+| `sympy__sympy-15875` | 把无法可靠判断的 `is_zero` 返回为 `True`，目标要求保守返回 `None`。 |
+| `django__django-13346` | 用 numeric lookup mixin 处理 JSON `__in`，未覆盖不同 backend 和复合 JSON RHS。 |
+| `django__django-13809` | 跳过了检查调用，但仍输出 “Performing system checks...” 提示。 |
+| `django__django-14725` | 自行设计 `can_create=False`，正式公开 API 要求 `edit_only=True`。 |
+| `sympy__sympy-17318` | 在 `split_surds()` 防御空输入，没有在 `_sqrt_match()` 排除非正有理平方项，并写错目标期望。 |
+| `django__django-16950` | 目标测试通过，但改变所有默认 key 行为，造成一个既有测试回归。 |
+| `sympy__sympy-20428` | 修复 dense multiplication 的 strip，未修正 `ExpressionDomain.Expression.__bool__` 的根因。 |
+| `scikit-learn__scikit-learn-25747` | 只在索引长度变化时保留 DataFrame 索引，遗漏等长但标签不同的情况。 |
+| `pylint-dev__pylint-4551` | 只扩展 inspector 推断，未完成 Optional 标签、writer 输出和 diagram 支持。 |
+| `django__django-14011` | 直接关闭线程连接，未处理共享的 SQLite 内存连接，导致 LiveServer 测试大面积失败。 |
+| `django__django-15629` | 预算耗尽；遗漏 collation-only 变更时的 FK 重建和 SQLite 路径。 |
+| `sphinx-doc__sphinx-9461` | 预算耗尽；遗漏 Python domain 的 class-property directive 支持，补丁仍有临时调试测试。 |
 
-## 正式报告将补充的内容
+上述分析来自正式 prediction、official grader 状态、固定 gold/test patch 与 Session trajectory 的离线对照。Gold patch 和
+official tests 在 Agent 执行时不进入模型 Context。
 
-完成 50 题后，本页会增加：
+## 结果能证明什么
 
-- official grader 解决题数，分母固定为 50
-- `resolved`、`unresolved`、`budget_exhausted`、`provider_error`、`infra_error`、`not_started` 分布
-- 每题 attempt、停止原因和报告路径
-- usage 覆盖率、总 token 和按冻结价格计算的成本
-- release commit、tag、selection SHA 和 Docker image identity
+本轮支持以下结论：
 
-运行条件和恢复规则见[评测方法](BENCHMARKING.md)。
+- `0.5.0` Runtime 从干净候选提交完成了完整 50 题 repository-level 运行；
+- 所有题目产生非空 patch，且没有 Provider 或基础设施错误；
+- Context 压缩调用均正常完成，输出截断恢复没有形成最终 `output_truncated` outcome；
+- 主要剩余瓶颈是规格对齐和验证充分性，而不是已观察到的 Context transport 或基础设施稳定性。
+
+本轮不支持以下结论：
+
+- CodeAgent 达到 SOTA；
+- 70% 是基础模型或 Runtime 单独的能力；
+- 单次 temperature `1.0` 运行能够估计方差；
+- 语义压缩对任务正确率没有影响；
+- Agent 自报 validation success 等于 official resolved。
+
+## Development 证据
+
+以下记录只用于解释参数和链路选择，不计入正式 35/50：
+
+- [GLM-5.3 tool roundtrip smoke](../benchmarks/swebench/smoke/glm-5.3-tool-roundtrip-2026-09-09.json)：验证
+  reasoning、工具回合、usage 与成本链路；
+- [GLM-5.2 历史 smoke](evidence/glm52-smoke-20260904.json)：验证 Docker、patch 导出和 official grader；
+- 历史 hard calibration：用于选择统一 72-step 上限；
+- 未完成的 dirty HAL partial：用于发现 validation `pipefail`、UI 文案和 batch attempt 记账问题。
+
+这些结果使用不同代码状态、模型或完成范围，不与正式成绩拼接。评测数据流、恢复和 artifact contract 见
+[SWE-bench 评测方法](BENCHMARKING.md)。

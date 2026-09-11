@@ -28,8 +28,8 @@ python3 -m venv .venv
 
 ```bash
 npx --yes @vscode/vsce package \
-  --baseContentUrl https://github.com/YeYan0829/codingAgent/blob/main/vscode-extension/ \
-  --baseImagesUrl https://github.com/YeYan0829/codingAgent/raw/main/vscode-extension/
+  --baseContentUrl https://github.com/YeYan0829/codingAgent/blob/v0.5.0/vscode-extension/ \
+  --baseImagesUrl https://github.com/YeYan0829/codingAgent/raw/v0.5.0/vscode-extension/
 ```
 
 然后在 VS Code 执行 `Extensions: Install from VSIX...` 并选择生成的 `.vsix`。目标机器还需安装

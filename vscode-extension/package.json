@@ -4,6 +4,14 @@
   "description": "可观测、可干预的本地 Coding Agent 产品层。",
   "version": "0.5.0",
   "publisher": "local-codeagent",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YeYan0829/codingAgent.git"
+  },
+  "homepage": "https://github.com/YeYan0829/codingAgent",
+  "bugs": {
+    "url": "https://github.com/YeYan0829/codingAgent/issues"
+  },
   "engines": {
     "vscode": "^1.106.0"
   },

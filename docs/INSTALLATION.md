@@ -3,8 +3,8 @@
 CodeAgent 由两个独立部分组成。Python Runtime 负责执行任务，VS Code Extension 提供界面。
 安装 VSIX 不会自动安装 Runtime。
 
-当前版本为 `0.5.0`，仍处于发布候选开发阶段。本文不声明已经存在可下载的正式 Release 产物。
-当前产物验证状态见[发布验收](RELEASE_VALIDATION.md)。
+当前版本为 `0.5.0`。发布物由同版本的 Python wheel 与 VSIX 组成；构建输出统一放在仓库根目录的 `dist/`，正式发布时作为
+GitHub Release assets 分发，不提交到源码仓库。当前产物验证状态见[发布验收](RELEASE_VALIDATION.md)。
 
 ## 系统要求
 
@@ -45,6 +45,35 @@ Runtime 安装在自己的 Python 环境中。这个环境只负责运行 CodeAg
 
 因此，在 Runtime 环境中安装 pytest，不代表目标项目会自动使用这个 pytest。
 请在任务中给出项目自己的测试命令，或让 Agent 先读取项目文档。
+
+## 普通用户：安装 wheel 与 VSIX
+
+从项目 GitHub Release 下载：
+
+- `codeagent_runtime-0.5.0-py3-none-any.whl`
+- `codeagent-0.5.0.vsix`
+- `SHA256SUMS`
+
+核对 checksum 后，把 Runtime 安装到独立虚拟环境：
+
+```bash
+sha256sum -c SHA256SUMS
+python3 -m venv "$HOME/.local/share/codeagent/venv"
+"$HOME/.local/share/codeagent/venv/bin/python" \
+  -m pip install ./codeagent_runtime-0.5.0-py3-none-any.whl
+"$HOME/.local/share/codeagent/venv/bin/codeagent-rpc" --help
+```
+
+然后在 VS Code 中执行 **Extensions: Install from VSIX...**，选择 `codeagent-0.5.0.vsix`。
+
+打开 Settings，找到 `codeagent.rpcCommand`，将它设为：
+
+```text
+/home/<用户名>/.local/share/codeagent/venv/bin/codeagent-rpc
+```
+
+这个设置只接受可执行文件的绝对路径，不能填写 `python -m ...`，也不会展开 `~` 或 `$HOME`。在 WSL 中，Runtime 和
+Extension 必须位于同一个 WSL 环境。此安装方式不依赖 CodeAgent 源码仓库。
 
 ## 开发者：从源码安装
 
@@ -181,28 +210,6 @@ Extension 会用它运行 `codeagent.product.rpc`。
 如果 CodeAgent 没有出现在右侧，执行 **View: Reset View Locations**。
 VS Code 可能保留了旧版本的 View 位置。
 
-## 普通用户：安装 wheel 与 VSIX
-
-拿到可信发布产物后，先把 Runtime 安装到独立虚拟环境：
-
-```bash
-python3 -m venv "$HOME/.local/share/codeagent/venv"
-"$HOME/.local/share/codeagent/venv/bin/python" \
-  -m pip install ./codeagent_runtime-0.5.0-py3-none-any.whl
-"$HOME/.local/share/codeagent/venv/bin/codeagent-rpc" --help
-```
-
-然后在 VS Code 中执行 **Extensions: Install from VSIX...**。
-选择 `codeagent-0.5.0.vsix`。
-
-打开 Settings，找到 `codeagent.rpcCommand`。把它设为 `codeagent-rpc` 的完整绝对路径。
-这个设置只接受可执行文件路径，不能填写 `python -m ...`，也不会展开 `~` 或 `$HOME`。
-
-在 WSL 中，Runtime 和 Extension 必须位于同一个 WSL 环境。
-Windows PATH 中的程序不会自动出现在 WSL Extension Host 中。
-
-这种安装方式不依赖 CodeAgent 源码仓库，也不需要按 `F5`。
-
 ## Extension 如何找到 Runtime
 
 | 设置 | 实际行为 |
@@ -236,17 +243,14 @@ Windows PATH 中的程序不会自动出现在 WSL Extension Host 中。
 .venv/bin/python -m pip wheel . --no-deps -w dist
 cd vscode-extension
 npx --yes @vscode/vsce package \
-  --baseContentUrl https://github.com/YeYan0829/codingAgent/blob/main/vscode-extension/ \
-  --baseImagesUrl https://github.com/YeYan0829/codingAgent/raw/main/vscode-extension/ \
+  --baseContentUrl https://github.com/YeYan0829/codingAgent/blob/v0.5.0/vscode-extension/ \
+  --baseImagesUrl https://github.com/YeYan0829/codingAgent/raw/v0.5.0/vscode-extension/ \
   --out ../dist/codeagent-0.5.0.vsix
 cd ..
 sha256sum dist/*.whl dist/*.vsix
 ```
 
-Extension 的 `package.json` 当前没有 `repository` 字段。
-因此，省略两个 URL 参数时，vsce 无法转换 README 中的相对链接。
-
-正式发布时，应把 URL 中的 `main` 替换为发布 tag 或固定 commit。
+显式使用 release tag 作为 URL，可以让 VSIX README 中的相对链接稳定指向对应版本。
 
 `--no-deps` 表示只构建 CodeAgent wheel。用户安装时仍需下载 Runtime 依赖。
 

@@ -1,8 +1,8 @@
 # Changelog
 
-本文件记录面向使用者的变化。项目尚未发布首个 GitHub Release。
+本文件记录面向使用者的变化。
 
-## Unreleased
+## 0.5.0 - 2026-09-11
 
 ### Added
 
@@ -24,4 +24,8 @@
 - Batch 保存 Provider/基础设施失败 attempt 的 trajectory、usage 和 cost，并在恢复后将其作为 retry overhead 纳入成本保护；
 - 无 condenser 调用时按完整数值零记账，GLM 旧配置缺省 effort 统一迁移为 `high`。
 
-正式版本号、发布日期和 release commit 将在发布候选完成干净安装与验收后记录。
+### Evaluation
+
+- 在 commit `932b52ffff4209a748c6646a056d2ab43111637e` 的干净工作树上完成 HAL SWE-bench Verified Mini 50：
+  official grader resolved 35/50；50/50 产生非空补丁；48/50 在 72-step 预算内结束；0 provider error，0 infrastructure error。
+- 正式结果为单次 GLM-5.3、temperature `1.0` 运行，用于验证端到端 repository-level workload，不声明 SOTA 或运行间方差。
