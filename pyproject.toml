@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeagent-runtime"
+version = "0.5.0"
+description = "Auditable local coding agent runtime with reviewed workspace changes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.0",
+  "pydantic>=2.0",
+  "openai>=1.0",
+  "prompt_toolkit>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+codeagent = "codeagent.cli:app"
+codeagent-rpc = "codeagent.product.rpc:main"
+codeagent-product-demo = "codeagent.product.demo:main"
+
+[project.urls]
+Homepage = "https://github.com/YeYan0829/codingAgent"
+Repository = "https://github.com/YeYan0829/codingAgent.git"
+Issues = "https://github.com/YeYan0829/codingAgent/issues"
+Documentation = "https://github.com/YeYan0829/codingAgent/tree/main/docs"
+
+[tool.setuptools.packages.find]
+include = ["codeagent*"]
+
+[tool.setuptools.package-data]
+codeagent = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
