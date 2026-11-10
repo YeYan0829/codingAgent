@@ -29,10 +29,13 @@ class MountPlan:
     @classmethod
     def build(cls, policy: EffectiveSandboxPolicy, mask_dir: Path, mask_file: Path) -> "MountPlan":
         writes = {path.resolve() for path in policy.write_grants}
-        writes.update({policy.candidate_root.resolve(), policy.runtime_cache.resolve()})
+        writes.update({policy.workspace_root.resolve(), policy.runtime_cache.resolve()})
         source = policy.source_root.resolve()
         protected = {path.resolve(strict=False) for path in policy.protected_readonly_paths if path.exists()}
         denied = {path.resolve(strict=False) for path in policy.hard_deny_paths if path.exists()}
+        # 父目录的只读空挂载已遮住全部后代；再挂子路径会尝试在空的只读目录
+        # 内创建挂载点而失败。只化简挂载计划，原 policy 的禁止范围仍完整保留。
+        denied = {path for path in denied if not any(parent in denied for parent in path.parents)}
         operations: list[MountOperation] = [
             MountOperation("ro_bind", Path("/"), Path("/")),
             # 先建立 private /tmp，再把位于 /tmp 下的测试/临时 Candidate 根叠加回来。
@@ -55,7 +58,7 @@ class MountPlan:
         operations.extend(MountOperation("dir", None, path) for path in sorted(tmp_dirs, key=lambda item: (len(item.parts), str(item))))
         for path in sorted(writes, key=lambda item: (len(item.parts), str(item))):
             operations.append(MountOperation("bind", path, path))
-        if source.exists():
+        if source.exists() and source != policy.workspace_root.resolve():
             operations.append(MountOperation("ro_bind", source, source))
         for path in sorted(protected, key=lambda item: (len(item.parts), str(item))):
             operations.append(MountOperation("ro_bind", path, path))
@@ -93,7 +96,7 @@ class BubblewrapBackend:
     def __init__(self, executable: Path | None = None) -> None:
         self._configured = executable
 
-    def discover(self, candidate_root: Path) -> Path:
+    def discover(self, workspace_root: Path) -> Path:
         raw = self._configured or (Path(found) if (found := shutil.which("bwrap")) else None)
         if raw is None:
             raise SandboxUnavailable("未安装 Bubblewrap (bwrap)；任意命令保持关闭")
@@ -105,13 +108,13 @@ class BubblewrapBackend:
         if not stat.S_ISREG(mode) or not os.access(path, os.X_OK):
             raise SandboxUnavailable("Bubblewrap path 不是可执行普通文件")
         try:
-            path.relative_to(candidate_root.resolve())
+            path.relative_to(workspace_root.resolve())
         except ValueError:
             return path
         raise SandboxUnavailable("拒绝使用 Candidate 内可被命令修改的 bwrap")
 
-    def probe(self, candidate_root: Path) -> BubblewrapFeatures:
-        executable = self.discover(candidate_root)
+    def probe(self, workspace_root: Path) -> BubblewrapFeatures:
+        executable = self.discover(workspace_root)
         try:
             version = subprocess.run(
                 [str(executable), "--version"], capture_output=True, text=True,

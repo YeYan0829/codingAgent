@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -16,7 +17,7 @@ class CommandExecutionStatus(StrEnum):
     EXECUTOR_REJECTED = "executor_rejected"
     SANDBOX_UNAVAILABLE = "sandbox_unavailable"
     SANDBOX_SETUP_FAILED = "sandbox_setup_failed"
-    WORKSPACE_AUDIT_UNAVAILABLE = "workspace_audit_unavailable"
+    CANCELLED = "execution_cancelled"
 
 
 @dataclass(frozen=True)
@@ -27,10 +28,6 @@ class CommandRequest:
     timeout_seconds: int
     purpose: str
     permissions: tuple[PermissionRequest, ...] = ()
-    workspace_revision: int = 0
-    base_commit: str | None = None
-    before_candidate_revision: int = 0
-    before_subject_tree: str | None = None
     command_sha256: str = ""
 
     def to_dict(self) -> dict:
@@ -38,9 +35,7 @@ class CommandRequest:
             "execution_id": self.execution_id, "command": self.command, "cwd": self.cwd,
             "timeout_seconds": self.timeout_seconds, "purpose": self.purpose,
             "permissions": [item.to_dict() for item in self.permissions],
-            "workspace_revision": self.workspace_revision, "base_commit": self.base_commit,
-            "before_candidate_revision": self.before_candidate_revision,
-            "before_subject_tree": self.before_subject_tree, "command_sha256": self.command_sha256,
+            "command_sha256": self.command_sha256,
         }
 
 
@@ -75,16 +70,13 @@ class CommandResult:
     spawn_error: str | None = None
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+    stdout_preview_truncated: bool = False
+    stderr_preview_truncated: bool = False
     stdout_artifact: str | None = None
     stderr_artifact: str | None = None
     environment_names: tuple[str, ...] = ()
     payload_started: bool = False
     process_tree_stopped: bool = True
-    before_candidate_revision: int | None = None
-    after_candidate_revision: int | None = None
-    before_subject_tree: str | None = None
-    after_subject_tree: str | None = None
-    command_induced_changes: tuple[dict[str, str], ...] = ()
     effective_policy: dict | None = None
     environment_contract_revision: str | None = None
     backend: str | None = None
@@ -97,10 +89,33 @@ class CommandResult:
         data = asdict(self)
         data["status"] = self.status.value
         data["environment_names"] = list(self.environment_names)
-        data["command_induced_changes"] = list(self.command_induced_changes)
         return data
 
 
 class CommandExecutor(Protocol):
     def execute(self, request: SandboxExecutionRequest, context: WorkspaceContext,
                 artifacts: CommandArtifactPaths | None) -> CommandResult: ...
+
+
+_COMMAND_CANCELLATIONS = ContextVar("codeagent_command_cancellations", default=())
+
+
+def command_cancellation(default):
+    """绑定本次调用的取消信号；不复制容器等执行器状态，也不覆盖父方callback。"""
+    callbacks = _COMMAND_CANCELLATIONS.get()
+    return lambda: default() or any(callback() for callback in callbacks)
+
+
+class ScopedCommandExecutor:
+    def __init__(self, executor, cancelled):
+        self.executor, self.cancelled = executor, cancelled
+
+    def __getattr__(self, name):
+        return getattr(self.executor, name)
+
+    def execute(self, request, context, artifacts):
+        token = _COMMAND_CANCELLATIONS.set((*_COMMAND_CANCELLATIONS.get(), self.cancelled))
+        try:
+            return self.executor.execute(request, context, artifacts)
+        finally:
+            _COMMAND_CANCELLATIONS.reset(token)

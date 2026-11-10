@@ -2,6 +2,7 @@
 
 from codeagent.benchmark.swebench_source import (
     PreparedSWEbenchSource,
+    SWEbenchImage,
     SWEbenchPreparationError,
     SWEbenchSourcePreparer,
     SWEbenchTaskSource,
@@ -10,6 +11,7 @@ from codeagent.benchmark.swebench_executor import (
     DockerCLIExecutionBackend,
     SWEbenchDockerCommandExecutor,
 )
+from codeagent.benchmark.swebench_container import SWEbenchContainerWorkspace
 from codeagent.benchmark.swebench_harness import (
     OracleResult,
     SWEbenchHarness,
@@ -36,6 +38,7 @@ from codeagent.benchmark.selection import (
 
 __all__ = [
     "PreparedSWEbenchSource",
+    "SWEbenchImage", "SWEbenchContainerWorkspace",
     "SWEbenchPreparationError",
     "SWEbenchSourcePreparer",
     "SWEbenchTaskSource",

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import subprocess
+import json
 from pathlib import Path
 from typing import Any
 
 from codeagent.session.events import SessionEvent
 from codeagent.session.store import SessionStore
-from codeagent.runtime.turn_budget import MAX_USER_TURN_BUDGET, current_turn_budget
+from codeagent.runtime.turn_state import current_turn_state
 from codeagent.runtime.applied_changes import AppliedChangesError, AppliedChangesStore
 from codeagent.workspace.workspace import SessionWorkspaceState
+from codeagent.runtime.validation import delivery_validation_status
+from codeagent.product.orchestration_view import orchestration_view
 
 
 _ACTIVITY_LABELS = {
@@ -61,6 +63,10 @@ def build_session_summary(meta: dict[str, Any]) -> dict[str, Any]:
     changes = inspect_changes(store)
     source_workspace = str(meta.get("source_workspace") or meta.get("workspace") or "")
     model_options = meta.get("model_options") if isinstance(meta.get("model_options"), dict) else {}
+    root = next((e.turn_id for e in reversed(events) if e.type == "user_message"), None)
+    failed_tasks = any(e.type == "agent_run_finished" and e.turn_id == root and e.payload.get("status") != "completed"
+                       for e in events)
+    attention = attention_summary(meta, events, changes)
     return {
         "sessionId": store.session_id,
         "title": str(meta.get("title") or SessionStore.UNTITLED),
@@ -71,7 +77,7 @@ def build_session_summary(meta: dict[str, Any]) -> dict[str, Any]:
         "workspace": source_workspace,
         "workspaceLabel": Path(source_workspace).name,
         "executionState": "idle",
-        "attentionSummary": attention_summary(meta, events, changes),
+        "attentionSummary": "Finished with task failures" if failed_tasks and attention == "Ready" else attention,
         "lastActiveAt": meta.get("last_active_at"),
         "changedFileCount": len(changes["files"]),
         "changesState": changes["state"],
@@ -85,11 +91,21 @@ def build_session_detail(store: SessionStore) -> dict[str, Any]:
     summary = build_session_summary(meta)
     validation = validation_summary(events, meta)
     if changes["state"] == "applied" and validation is not None:
-        validation = {**validation, "appliesToCurrentChanges": False, "historical": True}
+        receipt = next((event.payload for event in reversed(events)
+                        if event.type == "changes_apply_result" and event.payload.get("status") == "applied"), {})
+        validation = {**validation, "appliesToCurrentChanges": False, "historical": True,
+                      "deliveryStatus": delivery_validation_status(events, receipt)}
     actions = available_actions(meta, events, changes)
+    orchestration = orchestration_view(events, meta)
+    attach_child_timelines(orchestration, events)
+    turns = timeline_turns(events, meta)
+    tasks = {task["rootTurnId"]: task for task in orchestration["tasks"]}
+    for turn in turns:
+        turn["delegation"] = tasks.get(turn["turnId"])
     return {
         **summary,
-        "turns": timeline_turns(events, meta),
+        "turns": turns,
+        "orchestration": orchestration,
         "conversation": conversation_view(events),
         "activitySummary": activity_summary(events, changes),
         "recentActivity": [activity_item(event) for event in events if event.type not in {
@@ -104,7 +120,19 @@ def build_session_detail(store: SessionStore) -> dict[str, Any]:
         "turnBudget": turn_budget_view(meta, events),
         "actionReasons": action_reasons(meta, events, changes, actions, validation),
         "lastSeq": max((event.seq or 0 for event in events), default=0),
+        "activity": request_activity(events, None),
     }
+
+
+def request_activity(events, run_id):
+    """只公开阶段与时间，不公开请求正文或私有推理；intent不等同于已发送。"""
+    closed = {e.payload.get("operation_key") for e in events if e.type == "model_response"}
+    for event in reversed(events):
+        key = str(event.payload.get("operation_key", ""))
+        matches = key.startswith(run_id + ":") if run_id else event.payload.get("agent_id") == "main"
+        if event.type == "model_request_intent" and key not in closed and matches:
+            return {"phase": "model_request", "startedAt": event.ts, "label": "正在请求模型，等待响应"}
+    return None
 
 
 def delivery_receipt(events: list[SessionEvent]) -> dict[str, str] | None:
@@ -112,10 +140,14 @@ def delivery_receipt(events: list[SessionEvent]) -> dict[str, str] | None:
                    if event.type in {"changes_accepted", "changes_discarded"}), None)
     if latest is None:
         return None
+    receipt = next((event.payload for event in reversed(events)
+                    if event.type == "changes_apply_result" and event.payload.get("status") == "applied"), {})
+    untested = delivery_validation_status(events, receipt) == "not_run_on_merged_tree"
     return {
         "kind": "accepted" if latest.type == "changes_accepted" else "discarded",
         "message": (
-            "Changes applied to your repository"
+            ("Changes applied; merged result needs validation (candidate passed)" if untested
+             else "Changes applied to your repository")
             if latest.type == "changes_accepted"
             else "Agent changes discarded; source unchanged"
         ),
@@ -144,6 +176,10 @@ def global_attention(meta: dict[str, Any], events: list[SessionEvent]) -> dict[s
             "message": str(terminated.payload.get("message") or "The model or Runtime failed before producing a final response."),
             "action": "Retry the request or open CodeAgent Runtime output for details.",
         }
+    if terminated and terminated.payload.get("reason") == "connection_lost":
+        return {"kind": "interrupted", "title": "Previous execution was interrupted",
+                "message": "The Runtime connection ended. Tasks were reconciled without new model requests; changes and UNKNOWN usage are preserved.",
+                "action": "Review task diagnostics and Diff. Send a new instruction to continue; no approval was restored."}
     if terminated and terminated.payload.get("reason") == "context_budget_exceeded":
         return {
             "kind": "context_limit", "title": "Agent context limit reached",
@@ -166,6 +202,9 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
     latest_main_usage: SessionEvent | None = None
     pending_truncation_record: dict[str, Any] | None = None
     condensation_failures = 0
+    command_calls: dict[tuple[str, str, str], dict[str, Any]] = {}
+    commands: dict[str, dict[str, Any]] = {}
+    finished_runs: set[str] = set()
 
     def ensure_turn(event: SessionEvent) -> dict[str, Any] | None:
         nonlocal current
@@ -206,8 +245,10 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
             if message:
                 close_group()
                 turn["items"].append(_markdown_item(message, event))
-            active_group = _activity_group(event)
-            turn["items"].append(active_group)
+            # 模型往返不分段；客户端在稳定活动容器内显示按目标区分的操作行。
+            if active_group is None and event.payload.get("tool_calls"):
+                active_group = _activity_group(event)
+                turn["items"].append(active_group)
             for raw_call in event.payload.get("tool_calls", []):
                 call = {
                     "callId": str(raw_call.get("call_id", "")),
@@ -216,21 +257,91 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
                     "argumentSummary": _tool_argument_summary(
                         str(raw_call.get("name", "unknown")), dict(raw_call.get("arguments") or {})
                     ),
-                    "status": "running",
+                    "status": "pending",
                     "detail": _bounded_payload(dict(raw_call.get("arguments") or {})),
                 }
                 active_group["tools"].append(call)
                 if call["callId"]:
                     calls[call["callId"]] = call
+                arguments = raw_call.get("arguments") or {}
+                if call["tool"] in {"spawn_agent", "send_agent"} and arguments.get("request_key"):
+                    command_calls[(str(turn["turnId"]), str(arguments["request_key"]), call["tool"])] = call
+                if call["tool"] == "wait_agents":
+                    call.update(waitRunIds=list(arguments.get("run_ids") or []), waitMode=arguments.get("mode", "all"))
+        elif event.type == "tool_execution_intent":
+            # task不接受显式request_key；用执行日志中的操作身份关联子命令。
+            raw = event.payload.get("call") or {}
+            call = calls.get(str(raw.get("call_id", "")))
+            if call is not None and call["tool"] == "task":
+                command_calls[(str(turn["turnId"]), str(event.payload["operation_key"]), "task")] = call
+        elif event.type == "agent_command_intent":
+            payload = event.payload
+            run = payload["run"]
+            commands[run["run_id"]] = {**payload, "root": str(run["root_turn_id"])}
+            tool = {"spawn": "spawn_agent", "send": "send_agent"}.get(payload["action"])
+            call = command_calls.get((str(run["root_turn_id"]), str(payload.get("request_key")), tool))
+            if call is None:
+                call = command_calls.get((str(run["root_turn_id"]), str(payload.get("request_key")), "task"))
+            if call is not None:
+                call.update(runId=run["run_id"], agentId=run["agent_id"], commandId=payload["command_id"])
+        elif event.type == "agent_run_finished":
+            rid = event.payload["run_id"]
+            if rid in finished_runs:
+                continue
+            finished_runs.add(rid)
+            command = commands.get(rid)
+            if command and command.get("execution", "foreground") == "background":
+                owner = next((t for t in turns if t["turnId"] == command["root"]), None)
+                if owner is not None:
+                    if owner is current:
+                        close_group()
+                    owner["items"].append({"type": "taskNotice", "runId": rid,
+                        "status": event.payload["status"], "eventSeq": event.seq, "timestamp": event.ts})
+        elif event.type == "agent_wait_started":
+            call = next((c for c in reversed(list(calls.values()))
+                         if c["tool"] == "wait_agents" and c["status"] == "running"), None)
+            if call is not None:
+                call["waitId"] = event.payload["wait_id"]
+        elif event.type == "agent_wait_finished":
+            call = next((c for c in calls.values() if c.get("waitId") == event.payload["wait_id"]), None)
+            if call is not None:
+                call["waitSatisfied"] = bool(event.payload["satisfied"])
+        elif event.type == "tool_requested":
+            call = calls.get(str(event.payload.get("call_id", "")))
+            if call is not None and call["status"] == "pending":
+                call["status"] = "running"
         elif event.type in {"tool_result", "tool_denied"}:
             call = calls.get(str(event.payload.get("call_id", "")))
-            if call is not None:
+            if call is not None and call["status"] not in {"cancelled", "interrupted"}:
                 result = event.payload.get("result") if isinstance(event.payload.get("result"), dict) else {}
                 call["status"] = (
                     "denied" if event.type == "tool_denied"
                     else "succeeded" if result.get("ok", True) else "failed"
                 )
                 call["result"] = _tool_result_summary(result, event.payload)
+                if call["tool"] == "run_command" and result.get("ok"):
+                    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+                    output = str(metadata.get("stdout_tail") or result.get("content") or "").strip()
+                    if output:
+                        call["output"], call["outputTruncated"] = _bounded_output(output)
+                if call["tool"] == "task":
+                    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+                    if metadata.get("run_id"):
+                        call.update(runId=metadata["run_id"], agentId=metadata.get("task_id"))
+                if call["tool"] in {"spawn_agent", "send_agent", "cancel_agents", "wait_agents", "delegate_readonly"} and result.get("ok"):
+                    # 工具协议成功仅表示命令被受理；任务结果另由 run 事实投影。
+                    call["status"] = "submitted"
+                    call["result"] = "Command received; see task progress and resource acknowledgement."
+                    if call["tool"] in {"spawn_agent", "send_agent"}:
+                        try:
+                            receipt = json.loads(result.get("content") or "{}")
+                        except (ValueError, TypeError):
+                            receipt = {}
+                        if isinstance(receipt, dict):
+                            if receipt.get("run_id") and not call.get("runId"):
+                                call["runId"] = str(receipt["run_id"])
+                            if receipt.get("agent_id") and not call.get("agentId"):
+                                call["agentId"] = str(receipt["agent_id"])
                 if call["status"] in {"failed", "denied"}:
                     call["failure"] = _tool_failure_details(result, event.payload)
                 if call["status"] in {"failed", "denied"} and active_group is not None:
@@ -262,16 +373,23 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
                 }
             turn["validation"]["appliesToCurrentChanges"] = (
                 int(event.payload.get("candidate_revision", -1)) == int(meta.get("candidate_revision", 0))
+                and bool((validation_summary(events, meta) or {}).get("appliesToCurrentChanges"))
             )
         elif event.type in {"edit_transaction", "edit_receipt"}:
             paths = event.payload.get("changed_files") or ([event.payload.get("path")] if event.payload.get("path") else [])
             _add_changed_files(turn, paths)
-            edit = _latest_tool(calls, "apply_workspace_edit")
+            edit = _latest_tool(calls, "edit_file", "apply_workspace_edit")
             if edit is not None:
                 edit["changedFiles"] = sorted({*edit.get("changedFiles", []), *[str(path) for path in paths if path]})
         elif event.type == "assistant_message":
             close_group()
-            turn["items"].append(_markdown_item(str(event.payload.get("message", "")), event, final=True))
+            item = _markdown_item(str(event.payload.get("message", "")), event, final=True)
+            # 兼容早期本地演练文案。只改变已知模板的展示，原回复和持久事件保持原样。
+            if (meta.get("provider") == "fake" and meta.get("model") == "c3-fixture" and item["text"] ==
+                    "Free protocol fixture finished: background delegation, parent work, wait, persistent follow-up and refresh. "
+                    "Child reports are not validation. Review Diff and the actual validation status before Accept/Discard."):
+                item["displayText"] = "本次演练已结束。"
+            turn["items"].append(item)
         elif event.type == "model_usage" and event.payload.get("purpose") == "context_condenser":
             latest_condenser_usage = {
                 "model": event.payload.get("model"), "usage": event.payload.get("usage"),
@@ -354,8 +472,12 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
             close_group()
             if event.payload.get("reason") in {"user_stop", "cancelled"}:
                 for call in calls.values():
-                    if call.get("status") == "running":
+                    if call.get("status") in {"pending", "running"}:
                         call["status"] = "cancelled"
+            else:
+                for call in calls.values():
+                    if call.get("status") in {"pending", "running"}:
+                        call["status"] = "interrupted"
             reason = event.payload.get("reason")
             message = str(event.payload.get("message") or "Execution stopped before completion")
             if reason == "context_budget_exceeded":
@@ -379,6 +501,7 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
         elif event.type == "approval_requested":
             if active_group is not None:
                 active_group["defaultExpanded"] = True
+            close_group()
             turn["items"].append({
                 "type": "notice", "tone": "warning", "message": "Approval requested", "eventSeq": event.seq,
             })
@@ -387,13 +510,64 @@ def timeline_turns(events: list[SessionEvent], meta: dict[str, Any]) -> list[dic
         turn["changedFiles"] = sorted(set(turn["changedFiles"]))
         for item in turn["items"]:
             if item.get("type") == "activityGroup":
-                item["status"] = "failed" if any(tool.get("status") == "failed" for tool in item["tools"]) else (
-                    "denied" if any(tool.get("status") == "denied" for tool in item["tools"]) else (
-                    "cancelled" if any(tool.get("status") == "cancelled" for tool in item["tools"]) else (
-                    "running" if any(tool.get("status") == "running" for tool in item["tools"]) else "succeeded"
-                )))
+                statuses = {tool.get("status") for tool in item["tools"]}
+                item["status"] = next((value for value in (
+                    "failed", "denied", "running", "pending", "cancelled", "interrupted", "submitted",
+                ) if value in statuses), "succeeded")
                 item["summary"] = _activity_group_summary(item["tools"])
     return turns
+
+
+def attach_child_timelines(orchestration: dict[str, Any], events: list[SessionEvent], *, output_limit: int = 12_000) -> None:
+    """只投影公开子历史；不暴露 anchor/system/reasoning，不调度或修改持久事件。"""
+    runs = {r["runId"]: r for t in orchestration["tasks"] for r in t["runs"]}
+    scoped: dict[str, list[SessionEvent]] = {rid: [] for rid in runs}
+    finished: set[str] = set()
+    for event in events:
+        p = event.payload
+        rid = (p.get("run_id") if event.type in {"agent_history", "agent_run_finished"}
+               else str(p.get("operation_key", "")).split(":", 1)[0])
+        run = runs.get(rid)
+        if not run or rid in finished or event.turn_id != run["rootTurnId"]:
+            continue
+        payload, kind = None, None
+        if event.type == "agent_history" and p.get("agent_id") == run["agentId"] and p.get("context_epoch") == run["contextEpoch"]:
+            if p["kind"] in {"assistant_tool_calls", "assistant_message", "tool_result"}:
+                kind, payload = p["kind"], p["data"]
+        elif event.type in {"tool_execution_intent", "tool_execution_result"}:
+            call = p.get("call") or {}
+            kind = "tool_requested" if event.type == "tool_execution_intent" else "tool_result"
+            payload = {"call_id": call.get("call_id"), "name": call.get("name")}
+            if kind == "tool_result":
+                payload["result"] = p.get("output") or {}
+        elif event.type == "agent_run_finished":
+            finished.add(rid)
+        if payload is not None:
+            scoped[rid].append(event.model_copy(update={"type": kind, "turn_id": rid, "payload": payload}))
+    for rid, run in runs.items():
+        turns = timeline_turns(scoped[rid], {})
+        items = turns[0]["items"] if turns else []
+        terminal = run["status"] not in {"queued", "running"}
+        results = {e.payload.get("call_id"): e.payload.get("result", {}) for e in scoped[rid] if e.type == "tool_result"}
+        for item in items:
+            for tool in item.get("tools", []):
+                if terminal and tool["status"] in {"pending", "running"}:
+                    tool["status"] = "cancelled" if run["status"] == "cancelled" else "interrupted"
+                result = results.get(tool["callId"], {})
+                if result.get("content"):
+                    tool["output"], truncated = _bounded_output(str(result["content"]), output_limit)
+                    tool["outputTruncated"] = truncated or bool(result.get("truncated"))
+            if item.get("type") == "activityGroup":
+                statuses = {tool["status"] for tool in item["tools"]}
+                item["status"] = next((status for status in (
+                    "failed", "denied", "running", "pending", "cancelled", "interrupted", "submitted",
+                ) if status in statuses), "succeeded")
+                item["summary"] = _activity_group_summary(item["tools"])
+        run["items"] = items
+        run["activity"] = request_activity(events, rid) if not terminal else None
+        tools = [tool for item in items for tool in item.get("tools", [])]
+        run["currentActivity"] = next(({"tool": t["tool"], "argumentSummary": t["argumentSummary"], "status": t["status"]}
+                                      for t in reversed(tools) if t["status"] in {"pending", "running"}), None)
 
 
 def _new_timeline_turn(turn_id: str, message: str, seq: int | None, ts: str) -> dict[str, Any]:
@@ -422,7 +596,7 @@ def _tool_summary(name: str, arguments: dict[str, Any]) -> str:
         return f"Inspected {path or 'repository'}"
     if name == "search_text":
         return f"Searched {_bounded(str(arguments.get('query', 'repository')), 80)}"
-    if name == "apply_workspace_edit":
+    if name in {"apply_workspace_edit", "edit_file"}:
         return "Edited workspace"
     if name == "run_command":
         return f"Ran {_bounded(str(arguments.get('command', 'command')), 100)}"
@@ -430,6 +604,14 @@ def _tool_summary(name: str, arguments: dict[str, Any]) -> str:
 
 
 def _tool_argument_summary(name: str, arguments: dict[str, Any]) -> str:
+    if name == "spawn_agent":
+        return _bounded(str(arguments.get("goal", "Read-only task")), 160)
+    if name == "send_agent":
+        return _bounded(str(arguments.get("message") or "继续调查"), 160)
+    if name == "wait_agents":
+        return f"Wait {arguments.get('mode', 'all')} · {len(arguments.get('run_ids', []))} fixed runs"
+    if name == "cancel_agents":
+        return f"Request cancellation · {len(arguments.get('run_ids', []))} runs; acknowledgement pending"
     path = arguments.get("path")
     if name == "read_file":
         parts = [str(path or "<unknown>")]
@@ -442,8 +624,15 @@ def _tool_argument_summary(name: str, arguments: dict[str, Any]) -> str:
     if name == "search_text":
         query = _bounded(str(arguments.get("query", "")), 80)
         return f"query: {query}" + (f" · path: {path}" if path else "")
+    if name == "edit_file":
+        return _bounded(str(path or "workspace edit"), 200)
     if name == "apply_workspace_edit":
         operations = arguments.get("operations")
+        if isinstance(operations, list):
+            paths = list(dict.fromkeys(str(op[key]) for op in operations if isinstance(op, dict)
+                                       for key in ("path", "source", "destination") if op.get(key)))
+            if paths:
+                return _bounded("、".join(paths[:3]) + (f" 等 {len(paths)} 个文件" if len(paths) > 3 else ""), 200)
         return f"{len(operations)} operations" if isinstance(operations, list) else "workspace edit"
     if name == "run_command":
         return _bounded(str(arguments.get("command", "")), 160)
@@ -517,8 +706,8 @@ def _bounded_output(value: str, limit: int = 12_000) -> tuple[str, bool]:
     return f"{head}\n\n… output truncated …\n\n{tail}", True
 
 
-def _latest_tool(calls: dict[str, dict[str, Any]], name: str) -> dict[str, Any] | None:
-    return next((call for call in reversed(list(calls.values())) if call.get("tool") == name), None)
+def _latest_tool(calls: dict[str, dict[str, Any]], *names: str) -> dict[str, Any] | None:
+    return next((call for call in reversed(list(calls.values())) if call.get("tool") in names), None)
 
 
 def _add_changed_files(turn: dict[str, Any], paths: Any) -> None:
@@ -530,14 +719,32 @@ def _activity_group_summary(tools: list[dict[str, Any]]) -> str:
     failures = sum(tool.get("status") == "failed" for tool in tools)
     denied = sum(tool.get("status") == "denied" for tool in tools)
     cancelled = sum(tool.get("status") == "cancelled" for tool in tools)
-    label = f"{len(tools)} tool call" + ("" if len(tools) == 1 else "s")
+    categories = [
+        ({"read_file"}, "读取文件 {n} 次"),
+        ({"list_dir", "find_files"}, "浏览目录 {n} 次"),
+        ({"search_text"}, "搜索 {n} 次"),
+        ({"apply_workspace_edit", "edit_file"}, "编辑 {n} 次"),
+        ({"run_command"}, "运行 {n} 条命令"),
+        ({"spawn_agent", "send_agent", "wait_agents", "cancel_agents", "delegate_readonly", "resolve_agent_failures"}, "子任务操作 {n} 次"),
+    ]
+    labels = []
+    classified = set()
+    for names, template in categories:
+        classified.update(names)
+        count = sum(tool.get("tool") in names for tool in tools)
+        if count:
+            labels.append(template.format(n=count))
+    other = sum(tool.get("tool") not in classified for tool in tools)
+    if other:
+        labels.append(f"其他操作 {other} 次")
+    label = " · ".join(labels) or "执行记录"
     suffix = []
     if failures:
-        suffix.append(f"{failures} failed")
+        suffix.append(f"{failures} 项失败")
     if denied:
-        suffix.append(f"{denied} denied")
+        suffix.append(f"{denied} 项被拒绝")
     if cancelled:
-        suffix.append(f"{cancelled} cancelled")
+        suffix.append(f"{cancelled} 项取消")
     return f"{label} · {' · '.join(suffix)}" if suffix else label
 
 
@@ -602,24 +809,20 @@ def validation_summary(events: list[SessionEvent], meta: dict[str, Any]) -> dict
         return None
     latest = commands[-1].payload
     passed = latest.get("status") == "completed" and latest.get("exit_code") == 0
-    current_revision = int(meta.get("candidate_revision", 0))
-    evidence = next((event.payload for event in reversed(events)
-                     if event.type == "validation_completed" and event.payload.get("execution_id") == latest.get("execution_id")), None)
-    current = bool(evidence and int(evidence.get("candidate_revision", -1)) == current_revision)
     return {
         "command": latest.get("command"),
         "status": "passed" if passed else "failed",
         "exitCode": latest.get("exit_code"),
         "durationMs": latest.get("duration_ms"),
-        "appliesToCurrentChanges": current,
+        "appliesToCurrentChanges": False,
     }
 
 
 def turn_budget_view(meta: dict[str, Any], events: list[SessionEvent]) -> dict[str, Any]:
-    default = int((meta.get("runtime_options") or {}).get("max_model_steps_per_user_turn", 48))
-    budget = current_turn_budget(events, default)
-    return {"turnId": budget.turn_id, "used": budget.used, "limit": budget.limit,
-            "waiting": budget.waiting, "closed": budget.closed, "maxLimit": MAX_USER_TURN_BUDGET}
+    # 保留旧 RPC 对象外形，避免本轮扩展到插件展示；额度字段不再控制运行。
+    state = current_turn_state(events)
+    return {"turnId": state.turn_id, "used": state.used, "limit": None,
+            "waiting": False, "closed": state.closed, "maxLimit": None}
 
 
 def available_actions(meta: dict[str, Any], events: list[SessionEvent], changes: dict[str, Any]) -> dict[str, bool]:
@@ -627,21 +830,16 @@ def available_actions(meta: dict[str, Any], events: list[SessionEvent], changes:
     validation = validation_summary(events, meta)
     budget = turn_budget_view(meta, events)
     can_continue = bool(budget["turnId"] and not budget["closed"] and not budget["waiting"])
-    safe = state in {SessionWorkspaceState.SOURCE_ONLY.value, SessionWorkspaceState.CHANGES_ACTIVE.value}
+    safe = state in {SessionWorkspaceState.CURRENT_PROJECT.value, SessionWorkspaceState.SOURCE_ONLY.value, SessionWorkspaceState.CHANGES_ACTIVE.value}
     return {
-        "canRun": budget["closed"],
-        "canContinue": can_continue and safe,
-        "canIncreaseBudget": budget["waiting"] and budget["limit"] < MAX_USER_TURN_BUDGET and safe,
+        "canRun": Path(meta.get("workspace", "")).is_dir(),
+        "canContinue": can_continue and Path(meta.get("workspace", "")).is_dir(),
+        "canIncreaseBudget": False,
         "canStop": not budget["closed"],
         "canResolveApproval": False,
         "canViewChanges": changes["available"] and changes["state"] in {"pending", "applied"},
-        "canAcceptChanges": bool(
-            changes["state"] == "pending" and state == SessionWorkspaceState.CHANGES_ACTIVE.value
-            and validation and validation["status"] == "passed" and validation["appliesToCurrentChanges"]
-        ),
-        "canDiscardChanges": changes["state"] == "pending" and state in {
-            SessionWorkspaceState.CHANGES_ACTIVE.value, SessionWorkspaceState.WORKSPACE_TAINTED.value,
-        },
+        "canAcceptChanges": False,
+        "canDiscardChanges": False,
     }
 
 
@@ -655,17 +853,8 @@ def action_reasons(
         reasons["canContinue"] = "There is no unfinished request to continue."
     if not changes["available"]:
         reasons["canViewChanges"] = "There are no current pending changes."
-    if not actions["canAcceptChanges"]:
-        if state == SessionWorkspaceState.RECOVERY_REQUIRED.value:
-            reasons["canAcceptChanges"] = "Manual recovery is required before changes can be applied."
-        elif state == SessionWorkspaceState.WORKSPACE_TAINTED.value:
-            reasons["canAcceptChanges"] = "Unverified changes cannot be applied safely."
-        elif not changes["available"]:
-            reasons["canAcceptChanges"] = "There are no pending changes to apply."
-        elif not validation or not validation["appliesToCurrentChanges"] or validation["status"] != "passed":
-            reasons["canAcceptChanges"] = "A successful validation command for the current revision is required before changes can be applied."
-    if not actions["canDiscardChanges"]:
-        reasons["canDiscardChanges"] = "There are no managed changes that can be discarded."
+    reasons["canAcceptChanges"] = "Edits are written directly to the current project; Accept is retired."
+    reasons["canDiscardChanges"] = "Discard is retired; use undo for controlled edits."
     return reasons
 
 
@@ -676,8 +865,6 @@ def attention_summary(meta: dict[str, Any], events: list[SessionEvent], changes:
     if state == SessionWorkspaceState.WORKSPACE_TAINTED.value:
         return "Changes need attention"
     actions = available_actions(meta, events, changes)
-    if turn_budget_view(meta, events)["waiting"]:
-        return "Step budget reached — increase budget or stop"
     if actions["canContinue"]:
         return "Continue available"
     validation = validation_summary(events, meta)
@@ -692,29 +879,6 @@ def attention_summary(meta: dict[str, Any], events: list[SessionEvent], changes:
 
 def inspect_changes(store: SessionStore) -> dict[str, Any]:
     meta = store.read_meta()
-    context = store.workspace_context()
-    if context.workspace_kind == "git_worktree" and context.active_root.is_dir():
-        try:
-            proc = subprocess.run(
-                ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-                cwd=context.active_root, capture_output=True, check=False, timeout=10,
-            )
-        except (OSError, subprocess.SubprocessError):
-            proc = None
-        if proc is not None and proc.returncode == 0:
-            files = []
-            for entry in proc.stdout.decode("utf-8", errors="replace").split("\0"):
-                if not entry:
-                    continue
-                path = entry[3:] if len(entry) > 3 else entry
-                if " -> " in path:
-                    path = path.split(" -> ", 1)[1]
-                files.append(path)
-            if files:
-                return {
-                    "state": "pending", "available": True, "reviewable": True,
-                    "files": sorted(set(files)), "workspaceState": meta.get("workspace_state"),
-                }
     latest = next((event for event in reversed(store.read_events())
                    if event.type in {"changes_accepted", "changes_discarded"}), None)
     if latest is not None and latest.type == "changes_accepted" and latest.payload.get("delivery_id"):

@@ -11,7 +11,8 @@ from typing import Any
 
 from codeagent import __version__
 from codeagent.config import ModelConfig, RuntimeConfig
-from codeagent.context.models import ModelCapabilities
+from codeagent.context.builder import HISTORY_MAX_EVENTS
+from codeagent.context.models import TOKEN_COUNT_MARGIN
 
 
 def file_sha256(path: str | Path) -> str:
@@ -47,16 +48,14 @@ def git_identity(root: str | Path) -> tuple[str | None, bool | None]:
 def build_run_manifest(*, run_id: str, selection_path: str | Path, selection_id: str,
                        model: ModelConfig, runtime: RuntimeConfig, endpoint_identity: str,
                        swebench_commit: str | None, runtime_root: str | Path,
-                       pinned_sources: dict[str, Any] | None = None) -> dict[str, Any]:
+                       pinned_sources: dict[str, Any] | None = None,
+                       network_policy: dict[str, Any] | None = None) -> dict[str, Any]:
     commit, dirty = git_identity(runtime_root)
-    caps = ModelCapabilities(
-        context_limit=model.context_limit,
-        generation_reserve=model.max_tokens or 4_000,
-    )
+    caps = model.context_capabilities()
     model_value = {
         "provider": model.provider, "model": model.resolved_model,
         "endpoint_identity": safe_endpoint_identity(endpoint_identity), "temperature": model.temperature,
-        "max_output_tokens": model.max_tokens,
+        "max_output_tokens": model.resolved_max_tokens,
         "reasoning": {
             "enabled": model.reasoning_enabled,
             "effort": model.resolved_reasoning_effort,
@@ -72,17 +71,16 @@ def build_run_manifest(*, run_id: str, selection_path: str | Path, selection_id:
     }
     runtime_value = {
         **asdict(runtime), "context_limit": model.context_limit,
-        "generation_reserve": model.max_tokens or 4_000,
-        "continuation_reserve": 4_000, "safety_margin": 2_000,
-        "context_reduction": "semantic-condensation-v1", "minimum_context": "fail_closed",
+        "max_output_tokens": caps.max_output_tokens,
+        "token_count_margin": TOKEN_COUNT_MARGIN,
+        "context_reduction": "rolling-summary-half-v2", "minimum_context": "fail_closed",
+        "execution": "shared-agent-loop", "workspace_mode": "native-swe-container",
+        "command_environment": "swebench-container-workspace-v1",
+        "prediction_source": "container-workspace-diff", "validation_semantics": "command-observation-only",
         "context": {
-            "max_events": caps.max_events,
-            "target_events": caps.target_events,
-            "soft_token_ratio": caps.soft_token_ratio,
-            "target_token_ratio": caps.target_token_ratio,
-            "summary_max_tokens": caps.summary_max_tokens,
-            "condenser_safety_margin": caps.condenser_safety_margin,
-            "minimum_progress": caps.minimum_progress,
+            "history_max_events": HISTORY_MAX_EVENTS,
+            "target": "half",
+            "input_limit": caps.usable_input_budget,
         },
         "condenser": {
             "provider": model.provider,
@@ -93,12 +91,19 @@ def build_run_manifest(*, run_id: str, selection_path: str | Path, selection_id:
                     (model.provider == "glm" and model.resolved_model == "glm-5.3")
                 ) else "high" if model.reasoning_enabled else None
             ),
-            "max_output_tokens": caps.summary_max_tokens,
+            "max_output_tokens": model.resolved_summary_max_tokens,
+            "input_limit": model.context_capabilities(summary=True).usable_input_budget,
             "tools": False,
-            "max_calls_per_model_step": 4,
-            "max_soft_calls_per_model_step": 1,
+            "early_condensation": "once_before_agent_request",
+            "hard_calls": "until_input_fits; stop_on_invalid_or_no_progress",
         },
     }
+    from codeagent.benchmark.swebench_network import SWEbenchNetworkConfig
+    runtime_value['network_policy'] = network_policy or SWEbenchNetworkConfig().identity()
+    from codeagent.benchmark.swebench_compat import compatibility_catalog
+    catalog = compatibility_catalog(runtime_value['network_policy']['mode'])
+    if catalog:
+        runtime_value['environment_compatibility'] = catalog
     fingerprint_input = {"model": model_value, "runtime": runtime_value}
     return {
         "schema_version": 1, "run_id": run_id, "selection_id": selection_id,

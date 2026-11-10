@@ -1,8 +1,8 @@
 {
   "name": "codeagent",
   "displayName": "CodeAgent",
-  "description": "可观测、可干预的本地 Coding Agent 产品层。",
-  "version": "0.5.0",
+  "description": "在当前项目中调查代码、修改与验证，支持权限批准、执行过程查看和受控撤销。",
+  "version": "0.6.0",
   "publisher": "local-codeagent",
   "repository": {
     "type": "git",
@@ -15,7 +15,9 @@
   "engines": {
     "vscode": "^1.106.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "onView:codeagent.chat",
     "onCommand:codeagent.newTask",
@@ -24,17 +26,31 @@
   "main": "./extension.js",
   "contributes": {
     "commands": [
-      {"command": "codeagent.newTask", "title": "CodeAgent: New Task"},
-      {"command": "codeagent.refreshSessions", "title": "CodeAgent: Refresh Sessions"}
+      {
+        "command": "codeagent.newTask",
+        "title": "CodeAgent: New Task"
+      },
+      {
+        "command": "codeagent.refreshSessions",
+        "title": "CodeAgent: Refresh Sessions"
+      }
     ],
     "viewsContainers": {
       "secondarySidebar": [
-        {"id": "codeagent", "title": "CodeAgent", "icon": "media/codeagent.svg"}
+        {
+          "id": "codeagent",
+          "title": "CodeAgent",
+          "icon": "media/codeagent.svg"
+        }
       ]
     },
     "views": {
       "codeagent": [
-        {"id": "codeagent.chat", "name": "CodeAgent", "type": "webview"}
+        {
+          "id": "codeagent.chat",
+          "name": "CodeAgent",
+          "type": "webview"
+        }
       ]
     },
     "viewsWelcome": [

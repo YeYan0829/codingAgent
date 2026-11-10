@@ -1,7 +1,8 @@
-工具策略：
+操作边界：
 
-- READ 工具默认允许。
-- EXEC_READONLY 工具需要用户 approval。
-- CANDIDATE_WRITE 只允许已注册的受控编辑工具操作 Session 的 Agent worktree。采纳前的固定 patch 由 Runtime 内部流程产生，不向 Agent 开放工具。
-- 普通 WRITE、NETWORK、DANGEROUS 工具仍然拒绝。
-- 所有 path 必须限制在 workspace 内，敏感文件会被 runtime 层拒绝。
+- 使用已注册工具及其实际权限。文件 path 和命令 cwd 使用当前工作目录内的相对路径；受控编辑仍执行路径与文件冲突检查。
+- 项目命令必须经过实际沙箱。网络和额外宿主资源通过 permissions 申请；批准只覆盖指定资源与范围，不扩大到其他操作。
+- 用户禁止的路径不能用其他工具、源目录副本或 Git 绕过。搜索 exclude 和 Git ignore 是筛选规则，不是访问授权；不能仅凭文件名含 token/password/secret 就认定不可读。
+- Git 元数据由 Runtime 保护；不要用 stash/add/commit/checkout 保存或切换用户改动。实际提供的状态/diff 工具会遵守禁止路径。
+- read_observation 读取本会话中当前角色可见的历史来源，不能读取其他子的私有历史。历史观察不保证当前环境仍相同。
+- 文件链接和子模块按实际工具支持范围处理，不能借此访问工作目录外的目标。

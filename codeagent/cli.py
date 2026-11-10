@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sys
-import shutil
 import hashlib
 import subprocess
 import os
@@ -13,7 +12,6 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-from rich.prompt import Confirm
 from prompt_toolkit import PromptSession
 
 from codeagent import __version__
@@ -22,20 +20,12 @@ from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.interface.commands import handle_manual_call, print_tools
 from codeagent.model_gateway.factory import build_model_client
 from codeagent.runtime.approval import AutoApprovalGate, ConsoleApprovalGate
-from codeagent.runtime.artifacts import CommandArtifactStore
-from codeagent.runtime.sandbox_executor import SandboxedCommandExecutor
 from codeagent.runtime.runner import AgentRunner
-from codeagent.runtime.turn_budget import increase_turn_budget, store_turn_budget
-from codeagent.runtime.candidate import ApplyStatus, CandidateError, CandidateService
-from codeagent.runtime.current_changes import CurrentChangesError, CurrentChangesService
-from codeagent.runtime.validation import current_validation_evidence
+from codeagent.runtime.turn_state import store_turn_state
 from codeagent.session.events import SessionEvent
 from codeagent.session.store import SessionStore, SessionStoreError
-from codeagent.tools.fs_read import build_fs_tools
-from codeagent.tools.git_read import build_git_tools
 from codeagent.tools.registry import ToolRegistry
-from codeagent.workspace.workspace import SessionWorkspaceState, Workspace, WorkspaceContext
-from codeagent.workspace.git_worktree import GitWorktreeError, GitWorktreeManager, WorkspaceState
+from codeagent.workspace.workspace import Workspace, WorkspaceContext
 
 app = typer.Typer(help=f"CodeAgent Runtime v{__version__}")
 console = Console()
@@ -78,10 +68,7 @@ def build_runner(
         execution_allowed=execution_allowed,
         progress_callback=progress_callback,
         model_factory=build_model_client,
-        runtime_config=RuntimeConfig(
-            max_steps_per_turn=int(options.get("max_steps_per_turn", 12)),
-            max_model_steps_per_user_turn=int(options.get("max_model_steps_per_user_turn", 48)),
-        ),
+        runtime_config=RuntimeConfig.from_options(options),
     )
 
 
@@ -95,7 +82,8 @@ def _create_session(
     return store.create(
         provider=model_config.provider, model=model_config.resolved_model, title=title,
         model_options={
-            "temperature": model_config.temperature, "max_tokens": model_config.max_tokens,
+            "temperature": model_config.temperature, "max_tokens": model_config.resolved_max_tokens,
+            **({"summary_max_tokens": model_config.summary_max_tokens} if model_config.summary_max_tokens is not None else {}),
             "reasoning_enabled": model_config.reasoning_enabled,
             "reasoning_effort": model_config.resolved_reasoning_effort,
         },
@@ -106,11 +94,14 @@ def _create_session(
 def start(
     workspace: Path = WORKSPACE_ARG, provider: str = PROVIDER_OPT, model: str | None = MODEL_OPT,
     reasoning: bool = REASONING_OPT, reasoning_effort: str | None = REASONING_EFFORT_OPT,
+    max_tokens: int | None = typer.Option(None, "--max-tokens", min=1, help="单次主/子模型输出上限；含模型推理。"),
+    summary_max_tokens: int | None = typer.Option(None, "--summary-max-tokens", min=1, hidden=True, help="兼容的摘要输出覆盖；缺省继承模型配置。"),
     session_root: Path | None = SESSION_ROOT_OPT,
 ):
     """创建新 session 并进入交互 CLI。"""
     model_config = ModelConfig(provider=provider, model=model, reasoning_enabled=reasoning,
-                               reasoning_effort=reasoning_effort)
+                               reasoning_effort=reasoning_effort, max_tokens=max_tokens,
+                               summary_max_tokens=summary_max_tokens)
     ws = Workspace(workspace)
     store = _create_session(ws, session_root, model_config)
     console.print(
@@ -138,21 +129,26 @@ def ask(
     model: str | None = MODEL_OPT,
     reasoning: bool = REASONING_OPT,
     reasoning_effort: str | None = REASONING_EFFORT_OPT,
+    max_tokens: int | None = typer.Option(None, "--max-tokens", min=1, help="单次主/子模型输出上限；含模型推理。"),
+    summary_max_tokens: int | None = typer.Option(None, "--summary-max-tokens", min=1, hidden=True, help="兼容的摘要输出覆盖；缺省继承模型配置。"),
     session_root: Path | None = SESSION_ROOT_OPT,
+    delegation: bool = typer.Option(False, "--delegation", help="开放同步task委派：调查、受控命令及通用实现子Agent，逐个执行；默认关闭。"),
+    cost_per_token_microunits: int | None = typer.Option(None, "--cost-per-token-microunits", min=1),
+    fee_currency: str = typer.Option("USD", "--fee-currency"),
 ):
     """单次非交互运行，用于 smoke test。"""
     model_config = ModelConfig(provider=provider, model=model, reasoning_enabled=reasoning,
-                               reasoning_effort=reasoning_effort)
+                               reasoning_effort=reasoning_effort, max_tokens=max_tokens,
+                               summary_max_tokens=summary_max_tokens)
     ws = Workspace(workspace)
     store = _create_session(ws, session_root, model_config, title=SessionStore.title_from_message(message))
+    from dataclasses import asdict
+    options = RuntimeConfig(
+        delegation_enabled=delegation, cost_per_token_microunits=cost_per_token_microunits, fee_currency=fee_currency,
+    )
+    store.update_runtime_options(asdict(options))
     runner = build_runner(store, ws, interactive=False, model_config=model_config)
     output = runner.run_turn(message)
-    while output.status == "slice_exhausted":
-        continued = runner.continue_turn()
-        output.steps.extend(continued.steps)
-        output.final_text = continued.final_text
-        output.status = continued.status
-        output.steps_used_in_turn = continued.steps_used_in_turn
     for step in output.steps:
         console.print(_format_tool_step(step))
         if step["result"].get("content"):
@@ -162,26 +158,54 @@ def ask(
     console.print(Panel(Text(output.final_text), title="Assistant"))
 
 
+@app.command("agent-command")
+def agent_command(
+    session_id: str = typer.Argument(..., help="Session ID。"),
+    action: str = typer.Argument(..., help="spawn/send/wait/cancel/close；独立 CLI 返回前等待资源回收。"),
+    input_file: Path = typer.Argument(..., help="UTF-8 JSON 命令文件，字段与模型工具 schema 相同。"),
+    session_root: Path | None = SESSION_ROOT_OPT,
+):
+    """对持久子会话执行显式命令；重复 request_key 返回原 run。"""
+    from codeagent.orchestration.commands import execute_agent_command
+    try:
+        meta = SessionStore.find_session(session_id, session_root=session_root)
+        if not meta:
+            raise ValueError("session not found")
+        store = SessionStore(meta["workspace"], session_id=session_id, session_root=session_root).load()
+        arguments = json.loads(input_file.read_text(encoding="utf-8"))
+        result = execute_agent_command(store, action, arguments)
+    except (ValueError, RuntimeError, OSError) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from exc
+    typer.echo(result.model_dump_json())
+    if not result.ok:
+        raise typer.Exit(1)
+
+
 @app.command("swebench-batch")
 def swebench_batch(
     selection: Path = typer.Argument(..., help="只定义固定题集的 selection JSON。"),
     task_repo: Path = typer.Option(..., "--task-repo", help="固定版本 swe-bench-tasks 仓库。"),
-    source_cache: Path = typer.Option(..., "--source-cache", help="官方 image prepared source cache。"),
+    source_cache: Path | None = typer.Option(None, "--source-cache", hidden=True, help="旧参数，仅兼容保留；原生容器不使用源码缓存。"),
     output_root: Path = typer.Option(..., "--output-root", help="批次 artifact 根目录。"),
     grader_command: str = typer.Option(..., "--grader-command", help="official grader 命令前缀。"),
     report_template: str = typer.Option(..., "--report-template", help="official 单题 report 路径模板。"),
+    preflight_report: Path | None = typer.Option(None, "--preflight-report", help="正式题集的全量 gold＋仓库预检证明，绑定冻结版本。"),
     provider: str = PROVIDER_OPT,
     model: str | None = MODEL_OPT,
     run_id: str | None = typer.Option(None, "--run-id", help="指定已有 run id 即执行兼容性校验并 resume。"),
     temperature: float | None = typer.Option(None, "--temperature"),
     max_tokens: int | None = typer.Option(None, "--max-tokens"),
+    summary_max_tokens: int | None = typer.Option(None, "--summary-max-tokens", min=1, hidden=True),
     reasoning: bool = REASONING_OPT,
     reasoning_effort: str | None = REASONING_EFFORT_OPT,
-    max_steps_per_turn: int = typer.Option(12, "--slice-steps"),
-    max_model_steps: int = typer.Option(48, "--max-model-steps"),
+    max_model_steps: int | None = typer.Option(None, "--max-model-steps", min=1,
+        help="仅实验 harness 的显式请求限额，不进入 Runtime 配置。"),
+    delegation: bool = typer.Option(False, "--delegation/--no-delegation", help="开放自主子任务委派；关闭时屏蔽委派工具。"),
+    swe_network: str = typer.Option("filtered", "--swe-network", help="生成端网络：filtered（受控代理、屏蔽答案域名）或off（断网）。"),
     price_snapshot: Path | None = typer.Option(None, "--price-snapshot"),
     cost_budget_cny: str | None = typer.Option(
-        None, "--cost-budget-cny", help="批次可用成本预算；使用价格快照时必须设置。"
+        None, "--cost-budget-cny", help="可选批次金额限制；价格快照可单独用于费用统计。"
     ),
     minimum_remaining_cost_cny: str = typer.Option(
         "10", "--minimum-remaining-cost-cny",
@@ -194,15 +218,17 @@ def swebench_batch(
         SWEbenchSelection, SWEbenchSourcePreparer, SWEbenchTaskRepository,
     )
     from codeagent.benchmark.swebench_harness import SWEbenchHarness
+    from codeagent.benchmark.swebench_network import SWEbenchNetworkConfig
     from codeagent.config import RuntimeConfig
     selection_value = SWEbenchSelection(selection)
     repository = SWEbenchTaskRepository(task_repo)
     model_config = ModelConfig(
         provider=provider, model=model, temperature=temperature, max_tokens=max_tokens,
+        summary_max_tokens=summary_max_tokens,
         reasoning_enabled=reasoning, reasoning_effort=reasoning_effort,
     )
-    runtime_config = RuntimeConfig(max_steps_per_turn=max_steps_per_turn,
-                                   max_model_steps_per_user_turn=max_model_steps)
+    runtime_config = RuntimeConfig(delegation_enabled=delegation)
+    network_config = SWEbenchNetworkConfig(swe_network)
     endpoint = (
         os.environ.get("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4") if provider == "glm"
         else "https://api.deepseek.com" if provider == "deepseek" else "local-fake"
@@ -213,15 +239,17 @@ def swebench_batch(
         [*shlex.split(grader_command), "--dataset_name", str(dataset_path), "--split", "test"],
         report_template,
     )
+    from codeagent.benchmark.limits import ExperimentLimits
     runner = SWEbenchBatchRunner(
         selection=selection_value, task_loader=lambda item: repository.load(item).task,
-        harness=SWEbenchHarness(SWEbenchSourcePreparer(source_cache), grader),
+        harness=SWEbenchHarness(SWEbenchSourcePreparer(source_cache, network_config=network_config), grader, model_factory=build_model_client),
         model_factory=lambda: build_model_client(model_config), model_config=model_config,
         runtime_config=runtime_config, output_root=output_root, endpoint_identity=endpoint,
+        experiment_limits=ExperimentLimits(max_requests=max_model_steps) if max_model_steps is not None else None,
         price_snapshot=PriceSnapshot.from_json(price_snapshot) if price_snapshot else None,
         cost_budget_cny=cost_budget_cny,
         minimum_remaining_cost_cny=minimum_remaining_cost_cny,
-        runtime_root=Path(__file__).resolve().parents[1],
+        runtime_root=Path(__file__).resolve().parents[1], preflight_report=preflight_report,
     )
     try:
         result = runner.run(run_id)
@@ -236,7 +264,7 @@ def swebench_select(
     output: Path = typer.Option(..., "--output", help="最终 Agent-facing selection JSON。"),
     exclude: Path = typer.Option(..., "--exclude", help="需要排除的开发集 selection。"),
     task_repo: Path = typer.Option(..., "--task-repo", help="固定版本 swe-bench-tasks 仓库。"),
-    source_cache: Path = typer.Option(..., "--source-cache", help="prepared source cache。"),
+    source_cache: Path | None = typer.Option(None, "--source-cache", hidden=True, help="旧参数，仅兼容保留；原生容器不使用源码缓存。"),
     grader_command: str = typer.Option(..., "--grader-command", help="official gold grader 命令前缀。"),
     size: int = typer.Option(50, "--size", min=1),
     seed: int = typer.Option(42, "--seed"),
@@ -266,7 +294,7 @@ def swebench_select(
         "dataset_identity": {"suite": "SWE-bench_Verified", "task_repository": str(task_repo.resolve()),
                              "task_commit": task_commit, "swebench_commit": swebench_commit},
         "runtime": runtime_identity(Path(__file__).resolve().parents[1]),
-        "preflight": {"grader_command": command, "source_cache": str(source_cache.resolve())},
+        "preflight": {"grader_command": command, "workspace_backend": "swebench-container-workspace-v1"},
     }
     generator = VerifiedSelectionGenerator(
         candidates=candidates_from_repository(repository), excluded_ids=excluded_ids,
@@ -308,81 +336,35 @@ def list_sessions(
         console.print(_format_session_list_row(meta), markup=False)
 
 
-@app.command("cleanup")
-def cleanup_session(
-    session_id: str = typer.Argument(..., help="要清理诊断数据的 Session id。"),
-    session_root: Path | None = SESSION_ROOT_OPT,
-):
-    """清理不影响业务状态的诊断数据；当前修改请使用 discard-changes。"""
-    meta = SessionStore.find_session(session_id, session_root=session_root)
-    if not meta:
-        console.print(f"[red]session not found: {session_id}[/red]")
-        raise typer.Exit(1)
-    source = meta.get("source_workspace") or meta.get("workspace")
-    store = SessionStore(source, session_id=session_id, session_root=session_root).load()
-    if store.workspace_state() in {SessionWorkspaceState.WORKSPACE_TAINTED, SessionWorkspaceState.RECOVERY_REQUIRED}:
-        console.print("[red]workspace tainted/recovery 诊断材料不能清理；请先 discard 或人工检查[/red]")
-        raise typer.Exit(1)
-    shutil.rmtree(store.diagnostics_dir, ignore_errors=True)
-    console.print("diagnostics cleaned")
-
-
 @app.command("show-changes")
 def show_changes(
     session_id: str = typer.Argument(..., help="Session id。"),
     session_root: Path | None = SESSION_ROOT_OPT,
 ):
-    """按需显示 Agent worktree 相对 base 的当前 diff，不创建长期 patch。"""
-    store = _load_changes_store(session_id, session_root, allow_tainted=True)
-    try:
-        patch = CurrentChangesService(store).preview()
-    except CandidateError as exc:
-        console.print(f"[red]{exc}[/red]")
+    """显示受控编辑涉及文件的当前差异。"""
+    from codeagent.runtime.atomic_edit import AtomicEditService
+    meta = SessionStore.find_session(session_id, session_root=session_root)
+    if meta is None:
         raise typer.Exit(1)
-    console.print(patch.decode("utf-8", errors="replace"), markup=False)
+    store = SessionStore(meta["workspace"], session_id, session_root).load()
+    store.open_current_workspace()
+    console.print(AtomicEditService(store.workspace_context(), store).preview_patch().decode("utf-8"), markup=False)
 
 
-@app.command("accept-changes")
-def accept_changes(
-    session_id: str = typer.Argument(..., help="Session id。"),
-    session_root: Path | None = SESSION_ROOT_OPT,
-):
-    """冻结、复检并采纳当前修改。"""
-    store = _load_changes_store(session_id, session_root)
-    service = CurrentChangesService(store)
-
-    def approve(manifest: dict, patch: str) -> bool:
-        _print_changes(manifest, patch.encode("utf-8"))
-        if not sys.stdin.isatty():
-            return False
-        try:
-            return Confirm.ask("确认把以上当前修改应用到 source？", default=False)
-        except (EOFError, KeyboardInterrupt):
-            return False
-
-    try:
-        receipt = service.accept(approve)
-    except CurrentChangesError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    console.print(json.dumps(receipt, ensure_ascii=False, indent=2), markup=False)
-    if receipt["status"] != ApplyStatus.APPLIED.value:
+@app.command("undo")
+def undo_changes(session_id: str = typer.Argument(..., help="Session id。"), session_root: Path | None = SESSION_ROOT_OPT):
+    """撤销最近一轮受控文件编辑，保留其他用户修改和shell副作用。"""
+    from codeagent.runtime.atomic_edit import AtomicEditService
+    meta = SessionStore.find_session(session_id, session_root=session_root)
+    if meta is None:
+        console.print("[red]Session不存在[/red]")
         raise typer.Exit(1)
-
-
-@app.command("discard-changes")
-def discard_changes(
-    session_id: str = typer.Argument(..., help="Session id。"),
-    session_root: Path | None = SESSION_ROOT_OPT,
-):
-    """丢弃当前修改，不改变 source，Session 可以继续。"""
-    store = _load_changes_store(session_id, session_root, allow_tainted=True)
-    try:
-        receipt = CurrentChangesService(store).discard()
-    except CurrentChangesError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
-    console.print(json.dumps(receipt, ensure_ascii=False, indent=2), markup=False)
+    store = SessionStore(meta["workspace"], session_id, session_root).load()
+    store.open_current_workspace()
+    result = AtomicEditService(store.workspace_context(), store).undo()
+    console.print(result.model_dump_json(), markup=False)
+    if not result.ok:
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -413,47 +395,17 @@ def resume(
     except SessionStoreError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
-    meta = store.read_meta()
+    store.open_current_workspace()
     context = store.workspace_context()
+    _recover_atomic_transactions(store, context)
+    meta = store.read_meta()
     execution_allowed = True
-    if store.workspace_state() in {
-        SessionWorkspaceState.PREPARING_WORKSPACE,
-        SessionWorkspaceState.ACCEPTING,
-        SessionWorkspaceState.DISCARDING,
-    }:
-        store.mark_recovery_required("检测到未完成的 workspace lifecycle transition")
-        execution_allowed = False
-    if store.workspace_state() in {
-        SessionWorkspaceState.CHANGES_ACTIVE,
-        SessionWorkspaceState.WORKSPACE_TAINTED,
-        SessionWorkspaceState.RECOVERY_REQUIRED,
-    }:
-        recovery_required = _recover_atomic_transactions(store, context)
-        report = GitWorktreeManager(store.session_root).inspect(
-            context,
-            candidate_changes=False if recovery_required else _has_resumable_candidate_changes(store, context),
-            recovery_required=recovery_required,
-            allow_source_changes=True,
-        )
-        execution_allowed = report.executable
-        if recovery_required or store.workspace_state() == SessionWorkspaceState.RECOVERY_REQUIRED:
-            store.mark_recovery_required(report.reason)
-            execution_allowed = False
-        elif store.workspace_state() == SessionWorkspaceState.WORKSPACE_TAINTED:
-            execution_allowed = False
-        elif execution_allowed:
-            store.restore_changes_active(report.reason)
-        else:
-            store.mark_recovery_required(report.reason)
-        if store.workspace_state() == SessionWorkspaceState.WORKSPACE_TAINTED:
-            console.print("[yellow]Agent workspace state: workspace_tainted；仅允许只读检查和 discard-changes[/yellow]")
-        elif not execution_allowed:
-            console.print(f"[yellow]Agent workspace state: {report.state.value}: {report.reason}; 受保护能力已关闭[/yellow]")
-    ws = Workspace(context.active_root)
+    ws = Workspace(store.workspace_root)
     model_options = meta.get("model_options") if isinstance(meta.get("model_options"), dict) else {}
     model_config = ModelConfig(
         provider=provider or meta.get("provider", "fake"), model=model or meta.get("model"),
         temperature=model_options.get("temperature"), max_tokens=model_options.get("max_tokens"),
+        summary_max_tokens=model_options.get("summary_max_tokens"),
         reasoning_enabled=model_options.get("reasoning_enabled") is True,
         reasoning_effort=model_options.get("reasoning_effort"),
     )
@@ -501,26 +453,9 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
             console.print(str(store.events_path))
             continue
         if raw == "/stop":
-            if not store_turn_budget(store).closed:
+            if not store_turn_state(store).closed:
                 store.append_event("turn_terminated", {"reason": "user_stop", "message": "用户已结束本轮执行。"})
             console.print("本轮已停止；可输入新的具体指令。")
-            continue
-        if raw == "/budget" or raw.startswith("/budget "):
-            try:
-                budget = store_turn_budget(store)
-                requested = raw.split(maxsplit=1)[1]
-                increase_turn_budget(
-                    store,
-                    turn_id=budget.turn_id or "",
-                    expected_limit=budget.limit,
-                    additional_steps=int(requested[1:]) if requested.startswith("+") else None,
-                    new_limit=None if requested.startswith("+") else int(requested),
-                )
-                output = runner.continue_turn()
-            except (ValueError, IndexError, RuntimeError) as exc:
-                console.print(Text(f"无法扩额：{exc}。用法：/budget +<追加步数> 或 /budget <新的本轮总上限>"))
-                continue
-            _finish_or_offer_continuation(runner, output)
             continue
         if raw == "/continue":
             try:
@@ -533,20 +468,11 @@ def _interactive_loop(store: SessionStore, ws: Workspace, model_config: ModelCon
         if raw.startswith("/call"):
             handle_manual_call(console, runner, raw)
             continue
-        if not store_turn_budget(store).closed:
-            console.print("本轮尚未结束；使用 /budget +<追加步数> 或 /budget <总上限> 扩额，或 /stop 后输入修正指令。")
-            continue
         output = runner.run_turn(raw)
         _finish_or_offer_continuation(runner, output)
 
 
 def _finish_or_offer_continuation(runner: AgentRunner, output) -> None:
-    while output.status == "slice_exhausted":
-        output = runner.continue_turn()
-    if output.status == "model_step_budget_exhausted":
-        console.print(Panel(Text(output.final_text + "\n使用 /budget +<追加步数> 或 /budget <新的总上限> 扩额并继续；/stop 结束本轮。"),
-                            title="Step Budget Reached"))
-        return
     if output.status == "context_budget_exceeded":
         console.print(Panel(
             output.final_text + "\n\n"
@@ -555,7 +481,7 @@ def _finish_or_offer_continuation(runner: AgentRunner, output) -> None:
             title="Context Capacity Reached",
         ))
         return
-    title = "Assistant" if output.status == "completed" else "Execution Stopped"
+    title = "Assistant" if output.status == "completed" else "Assistant (task failures)" if output.status == "completed_with_warnings" else "Execution Stopped"
     console.print(Panel(Text(output.final_text), title=title))
 
 
@@ -571,42 +497,6 @@ def _load_session_list(workspace_filter: Path | None, session_root: Path | None)
     return SessionStore.list_all_sessions(session_root=session_root)
 
 
-def _load_changes_store(session_id: str, session_root: Path | None, *, allow_tainted: bool = False) -> SessionStore:
-    meta = SessionStore.find_session(session_id, session_root=session_root)
-    if not meta:
-        console.print(f"[red]session not found: {session_id}[/red]")
-        raise typer.Exit(1)
-    store = SessionStore(meta["workspace"], session_id=session_id, session_root=session_root).load()
-    allowed = {SessionWorkspaceState.CHANGES_ACTIVE}
-    if allow_tainted:
-        allowed.add(SessionWorkspaceState.WORKSPACE_TAINTED)
-    if store.workspace_state() not in allowed:
-        if store.workspace_state() == SessionWorkspaceState.WORKSPACE_TAINTED:
-            console.print("[red]workspace_tainted 禁止采纳；只允许只读检查和 discard-changes[/red]")
-        else:
-            console.print("[red]当前 Session 没有可处理的修改[/red]")
-        raise typer.Exit(1)
-    return store
-
-
-def _has_resumable_candidate_changes(store: SessionStore, context: WorkspaceContext) -> bool:
-    """Candidate revision 领先 accepted baseline 且 worktree dirty 即可恢复。
-
-    每条命令/编辑的细粒度事件用于诊断，不再承担重建当前修改的职责；异常状态由
-    recovery_required/workspace_tainted 的更高优先级 gate 处理。
-    """
-    meta = store.read_meta()
-    if int(meta.get("candidate_revision", 0)) <= int(meta.get("accepted_candidate_revision", 0)):
-        return False
-    proc = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd=context.active_root,
-        capture_output=True, shell=False, check=False, timeout=10,
-    )
-    if proc.returncode:
-        return False
-    return bool(proc.stdout)
-
-
 def _recover_atomic_transactions(store: SessionStore, context: WorkspaceContext) -> bool:
     """先恢复未完成事务；任何无法确认的状态都优先关闭 execution capability。"""
     from codeagent.runtime.atomic_edit import AtomicEditError, AtomicEditService
@@ -616,19 +506,6 @@ def _recover_atomic_transactions(store: SessionStore, context: WorkspaceContext)
     except AtomicEditError:
         return True
     return False
-
-
-def _print_changes(manifest: dict, patch: bytes) -> None:
-    summary = {
-        "session_id": manifest.get("session_id"),
-        "base_commit": manifest.get("base_commit"),
-        "patch_sha256": manifest.get("patch_sha256"),
-        "changed_files": manifest.get("changed_files"),
-        "workspace_side_effects": manifest.get("workspace_side_effects"),
-        "test_receipts": manifest.get("test_receipts"),
-    }
-    console.print(Panel(json.dumps(summary, ensure_ascii=False, indent=2), title="当前修改"), markup=False)
-    console.print(patch.decode("utf-8"), markup=False)
 
 
 def _resolve_resume_workspace(session_id: str, workspace_filter: Path | None, session_root: Path | None) -> Path | None:
@@ -679,14 +556,8 @@ def _format_session_overview(store: SessionStore, recent_count: int = 6) -> str:
         f"events: {len(events)}",
         f"events: {store.events_path}",
     ]
-    context = store.workspace_context()
-    if context.workspace_kind == "git_worktree":
-        changed = _current_changed_paths(context)
-        lines.append(f"current changes: {len(changed)} file(s)" + (f" ({', '.join(changed[:8])})" if changed else ""))
-        evidence = current_validation_evidence(store, context)
-        lines.append(f"current validation: {'passed evidence exists' if evidence else 'none for current file tree'}")
-    else:
-        lines.extend(["current changes: none (source-only)", "current validation: none"])
+    count = sum(e.type == "edit_transaction" for e in events)
+    lines.append(f"controlled edit transactions: {count}; current project is used directly")
     recent = [event for event in events if event.type != "session_created"][-recent_count:]
     latest_turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
     if latest_turn_id:
@@ -798,6 +669,8 @@ def _summarize_event(event: SessionEvent) -> str:
 
 
 def _summarize_tool_arguments(name: str, arguments: dict) -> str:
+    if name == "edit_file":
+        return f"path={arguments.get('path')} edits={len(arguments.get('edits') or [])}"
     if name == "apply_workspace_edit":
         operations = arguments.get("operations", [])
         targets = []

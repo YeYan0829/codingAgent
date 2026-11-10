@@ -19,6 +19,62 @@ class FakeLLM(BaseModelClient):
             )
         messages = request.messages
         observations = [m for m in messages if m.get("role") == "tool"]
+        if (request.purpose == "main_agent" and any(t.name == "task" for t in request.tools)
+                and any("委派" in str(m.get("content", "")) for m in messages if m.get("role") == "user")):
+            if not observations:
+                return LLMResponse(tool_calls=[LLMToolCall(call_id="fake-task", name="task", arguments={
+                    "subagent_type": "explore", "prompt": "读取项目README并报告路径依据。",
+                })])
+            if len(observations) == 1:
+                result = self._parse_content(observations[0]["content"])
+                report = self._parse_content(result.get("content", "{}"))
+                if report.get("task_id"):
+                    return LLMResponse(tool_calls=[LLMToolCall(call_id="fake-task-resume", name="task", arguments={
+                        "resume": report["task_id"], "prompt": "基于你自己的历史，再读取README核实证据。",
+                    })])
+            if len(observations) == 2:
+                return LLMResponse(tool_calls=[LLMToolCall(call_id="fake-task-parent-read", name="list_dir", arguments={})])
+            return LLMResponse(text="免费工程夹具：同步委派、同一子会话续问，主Agent收到结果后继续读取并汇总。", finish_reason="stop")
+        if (request.purpose == "main_agent" and any(t.name == "spawn_agent" for t in request.tools)
+                and any("委派" in str(m.get("content", "")) for m in messages if m.get("role") == "user")):
+            if not observations:
+                return LLMResponse(tool_calls=[LLMToolCall(call_id="graph-spawn", name="spawn_agent", arguments={
+                    "spec": "explore", "goal": "读取项目 README 并给出证据", "done_when": "有路径依据",
+                    "request_key": "fake-graph-spawn-v1",
+                })])
+            if len(observations) == 1:
+                report = self._parse_content(self._parse_content(observations[0]["content"]).get("content", "{}"))
+                if "agent_id" in report:
+                    return LLMResponse(tool_calls=[LLMToolCall(call_id="graph-send", name="send_agent", arguments={
+                        "agent_id": report["agent_id"], "expected_last_run_id": report["run_id"],
+                        "message": "基于你自己的历史，再用工具核实 README", "done_when": "重新读取并引用证据",
+                        "revision_mode": "pinned", "request_key": "fake-graph-send-v1",
+                    })])
+            if len(observations) == 2:
+                return LLMResponse(tool_calls=[LLMToolCall(call_id="graph-parent-read", name="list_dir", arguments={})])
+            return LLMResponse(text="免费工程夹具：主图动态委派、同一子会话第二 run 继续工具循环，主 Agent 读取后汇总。", finish_reason="stop")
+        if request.purpose == "readonly_child":
+            # 当前 run 必须继续真实工具调查，旧 run 的工具结果保留在输入中但不代替本次执行。
+            anchor_index = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
+            observations = [m for m in messages[anchor_index + 1:] if m.get("role") == "tool"]
+        # 免费、由当前请求决定的委派工程夹具；不代表真实模型任务质量。
+        if (request.purpose == "main_agent" and any(t.name == "delegate_readonly" for t in request.tools)
+                and any("委派" in str(m.get("content", "")) for m in messages if m.get("role") == "user")):
+            delegated = next((m for m in observations if self._tool_name_for_call(messages, m.get("tool_call_id"))
+                              == "delegate_readonly"), None)
+            if delegated is None:
+                return LLMResponse(tool_calls=[LLMToolCall(
+                    call_id="fake-delegate", name="delegate_readonly", arguments={
+                        "request_key": "fake-readonly-v1", "tasks": [
+                            {"goal": "定位项目入口", "done_when": "读取 README 并给出路径证据"},
+                            {"goal": "独立审查项目说明", "done_when": "读取 README 并报告可验证信息与限制"},
+                        ],
+                    },
+                )])
+            if not any(self._tool_name_for_call(messages, m.get("tool_call_id")) == "list_dir" for m in observations):
+                return LLMResponse(tool_calls=[LLMToolCall(call_id="fake-after-delegate", name="list_dir", arguments={})])
+            return LLMResponse(text="免费工程夹具：已取得两个只读子 Agent 的结果，主 Agent 继续调用工具后汇总。\n"
+                               + delegated.get("content", "")[:26000])
         if not observations:
             return LLMResponse(
                 tool_calls=[

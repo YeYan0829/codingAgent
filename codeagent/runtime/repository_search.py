@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from codeagent.safety.path_guard import PathGuard, PathGuardError
-from codeagent.safety.sensitive import is_sensitive_path
 from codeagent.workspace.workspace import WorkspaceContext
 
 SEARCH_TIMEOUT_SECONDS = 10
@@ -39,7 +38,7 @@ class RepositorySearchService:
 
     def __init__(self, context: WorkspaceContext, executable: str | None = None) -> None:
         self.context = context
-        self.guard = PathGuard(context.active_root)
+        self.guard = context.path_guard()
         resolved = executable if executable is not None else shutil.which("rg")
         self.executable = self._trusted_executable(resolved)
 
@@ -95,7 +94,7 @@ class RepositorySearchService:
                 continue
             prefix = ">" if message["type"] == "match" else "-"
             rows.append(f"{prefix} {relative}:{line_number}:{column}: {line}")
-            if message["type"] == "match":
+            if message["type"] == "match" and len(rows) <= max_results:
                 files.add(relative)
 
         truncated = stopped or len(rows) > max_results
@@ -242,9 +241,9 @@ class RepositorySearchService:
     def _safe_result_path(self, value: str) -> str | None:
         try:
             raw = Path(value)
-            candidate = self.guard.resolve(raw, reject_sensitive=False)
+            candidate = self.guard.resolve(raw)
             relative = candidate.relative_to(self.context.active_root)
-            if is_sensitive_path(relative) or _has_symlink_component(self.context.active_root, raw):
+            if _has_symlink_component(self.context.active_root, raw):
                 return None
             return relative.as_posix()
         except (OSError, ValueError, PathGuardError):
@@ -269,13 +268,18 @@ class RepositorySearchService:
             return str(resolved)
         return None
 
-    @staticmethod
-    def _glob_argv(include: list[str], exclude: list[str]) -> list[str]:
+    def _glob_argv(self, include: list[str], exclude: list[str]) -> list[str]:
         argv: list[str] = []
         for pattern in include:
             argv.extend(["--glob", pattern])
         for pattern in exclude:
             argv.extend(["--glob", f"!{pattern}"])
+        # 用户 include 不能重新打开禁止路径；过滤发生在 rg 采集前，避免结果被禁止文件挤占。
+        for path in self.context.denied_paths:
+            literal = path.replace("{", "\\{").replace("}", "\\}")
+            argv.extend(["--glob", "!/" + literal])
+        if self.context.denied_paths:
+            argv.extend(["--glob", "!/.git"])
         return argv
 
 

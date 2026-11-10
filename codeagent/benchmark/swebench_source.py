@@ -11,8 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Sequence
 
-from codeagent.workspace.git_worktree import GitWorktreeError, GitWorktreeManager
-
 
 class SWEbenchPreparationError(RuntimeError):
     """SWE-bench source 获取或准入失败；该失败不应归因给 Agent。"""
@@ -43,6 +41,14 @@ class PreparedSWEbenchSource:
     cache_hit: bool
 
 
+@dataclass(frozen=True)
+class SWEbenchImage:
+    instance_id: str
+    image_ref: str
+    image_digest: str
+    dataset_base_commit: str
+
+
 CommandRunner = Callable[[Sequence[str], int], subprocess.CompletedProcess[str]]
 _SAFE_INSTANCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}\Z")
 _OBJECT_ID = re.compile(r"[0-9a-f]{40,64}\Z")
@@ -50,22 +56,50 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
 class SWEbenchSourcePreparer:
-    """把官方 instance image 中的 prepared /testbed 转为 host Git source。"""
+    """正式入口打开原生单题容器；prepare仅保留为历史源码缓存工具。"""
 
     MANIFEST_VERSION = 1
 
     def __init__(
         self,
-        cache_root: str | Path,
+        cache_root: str | Path | None = None,
         *,
         command_runner: CommandRunner | None = None,
         docker_timeout_seconds: int = 1800,
+        allow_pull: bool = True,
+        network_config=None,
     ) -> None:
-        self.cache_root = Path(cache_root).expanduser().resolve()
+        self.cache_root = Path(cache_root).expanduser().resolve() if cache_root is not None else None
         self.command_runner = command_runner or _run_command
         self.docker_timeout_seconds = docker_timeout_seconds
+        self.allow_pull = allow_pull
+        from codeagent.benchmark.swebench_network import SWEbenchNetworkConfig
+        self.network_config = network_config or SWEbenchNetworkConfig()
+
+    def prepare_image(self, task: SWEbenchTaskSource) -> SWEbenchImage:
+        """优先使用已缓存镜像，不导出或重建源码。"""
+        self._validate_task(task)
+        try:
+            raw = self._docker("image", "inspect", task.image)
+        except SWEbenchPreparationError as exc:
+            if not self.allow_pull or not any(x in str(exc).lower() for x in ("no such image", "not found")):
+                raise
+            digest = self._resolve_image_digest(task.image)
+        else:
+            details = json.loads(raw)[0]
+            digests = {v.rsplit("@", 1)[1] for v in details.get("RepoDigests", []) if "@" in v}
+            if len(digests) != 1 or not _DIGEST.fullmatch(next(iter(digests))):
+                raise SWEbenchPreparationError("image_identity", "镜像缺少唯一RepoDigest")
+            digest = next(iter(digests))
+        return SWEbenchImage(task.instance_id, task.image, digest, task.dataset_base_commit)
+
+    def open_workspace(self, task: SWEbenchTaskSource, root: Path):
+        from codeagent.benchmark.swebench_container import SWEbenchContainerWorkspace
+        return SWEbenchContainerWorkspace(self.prepare_image(task), root, network_config=self.network_config)
 
     def prepare(self, task: SWEbenchTaskSource) -> PreparedSWEbenchSource:
+        if self.cache_root is None:
+            raise SWEbenchPreparationError('legacy_source_cache', '历史源码导出工具需显式指定cache_root；正式入口使用open_workspace')
         self._validate_task(task)
         self.cache_root.mkdir(parents=True, exist_ok=True)
         image_digest = self._resolve_image_digest(task.image)
@@ -116,7 +150,7 @@ class SWEbenchSourcePreparer:
             return self._result(cache_dir, manifest, cache_hit=False)
         except SWEbenchPreparationError:
             raise
-        except (OSError, subprocess.SubprocessError, GitWorktreeError) as exc:
+        except (OSError, subprocess.SubprocessError) as exc:
             raise SWEbenchPreparationError("source_export", str(exc)) from exc
         finally:
             if container_id:
@@ -191,30 +225,11 @@ class SWEbenchSourcePreparer:
             raise SWEbenchPreparationError("git_admission", "prepared Git identity 格式无效")
         # 不对完整历史执行 `git fsck --full`。部分经典仓库包含与目标快照无关的
         # 旧对象格式或损坏的远端引用，但官方 image 中的 prepared HEAD 仍可正常
-        # checkout。准入只验证 benchmark 实际依赖的 commit/tree 可读取，并由下面
-        # 的 worktree probe 验证可执行快照；这样仍会拒绝目标对象损坏，却不会误拒
-        # 历史遗留元数据。
+        # checkout。这里验证benchmark依赖的commit/tree可读取；独立实验clone
+        # 的实际检出由prepare_swebench_workspace验证，不创建Runtime worktree。
         self._git(source, "cat-file", "-e", f"{base}^{{tree}}")
         self._git(source, "cat-file", "-e", f"{head}^{{tree}}")
 
-        probe_root = source.parent / ".worktree-probe"
-        manager = GitWorktreeManager(probe_root)
-        context = None
-        try:
-            context = manager.create(source, "swebench-source-admission")
-            report = manager.inspect(context)
-            if not report.executable:
-                raise SWEbenchPreparationError("git_admission", f"CodeAgent worktree probe 未 ready: {report.reason}")
-        except GitWorktreeError as exc:
-            raise SWEbenchPreparationError("git_admission", f"CodeAgent worktree probe 失败: {exc}") from exc
-        finally:
-            if context is not None:
-                try:
-                    manager.cleanup(context)
-                except GitWorktreeError as exc:
-                    raise SWEbenchPreparationError("git_admission", f"CodeAgent worktree probe 清理失败: {exc}") from exc
-            if probe_root.exists():
-                shutil.rmtree(probe_root)
         return head, tree
 
     def _docker(self, *args: str) -> str:

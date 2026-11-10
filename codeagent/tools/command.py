@@ -1,30 +1,26 @@
-from codeagent.runtime.command_service import CommandLimits, CommandService
+from codeagent.runtime.command_service import CommandService
 from codeagent.tools.base import PermissionLevel, ToolSpec
+from codeagent.tools.inputs import CommandInput
+
+_COMMAND_BASE = (
+    "在当前项目的 Linux 沙盒中运行项目命令，默认 cwd 为 active_workspace。每次是 fresh shell，export/source/cd 不跨调用保留；"
+    "临时文件是否跨命令保留，以执行环境的 file_lifetime_guidance 为准；需要复用的脚本或数据放在其中说明的持久目录。"
+    "依赖未知时可参考当前 Runtime 上下文中的执行环境、项目配置或探测解释器。"
+)
+_COMMAND_TAIL = (
+    "按原样执行 shell 命令，不替你解释或改写测试流程。"
+    "检查 exit code 和 stdout/stderr，purpose 只标记用途，不认证当前代码版本。"
+    "环境错误不能当作测试通过。网络及额外宿主资源通过 permissions 申请，拒绝后不得绕过。"
+)
+RUN_COMMAND_DESCRIPTION = _COMMAND_BASE + "运行测试或检查时可用 purpose=validation，普通调查用utility。" + _COMMAND_TAIL
+RUN_COMMAND_DESCRIPTION_UNTRACKED = RUN_COMMAND_DESCRIPTION
 
 
-def command_tool_schema() -> dict:
-    permission = {"oneOf": [
-        {"type": "object", "properties": {
-            "capability": {"type": "string", "enum": ["filesystem_read", "filesystem_write"]},
-            "resource": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-            "scope": {"type": "string", "enum": ["once", "session"]}},
-         "required": ["capability", "resource", "reason", "scope"], "additionalProperties": False},
-        {"type": "object", "properties": {
-            "capability": {"type": "string", "const": "network"}, "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-            "scope": {"type": "string", "enum": ["once", "session"]}},
-         "required": ["capability", "reason", "scope"], "additionalProperties": False},
-    ]}
-    return {"type": "object", "properties": {
-                        "command": {"type": "string", "minLength": 1, "maxLength": CommandLimits.MAX_COMMAND_CHARS},
-                        "cwd": {"type": "string", "default": ".",
-                                "description": "相对于 Runtime Snapshot active_workspace 的目录；省略时为 Candidate 根目录"},
-                        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": CommandLimits.MAX_TIMEOUT_SECONDS},
-                        "purpose": {"type": "string", "enum": ["utility", "validation"], "default": "utility",
-                                    "description": "证明修改正确性的测试/检查必须使用 validation；该模式启用 Bash pipefail，并可形成当前 revision 的验证证据。普通探索命令使用 utility。"},
-                        "permissions": {"type": "array", "items": permission, "maxItems": CommandLimits.MAX_PERMISSIONS, "default": []}},
-                        "required": ["command"], "additionalProperties": False}
+def command_tool_schema(task_tracking: bool = True) -> dict:
+    return CommandInput.model_json_schema()
 
 
-def build_command_tool(service: CommandService) -> ToolSpec:
-    return ToolSpec("run_command", "在当前 active_workspace 的 Linux 沙盒中运行命令；默认 cwd 是 Candidate 根目录，额外资源必须显式申请。",
-                    PermissionLevel.READ, command_tool_schema(), service.run_command)
+def build_command_tool(service: CommandService, task_tracking: bool = True) -> ToolSpec:
+    """清单开关不改变命令能力；执行权限不等于READ。"""
+    return ToolSpec.from_model("run_command", RUN_COMMAND_DESCRIPTION,
+                              PermissionLevel.WORKSPACE_EXECUTE, CommandInput, service.run_command)

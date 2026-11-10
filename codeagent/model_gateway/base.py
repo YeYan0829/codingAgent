@@ -30,6 +30,8 @@ class LLMResponse(BaseModel):
     usage: TokenUsage | None = None
     provider_request_id: str | None = None
     finish_reason: str | None = None
+    # Runtime-normalized provider response: no calls from this batch may execute.
+    protocol_error: dict[str, Any] | None = None
 
 
 class ModelTool(BaseModel):
@@ -47,6 +49,7 @@ class ModelRequest(BaseModel):
     max_tokens: int | None = None
     purpose: str = "main_agent"
     reasoning_effort: str | None = None
+    journaled: bool = False
 
 
 class BaseModelClient(ABC):

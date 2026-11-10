@@ -115,7 +115,7 @@ class PermissionGrant:
 @dataclass(frozen=True)
 class EffectiveSandboxPolicy:
     policy_revision: str
-    candidate_root: Path
+    workspace_root: Path
     source_root: Path
     runtime_cache: Path
     read_grants: tuple[Path, ...]
@@ -136,7 +136,7 @@ class EffectiveSandboxPolicy:
 
 
 def parse_permission_request(
-    raw: dict[str, Any], candidate_root: Path, hard_deny_paths: tuple[Path, ...] = (),
+    raw: dict[str, Any], workspace_root: Path, hard_deny_paths: tuple[Path, ...] = (),
 ) -> PermissionRequest:
     if not isinstance(raw, dict):
         raise PermissionError("invalid_arguments", "permission 必须是 object")
@@ -159,7 +159,7 @@ def parse_permission_request(
     if not isinstance(resource, str) or not resource or len(resource) > 4096 or "\x00" in resource:
         raise PermissionError("invalid_arguments", "filesystem permission resource 无效")
     requested = Path(resource).expanduser()
-    requested = requested if requested.is_absolute() else candidate_root / requested
+    requested = requested if requested.is_absolute() else workspace_root / requested
     parent_expanded = False
     try:
         resolved = requested.resolve(strict=True)
@@ -193,11 +193,11 @@ def parse_permission_request(
     )
 
 
-def recheck_request(request: PermissionRequest, candidate_root: Path) -> None:
+def recheck_request(request: PermissionRequest, workspace_root: Path) -> None:
     if request.resolved_resource is None or request.resource_identity is None:
         return
     raw = Path(request.requested_resource or "")
-    requested = raw.expanduser() if raw.is_absolute() else candidate_root / raw
+    requested = raw.expanduser() if raw.is_absolute() else workspace_root / raw
     if request.parent_expanded:
         while not requested.exists() and requested != requested.parent:
             requested = requested.parent

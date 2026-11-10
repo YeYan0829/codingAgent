@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from codeagent.benchmark.accounting import aggregate_usage, zero_usage
+from codeagent.benchmark.c4 import ledger_summary
 from codeagent.session.events import SessionEvent
 
 
 TOOL_GROUPS = {
     "search_text": "search", "find_files": "search", "read_file": "read",
-    "apply_workspace_edit": "edit", "run_command": "command",
+    "apply_workspace_edit": "edit", "edit_file": "edit", "run_command": "command",
     "git_status": "git_read", "git_diff": "git_read", "git_diff_stat": "git_read",
 }
 
@@ -38,6 +39,7 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
     usage_by_step: dict[int, dict[str, Any] | None] = {}
     pending_usage: list[dict[str, Any] | None] = []
     revision = 0
+    transaction_ids: set[str] = set()
     condenser_usage: list[dict[str, Any] | None] = []
     main_usage: list[dict[str, Any] | None] = []
 
@@ -71,9 +73,10 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
             if group == "read" and result_value.get("ok") is True:
                 returned = metadata.get("returned_range") if isinstance(metadata.get("returned_range"), dict) else {}
                 digest = metadata.get("sha256") or metadata.get("file_sha256")
-                key = (metadata.get("path") or args.get("path"),
-                       returned.get("start_line", metadata.get("start_line", args.get("start_line", 1))),
-                       returned.get("end_line", metadata.get("end_line", args.get("end_line"))), digest)
+                window = ("bytes", metadata.get("start_byte"), metadata.get("content_bytes")) if metadata.get("line_fragment") else (
+                    "lines", returned.get("start_line", metadata.get("start_line", args.get("start_line", 1))),
+                    returned.get("end_line", metadata.get("end_line", args.get("end_line"))))
+                key = (metadata.get("path") or args.get("path"), *window, digest)
                 if digest is not None and key in read_seen:
                     repeated_reads += 1
                 elif digest is not None:
@@ -91,6 +94,13 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
                         if current not in successful_validations:
                             successful_validations.append(current)
         elif event.type == "edit_transaction":
+            # 当前事务以实际receipt标识，不要求代码版本递增；旧revision事件仍可分析。
+            ident = payload.get("transaction_id")
+            if ident and payload.get("changed_files"):
+                if ident not in transaction_ids:
+                    transaction_ids.add(ident)
+                    effective_edits.append(_event_step(event, call_step, step))
+                continue
             candidate = payload.get("candidate_revision")
             if isinstance(candidate, int) and candidate > revision:
                 revision = candidate
@@ -105,17 +115,23 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
             if current not in successful_validations:
                 successful_validations.append(current)
 
+    ledger = ledger_summary(values)
+    usage_by_purpose = ledger["by_purpose"] if ledger["reservation_count"] else {
+        "main_agent": aggregate_usage(main_usage) if main_usage else zero_usage(),
+        "context_condenser": aggregate_usage(condenser_usage) if condenser_usage else zero_usage(),
+    }
     termination = _termination(values, result)
     last_edit = max(effective_edits) if effective_edits else None
     last_validation = max(validation_steps) if validation_steps else None
     last_success = max(successful_validations) if successful_validations else None
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "model_steps": step,
         "termination_reason": termination,
         "completed": termination == "completed",
         "context_exceeded": termination == "context_budget_exceeded",
-        "step_exhausted": termination == "model_step_budget_exhausted",
+        "step_exhausted": termination in {"model_step_budget_exhausted", "experiment_request_limit"},
+        "experiment_stopped": termination.startswith("experiment_"),
         "output_truncated": termination == "output_truncated",
         "output_truncation_steps": sum(event.type == "model_output_truncated" for event in values),
         "excessive_truncation": sum(event.type == "model_output_truncated" for event in values) >= 3,
@@ -124,12 +140,14 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
             len(event.payload.get("tool_calls", []))
             for event in values if event.type == "assistant_tool_calls"
         ),
-        "revert_count": sum(event.type == "changes_discarded" for event in values),
+        "revert_count": sum(event.type == "changes_discarded" or
+                            (event.type == "edit_transaction" and bool(event.payload.get("undo_of"))) for event in values),
         "empty_patch": bool(result is not None and result.get("patch_present") is False),
         "tool_usage": {name: tool_counts.get(name, 0) for name in (*sorted(set(TOOL_GROUPS.values())), "other")},
         "first_edit_step": min(effective_edits) if effective_edits else None,
         "last_edit_step": last_edit,
         "edit_count": len(effective_edits),
+        "edit_count_scope": "controlled_transactions; legacy_command_revisions_when_recorded; shell_changes_not_inferred",
         "first_nonempty_patch_step": min(effective_edits) if effective_edits else None,
         "post_last_edit_steps": step - last_edit if last_edit is not None else None,
         "post_last_edit_token_usage": _usage_after(usage_by_step, last_edit),
@@ -141,15 +159,18 @@ def analyze_trajectory(events: Iterable[SessionEvent], result: dict[str, Any] | 
         "post_successful_validation_steps": step - last_success if last_success is not None else None,
         "edit_after_successful_validation": bool(last_success is not None and any(x > last_success for x in effective_edits)),
         "exact_same_revision_read_count": repeated_reads,
+        "exact_same_content_read_count": repeated_reads,
         "normalized_identical_command_repeat_count": repeated_commands,
         "context_detail": _context_detail(values),
         "latest_context_snapshot": _latest_context_snapshot(values),
         "condensation": _condensation_detail(values, condenser_usage),
         "truncation_recovery": _truncation_recovery(values),
-        "usage_by_purpose": {
-            "main_agent": aggregate_usage(main_usage),
-            "context_condenser": aggregate_usage(condenser_usage) if condenser_usage else zero_usage(),
-        },
+        "usage_by_purpose": usage_by_purpose,
+        "request_accounting": ledger,
+        "tool_counts_scope": "main_agent; child results counted separately",
+        "child_tool_result_count": sum(
+            e.type == "agent_history" and e.payload.get("kind") == "tool_result" for e in values
+        ),
     }
 
 

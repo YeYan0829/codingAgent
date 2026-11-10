@@ -15,7 +15,14 @@ class RpcClient {
   }
 
   async start() {
+    if (this.starting) return this.starting;
     if (this.process) return;
+    if (this.disposed) throw new Error("CodeAgent Runtime client was disposed");
+    this.starting = this._start();
+    try { await this.starting; } finally { this.starting = undefined; }
+  }
+
+  async _start() {
     const child = spawn(this.command, this.args, {
       cwd: this.options.cwd,
       env: { ...process.env, ...(this.options.env || {}) },
@@ -23,12 +30,13 @@ class RpcClient {
       windowsHide: true
     });
     this.process = child;
-    readline.createInterface({ input: child.stdout }).on("line", line => this._handleLine(line));
+    readline.createInterface({ input: child.stdout }).on("line", line => { if (!this.disposed && this.process === child) this._handleLine(line); });
     child.stderr.on("data", data => this.options.onLog?.(data.toString()));
-    child.on("error", error => this._close(error));
-    child.on("exit", (code, signal) => this._close(new Error(`CodeAgent Runtime exited (${code ?? signal})`)));
-    await this.request("initialize", { protocolVersion: "1.0" });
-    this.options.onConnectionState?.("connected");
+    child.stdin.on("error", error => { if (this.process === child) this._close(error); });
+    child.on("error", error => { if (this.process === child) this._close(error); });
+    child.on("exit", (code, signal) => { if (this.process === child) this._close(new Error(`CodeAgent Runtime exited (${code ?? signal})`)); });
+    this.initialization = await this.request("initialize", { protocolVersion: "1.0" });
+    if (!this.disposed && this.process === child) this.options.onConnectionState?.("connected");
   }
 
   request(method, params = {}) {
@@ -41,14 +49,24 @@ class RpcClient {
   }
 
   dispose() {
+    if (this.stopping) return this.stopping;
     this.disposed = true;
     const child = this.process;
-    this.process = undefined;
-    if (child && !child.killed) child.kill();
     this._rejectPending(new Error("CodeAgent Runtime stopped"));
+    if (!child) return Promise.resolve();
+    // EOF 由 Runtime 转为 Stop + join；不直接杀掉拥有子 transport 的进程。
+    this.stopping = new Promise(resolve => {
+      const timer = setTimeout(() => child.kill("SIGTERM"), 5000);
+      timer.unref?.();
+      child.once("exit", () => { clearTimeout(timer); resolve(); });
+      child.once("error", () => { clearTimeout(timer); resolve(); });
+      child.stdin.end();
+    });
+    return this.stopping;
   }
 
   _handleLine(line) {
+    if (this.disposed) return;
     let message;
     try {
       message = JSON.parse(line);

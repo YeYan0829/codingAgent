@@ -25,6 +25,7 @@ class SWEbenchSelection:
         self.path = Path(path).resolve()
         value = json.loads(self.path.read_text(encoding="utf-8"))
         self.selection_id = str(value["selection_id"])
+        self.requires_preflight = value.get("status") == "official_final_evaluation_selection"
         self.pinned_sources = dict(value.get("pinned_sources") or {})
         self.swebench_commit = self.pinned_sources.get("swebench_commit")
         tasks = value.get("tasks")
@@ -43,7 +44,7 @@ class SWEbenchSelection:
 
 
 class SWEbenchBatchRunner:
-    """确定性串行 batch；单题 harness 仍负责 Agent、Candidate 与 grader 语义。"""
+    """确定性串行batch；单题harness负责独立目录中的Agent及grader。"""
 
     def __init__(self, *, selection: SWEbenchSelection, task_loader: Callable[[str], SWEbenchTask],
                  harness: SWEbenchHarness, model_factory: Callable[[], BaseModelClient],
@@ -52,9 +53,12 @@ class SWEbenchBatchRunner:
                  price_snapshot: PriceSnapshot | None = None,
                  cost_budget_cny: str | Decimal | None = None,
                  minimum_remaining_cost_cny: str | Decimal = "10",
-                 runtime_root: str | Path = ".") -> None:
+                 runtime_root: str | Path = ".", preflight_report: str | Path | None = None,
+                 experiment_limits=None) -> None:
+        self.preflight_report = Path(preflight_report) if preflight_report is not None else None
         self.selection, self.task_loader, self.harness = selection, task_loader, harness
         self.model_factory, self.model_config, self.runtime_config = model_factory, model_config, runtime_config
+        self.experiment_limits = experiment_limits
         self.output_root, self.endpoint_identity = Path(output_root).resolve(), endpoint_identity
         self.price_snapshot, self.runtime_root = price_snapshot, Path(runtime_root).resolve()
         if price_snapshot and (price_snapshot.provider != model_config.provider or
@@ -64,14 +68,22 @@ class SWEbenchBatchRunner:
         self.minimum_remaining_cost_cny = _non_negative_decimal(
             minimum_remaining_cost_cny, "最低剩余成本预算"
         )
-        if price_snapshot and price_snapshot.currency != "CNY":
+        if self.cost_budget_cny is not None and price_snapshot and price_snapshot.currency != "CNY":
             raise ValueError("批次成本保护当前只支持 CNY 价格快照")
-        if price_snapshot and self.cost_budget_cny is None:
-            raise ValueError("使用价格快照的 batch 必须设置 cost_budget_cny")
         if self.cost_budget_cny is not None and price_snapshot is None:
             raise ValueError("启用批次成本保护需要价格快照")
 
     def run(self, run_id: str | None = None) -> dict:
+        readiness = None
+        if self.selection.requires_preflight:
+            from codeagent.benchmark.swebench_readiness import verify_readiness
+            readiness = verify_readiness(self.preflight_report, self.selection, self.runtime_root)
+            if readiness.get('workspace_backend') != 'swebench-container-workspace-v1':
+                raise ValueError("正式测评需要原生单题容器的环境预检")
+            expected_grader = tuple(readiness["grader_command"])
+            actual_grader = tuple(getattr(self.harness.grader, "command_prefix", ()))
+            if actual_grader[:len(expected_grader)] != expected_grader:
+                raise ValueError("grader/environment command 与全量 gold 预检不一致")
         run_id = run_id or "batch-" + uuid.uuid4().hex[:16]
         root = self.output_root / run_id
         manifest_path = root / "run-manifest.json"
@@ -80,8 +92,15 @@ class SWEbenchBatchRunner:
             model=self.model_config, runtime=self.runtime_config, endpoint_identity=self.endpoint_identity,
             swebench_commit=self.selection.swebench_commit, runtime_root=self.runtime_root,
             pinned_sources=self.selection.pinned_sources,
+            network_policy=(self.harness.source_preparer.network_config.identity()
+                if hasattr(getattr(self.harness, 'source_preparer', None), 'network_config') else None),
         )
+        if readiness is not None:
+            if readiness.get('network_policy') != expected['runtime']['network_policy']:
+                raise ValueError('repository预检与生成端网络/评测提示条件不一致，未调用模型')
+            expected["preflight"] = readiness
         expected["batch"] = {
+            "experiment_limits": asdict(self.experiment_limits) if self.experiment_limits else None,
             "execution_order": "selection_order",
             "persistence": "atomic_after_each_task",
             "resume": "skip_completed",
@@ -150,7 +169,10 @@ class SWEbenchBatchRunner:
             try:
                 result = self.harness.run(self.task_loader(instance_id), self.model_factory(),
                                           self.model_config, task_root / "runs", runtime_config=self.runtime_config,
-                                          progress_callback=progress)
+                                          progress_callback=progress,
+                                          **({'expected_source_identity': readiness['image_identities'][instance_id]}
+                                             if readiness else {}),
+                                          **({"experiment_limits": self.experiment_limits} if self.experiment_limits else {}))
                 entry = self._finish_task(task_root, result, attempt, manifest, started_at)
                 if result.source_identity:
                     manifest["benchmark"]["tasks"][instance_id] = result.source_identity
@@ -331,7 +353,7 @@ class SWEbenchBatchRunner:
         matching = [item for item in event_paths if item.parent.name == result.get("session_id")]
         if len(matching) != 1:
             return None
-        save_trajectory(result["trajectory_path"], analyze_trajectory(load_events(matching[0]), result))
+        # 恢复只复用原产物，不用当前分析器覆盖旧版本的轨迹统计。
         return result
 
     @staticmethod
@@ -462,11 +484,8 @@ def _non_negative_decimal(value: str | Decimal | None, label: str) -> Decimal | 
 
 
 def _usage_from_events(events: list) -> dict[str, object]:
-    usages = [
-        event.payload.get("usage") if isinstance(event.payload.get("usage"), dict) else None
-        for event in events if event.type == "model_usage"
-    ]
-    return aggregate_usage(usages) if usages else zero_usage()
+    from codeagent.benchmark.c4 import ledger_summary
+    return ledger_summary(events)["usage"]
 
 
 def _aggregate_entry_usage(
@@ -495,15 +514,16 @@ def _aggregate_entry_usage(
         "input_tokens", "output_tokens", "total_tokens", "cached_input_tokens",
         "cache_miss_input_tokens", "reasoning_tokens",
     ):
-        values = [usage.get(field) for usage in usages if isinstance(usage, dict)]
-        totals[field] = (
-            sum(values) if values and all(isinstance(item, int) for item in values) else None
-        )
+        # A request with unknown usage must not erase the observed subtotal
+        # from other tasks. Completeness remains separate from the known sum.
+        values = [usage[field] for usage in usages
+                  if isinstance(usage, dict) and isinstance(usage.get(field), int)]
+        totals[field] = sum(values) if values else None
         totals[field + "_complete"] = bool(usages) and all(
             isinstance(usage, dict) and usage.get(field + "_complete") is True
             for usage in usages
         )
-    totals["cache_miss_input_tokens_derived"] = bool(usages) and all(
+    totals["cache_miss_input_tokens_derived"] = any(
         isinstance(usage, dict) and usage.get("cache_miss_input_tokens_derived") is True
         for usage in usages
     )
@@ -521,7 +541,9 @@ def _current_task(state: dict, index: int) -> dict[str, object]:
 def _completed_outcome(result: SWEbenchRunResult) -> str:
     if result.oracle_status == "completed" and result.oracle_passed is True:
         return "resolved"
-    if result.agent_status in {"model_step_budget_exhausted", "context_budget_exceeded"}:
+    if result.agent_status in {"model_step_budget_exhausted", "context_budget_exceeded",
+                              "experiment_request_limit", "experiment_deadline", "experiment_fee_limit",
+                              "experiment_fee_estimate_exceeded"}:
         return "budget_exhausted"
     if result.agent_status == "output_truncated":
         return "output_truncated"

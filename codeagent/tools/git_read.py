@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from codeagent.safety.path_guard import PathGuard, PathGuardError
-from codeagent.tools.base import PermissionLevel, ToolResult, ToolSpec
+from codeagent.tools.output import ToolOutput as ToolResult
 from codeagent.workspace.workspace import WorkspaceContext
 
 MAX_STATUS_ENTRIES = 200
@@ -20,7 +20,7 @@ GIT_TIMEOUT_SECONDS = 10
 class GitReadService:
     def __init__(self, context: WorkspaceContext, executable: str | None = None) -> None:
         self.context = context
-        self.guard = PathGuard(context.active_root)
+        self.guard = context.path_guard()
         candidate = executable if executable is not None else shutil.which("git")
         self.executable = _trusted_executable(candidate, context.active_root)
 
@@ -32,6 +32,17 @@ class GitReadService:
             if returncode:
                 return _git_failure(stderr, returncode)
             entries = _parse_porcelain_v1_z(stdout)
+            if self.context.denied_paths:
+                visible = []
+                for entry in entries:
+                    try:
+                        self.guard.resolve(entry['path'])
+                        if entry['original_path']:
+                            self.guard.resolve(entry['original_path'])
+                    except PathGuardError:
+                        continue
+                    visible.append(entry)
+                entries = visible
             limited = len(entries) > MAX_STATUS_ENTRIES
             entries = entries[:MAX_STATUS_ENTRIES]
             lines = []
@@ -57,7 +68,11 @@ class GitReadService:
             context_lines = _bounded_int(args.get("context_lines", 3), "context_lines", 0, 10)
             command = ["diff", "--no-ext-diff", "--no-textconv"]
             command.append("--stat" if stat else f"--unified={context_lines}")
-            command.extend(["--", path])
+            if self.context.denied_paths:
+                command.append("--no-renames")
+            # path是文件/目录，不是Git pathspec表达式；保留实际文件名中的[]/*。
+            command.extend(["--", ":(literal)" + path])
+            command.extend(":(top,exclude,literal)" + p for p in self.context.denied_paths)
             stdout, stderr, returncode, truncated = self._run(command, MAX_DIFF_BYTES)
             if returncode:
                 return _git_failure(stderr, returncode)
@@ -106,22 +121,14 @@ class GitReadError(RuntimeError):
         self.code = code
 
 
-def build_git_tools(context: WorkspaceContext) -> list[ToolSpec]:
+def build_git_tools(context: WorkspaceContext) -> list:
+    from codeagent.tools.base import PermissionLevel, ToolSpec
+    from codeagent.tools.inputs import EmptyInput, GitDiffInput, DirectoryInput
     service = GitReadService(context)
-    empty_schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
-    diff_schema = {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "相对 workspace 的路径，默认 .。"},
-            "context_lines": {"type": "integer", "minimum": 0, "maximum": 10},
-        },
-        "required": [],
-        "additionalProperties": False,
-    }
     return [
-        ToolSpec("git_status", "读取稳定、机器解析的 Git working tree 状态。", PermissionLevel.READ, empty_schema, lambda args: service.status()),
-        ToolSpec("git_diff", "读取当前 working tree 的实际 unstaged Git diff。", PermissionLevel.READ, diff_schema, service.diff),
-        ToolSpec("git_diff_stat", "读取当前 working tree 的 Git diff stat。", PermissionLevel.READ, diff_schema, lambda args: service.diff(args, stat=True)),
+        ToolSpec.from_model("git_status", "读取Git index及工作区状态，包含未跟踪文件，遵守禁止路径；不写index。结果最多200项，过多时使用命令或按路径调查。", PermissionLevel.READ, EmptyInput, lambda args: service.status()),
+        ToolSpec.from_model("git_diff", "读取工作区相对于index的unstaged diff，不包含已暂存差异或未跟踪文件内容。path限制范围，context_lines默认3；输出最多64KiB，截断时缩小path。", PermissionLevel.READ, GitDiffInput, service.diff),
+        ToolSpec.from_model("git_diff_stat", "读取工作区相对于index的unstaged diff stat，不包含已暂存差异或未跟踪文件。path限制范围，不接受无作用的context_lines参数。", PermissionLevel.READ, DirectoryInput, lambda args: service.diff(args, stat=True)),
     ]
 
 
@@ -160,7 +167,7 @@ def _relative_path(value: Any, guard: PathGuard) -> str:
     raw = Path(value)
     if raw.is_absolute() or ".." in raw.parts:
         raise PathGuardError("path 必须是 workspace-relative 且不能包含父目录跳转")
-    resolved = guard.resolve(raw, reject_sensitive=False)
+    resolved = guard.resolve(raw)
     return resolved.relative_to(guard.workspace_root).as_posix() or "."
 
 

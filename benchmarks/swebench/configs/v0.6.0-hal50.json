@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "config_id": "codeagent-v0.6.0-hal50-final",
+  "evaluation_commit": "762c0a545dab3e0ac7123e8ed8c0c9e24511d4db",
+  "selection": {
+    "path": "benchmarks/swebench/selections/hal-verified-mini-50.json",
+    "sha256": "852042b05e2a1a95fd8e7dd01448f367aa8e332baf58eadbbd53167c2d90001f"
+  },
+  "model": {
+    "provider": "glm",
+    "model": "glm-5.3",
+    "temperature": 1.0,
+    "max_tokens": null,
+    "reasoning_enabled": true,
+    "reasoning_effort": "high",
+    "summary_max_tokens": null
+  },
+  "runtime": {
+    "delegation_enabled": false,
+    "cost_per_token_microunits": null,
+    "fee_currency": "CNY",
+    "model_prices": null,
+    "model_token_prices": {
+      "glm/glm-5.3": {
+        "input": 8,
+        "cached_input": 2,
+        "output": 28
+      }
+    },
+    "task_tracking": true,
+    "prompt_variant": null
+  },
+  "network": {
+    "mode": "filtered",
+    "revision": "swe-filtered-egress-v1",
+    "blocked_domains": [
+      "github.com",
+      "githubusercontent.com",
+      "github.io",
+      "githubassets.com",
+      "ghproxy.com",
+      "ghproxy.net",
+      "ghfast.top",
+      "gitclone.com",
+      "gitmirror.com",
+      "github.moeyy.xyz",
+      "gh-proxy.com",
+      "ghproxy.cc",
+      "gh.api.99988866.xyz"
+    ],
+    "ports": [
+      80,
+      443
+    ],
+    "direct_connections": false,
+    "prompt_sha256": "7ff57e077976c332f251f453cc9304d9f2deb0203997a16a5ed856ba16613265"
+  },
+  "limits": {
+    "attempts_per_task": 1,
+    "parallelism": 1,
+    "timeout_seconds_per_task": 3600,
+    "max_fee_microunits_per_task": 20000000,
+    "max_requests": null,
+    "sdk_retries": 0,
+    "automatic_retry_or_resume": false
+  },
+  "grading": {
+    "workers": 1,
+    "test_timeout_seconds": 1800,
+    "invocation_timeout_seconds": 2100
+  },
+  "source": "测评冻结准备记录中的实际生效设置；逐请求核对摘要随40/50测评附件提供。",
+  "effective_sdk": {
+    "model": "glm-5.3",
+    "reasoning_effort": "high",
+    "max_tokens": 65536,
+    "temperature": 1.0,
+    "stream": false,
+    "thinking_type": "enabled"
+  },
+  "effective_sdk_verified_requests": 1581,
+  "effective_context_limit": 1000000
+}

@@ -89,9 +89,16 @@ class OfficialCandidatePreflight:
         return _source_identity(prepared) == evidence.prepared_source
 
     def _prepare(self, candidate: Candidate):
-        return self.preparer.prepare(SWEbenchTaskSource(
-            candidate.instance_id, candidate.image, candidate.base_commit,
-        ))
+        import tempfile
+        from types import SimpleNamespace
+        self.artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='image-preflight-', dir=self.artifact_root) as folder:
+            workspace = self.preparer.open_workspace(SWEbenchTaskSource(
+                candidate.instance_id, candidate.image, candidate.base_commit), Path(folder))
+            try:
+                return SimpleNamespace(**workspace.identity)
+            finally:
+                workspace.close()
 
 
 class VerifiedSelectionGenerator:

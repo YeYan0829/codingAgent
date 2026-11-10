@@ -5,10 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeagent.runtime.permissions import (
-    Capability, EffectiveSandboxPolicy, NetworkMode, PermissionDecision,
-    PermissionGrant, PermissionRequest, PermissionScope, ResourceIdentity,
-)
+from codeagent.runtime.permissions import Capability, EffectiveSandboxPolicy, NetworkMode, PermissionDecision, PermissionGrant, PermissionRequest, ResourceIdentity
 from codeagent.session.store import SessionStore
 from codeagent.workspace.workspace import WorkspaceContext
 
@@ -24,30 +21,55 @@ class PermissionEvaluation:
 
 
 class SandboxPolicy:
-    def __init__(self, context: WorkspaceContext, store: SessionStore, runtime_cache: Path) -> None:
+    def __init__(self, context: WorkspaceContext, store: SessionStore, runtime_cache: Path, *, inspect_workspace: bool = True) -> None:
         self.context = context
         self.store = store
         self.runtime_cache = runtime_cache.resolve()
         self.hard_deny_paths = _hard_deny_paths(store)
-        self.protected_readonly_paths = _protected_git_paths(context)
+        # 远程工作区的Git保护由后端落实；不能在宿主Session身份目录向上发现其他仓库。
+        git_paths = _protected_git_paths(context) if inspect_workspace else (context.active_root / '.git',)
+        self.protected_readonly_paths = git_paths
+        if context.denied_paths and inspect_workspace:
+            denied = set(git_paths)
+            if context.source_root != context.active_root:
+                denied.add(context.source_root)
+            denied.update(context.active_root / p for p in context.denied_paths)
+            # 其他 Session、快照副本和配置也不能成为读取旧内容的旁路。
+            for entry in store.session_root.iterdir():
+                if entry.name in {'worktrees', '_runtime'}:
+                    for child in entry.iterdir():
+                        if child.resolve() not in {context.active_root, self.runtime_cache}:
+                            denied.add(child)
+                else:
+                    denied.add(entry)
+            proc = subprocess.run(['git', 'worktree', 'list', '--porcelain'], cwd=context.active_root,
+                                  capture_output=True, text=True, check=False, timeout=5)
+            for line in proc.stdout.splitlines():
+                if line.startswith('worktree '):
+                    other = Path(line[9:]).resolve()
+                    if other != context.active_root:
+                        denied.add(other)
+            self.hard_deny_paths = tuple(sorted(set(self.hard_deny_paths) | denied, key=str))
 
     def evaluate(self, request: PermissionRequest, session_grants: tuple[PermissionGrant, ...]) -> PermissionEvaluation:
-        if _covered(request, session_grants):
-            return PermissionEvaluation(request, PermissionDecision.ALLOW, "已有 Session grant 覆盖")
         if request.capability == Capability.NETWORK:
+            if _covered(request, session_grants):
+                return PermissionEvaluation(request, PermissionDecision.ALLOW, "已有 Session grant 覆盖")
             return PermissionEvaluation(request, PermissionDecision.ASK, "访问 WSL host network 需要批准")
         path = request.resolved_resource
         if path is None:
             return PermissionEvaluation(request, PermissionDecision.DENY, "filesystem capability 缺少 resource")
         if any(_overlap(path, denied) for denied in self.hard_deny_paths):
             return PermissionEvaluation(request, PermissionDecision.DENY, "resource 位于 hard deny boundary")
+        if _covered(request, session_grants):
+            return PermissionEvaluation(request, PermissionDecision.ALLOW, "已有 Session grant 覆盖")
         if request.capability == Capability.FILESYSTEM_READ:
             return PermissionEvaluation(request, PermissionDecision.ALLOW, "host root 默认只读可见")
-        if _inside(path, self.context.source_root) or any(_overlap(path, item) for item in self.protected_readonly_paths):
-            return PermissionEvaluation(request, PermissionDecision.DENY, "source/Git metadata 不允许写")
+        if (self.context.source_root != self.context.active_root and _inside(path, self.context.source_root)) or any(_overlap(path, item) for item in self.protected_readonly_paths):
+            return PermissionEvaluation(request, PermissionDecision.DENY, "Git或只读目录不允许写")
         if _inside(path, self.context.active_root) or _inside(path, self.runtime_cache):
-            return PermissionEvaluation(request, PermissionDecision.ALLOW, "Candidate/runtime cache 默认可写")
-        return PermissionEvaluation(request, PermissionDecision.ASK, "Candidate 外 host write 需要批准")
+            return PermissionEvaluation(request, PermissionDecision.ALLOW, "当前项目/runtime cache 默认可写")
+        return PermissionEvaluation(request, PermissionDecision.ASK, "项目外 host write 需要批准")
 
     def grant(self, request: PermissionRequest, approval_id: str | None = None) -> PermissionGrant:
         return PermissionGrant(
@@ -71,7 +93,7 @@ class SandboxPolicy:
 
 def _hard_deny_paths(store: SessionStore) -> tuple[Path, ...]:
     home = Path.home().resolve()
-    candidates = [home / ".ssh", home / ".aws", home / ".gnupg", store.session_dir]
+    candidates = [home / ".ssh", home / ".aws", home / ".gnupg", store.session_dir, store.session_root / "repository-access"]
     runtime_dir = Path(f"/run/user/{os.getuid()}")
     candidates.extend((runtime_dir, Path("/run/dbus"), Path("/run/docker.sock"), Path("/var/run/docker.sock"), Path("/run/containerd/containerd.sock")))
     return tuple(sorted({path.resolve(strict=False) for path in candidates if path.exists()}, key=str))

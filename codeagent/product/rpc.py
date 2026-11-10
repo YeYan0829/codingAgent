@@ -51,18 +51,29 @@ class JsonRpcServer:
                 "capabilities": {
                     "readOnlyProductShell": False,
                     "sessionList": True,
+                    "repositoryAccess": True,
                     "sessionDetail": True,
                     "sessionEventsAfterSeq": True,
                     "liveNotifications": True,
                     "execution": True,
                     "changesReview": True,
-                    "changesResolution": True,
+                    "changesResolution": False,
                     "interactiveApproval": True,
                     "protectedOperations": True,
                     "stop": True,
-                    "increaseTurnBudget": True,
+                    "increaseTurnBudget": False,
+                    "persistentDelegation": True,
+                    "shutdownDrainsExecution": True,
+                    "currentProjectEdits": True,
+                    "controlledUndo": True,
+                    "synchronousDelegation": True,
+                    "publicChildProcess": True,
                 },
             }
+        if method == "workspace/access/get":
+            return self.service.get_repository_access(params["workspace"])
+        if method == "workspace/access/set":
+            return self.service.save_repository_access(params["workspace"], params["deniedPaths"], params["expectedRevision"])
         if method == "session/list":
             return {"sessions": self.service.list_sessions(params.get("workspace"))}
         if method == "session/get":
@@ -79,10 +90,12 @@ class JsonRpcServer:
                 model=params.get("model"), title=params.get("title"),
                 temperature=_optional_float(params.get("temperature")),
                 max_tokens=_optional_int(params.get("maxTokens")),
+                summary_max_tokens=_optional_int(params.get("summaryMaxTokens")),
                 reasoning_enabled=_optional_bool(params.get("reasoningEnabled"), default=False),
                 reasoning_effort=_optional_string(params.get("reasoningEffort")),
-                max_steps_per_turn=int(params.get("maxStepsPerTurn", 12)),
-                max_model_steps_per_user_turn=int(params.get("maxModelStepsPerUserTurn", 48)),
+                delegation_enabled=_optional_bool(params.get("delegationEnabled"), default=params.get("orchestrationBackend") == "langgraph"),
+                cost_per_token_microunits=params.get("costPerTokenMicrounits"),
+                fee_currency=str(params.get("feeCurrency", "USD")),
             )
         if method == "session/run":
             return self.service.run_session(str(params["sessionId"]), str(params["message"]))
@@ -90,16 +103,16 @@ class JsonRpcServer:
             return self.service.continue_session(str(params["sessionId"]))
         if method == "session/stop":
             return self.service.stop_session(str(params["sessionId"]))
-        if method == "session/increaseBudget":
-            return self.service.increase_budget(
-                str(params["sessionId"]), turn_id=params["turnId"],
-                expected_limit=params["expectedLimit"], new_limit=params.get("newLimit"),
-                additional_steps=params.get("additionalSteps"),
-            )
         if method == "approval/resolve":
             return self.service.resolve_approval(
                 str(params["sessionId"]), str(params["approvalId"]), params["allow"],
             )
+        if method == "edits/file":
+            return self.service.get_edit_file(str(params["sessionId"]), str(params["path"]))
+        if method == "edits/undo":
+            return self.service.undo_edits(str(params["sessionId"]), params.get("turnId"), params["expectedEditSeq"])
+        if method == "session/process":
+            return self.service.get_process(str(params["sessionId"]), str(params["runId"]), params.get("afterSeq", 0), params.get("limit", 30))
         if method == "changes/get":
             return self.service.get_changes(str(params["sessionId"]))
         if method == "changes/file":
@@ -118,8 +131,11 @@ def serve(
 
     def write_message(message: dict[str, Any]) -> None:
         with output_lock:
-            output_stream.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
-            output_stream.flush()
+            try:
+                output_stream.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
+                output_stream.flush()
+            except (BrokenPipeError, OSError):
+                pass  # 断线后仍须完成 Stop、UNKNOWN 记账与资源回收。
 
     from codeagent.product.execution import ExecutionSupervisor
 
@@ -127,14 +143,30 @@ def serve(
         "jsonrpc": "2.0", "method": method, "params": params,
     }))
     server = JsonRpcServer(ProductApplicationService(session_root, supervisor=supervisor))
-    for raw in input_stream:
-        try:
-            value = json.loads(raw)
-            response = server.dispatch(value) if isinstance(value, dict) else _error(None, -32600, "Invalid Request")
-        except json.JSONDecodeError:
-            response = _error(None, -32700, "Parse error")
-        if response is not None:
-            write_message(response)
+    import signal
+    previous = {}
+    shutting_down = False
+    def terminate(_signum, _frame):
+        if not shutting_down:
+            raise SystemExit(0)
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous[signum] = signal.signal(signum, terminate)
+    try:
+        for raw in input_stream:
+            try:
+                value = json.loads(raw)
+                response = server.dispatch(value) if isinstance(value, dict) else _error(None, -32600, "Invalid Request")
+            except json.JSONDecodeError:
+                response = _error(None, -32700, "Parse error")
+            if response is not None:
+                write_message(response)
+    finally:
+        # EOF 后客户端可能追加 SIGTERM；不能打断正在 join 的资源回收。
+        shutting_down = True
+        supervisor.shutdown()
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
 
 
 def main() -> None:

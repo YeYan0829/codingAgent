@@ -1,0 +1,2666 @@
+{
+  "full_score": {
+    "passed": 40,
+    "total": 50,
+    "percent": 80
+  },
+  "excluding_disputed": {
+    "excluded": [
+      "sympy__sympy-15875",
+      "django__django-14725",
+      "sympy__sympy-17318",
+      "pylint-dev__pylint-4551"
+    ],
+    "passed": 40,
+    "total": 46,
+    "percent": 86.95652173913044
+  },
+  "selected_50_estimated_cny": "150.189932",
+  "all_attempts_known_estimated_cny": "150.846432",
+  "original_incident_known_cny": "0.656500",
+  "selected_50_requests": 1581,
+  "all_attempts_completed_requests": 1587,
+  "all_attempts_dispatched_requests_including_unknown": 1588,
+  "unknown_request_ids": [
+    "req-e530c5a500d24399"
+  ],
+  "all_attempts_known_token_usage": {
+    "input_tokens": 48761213,
+    "output_tokens": 1152626,
+    "cached_input_tokens": 45252800,
+    "reasoning_tokens": 919678
+  },
+  "known_cached_input_ratio": 0.928049103290355,
+  "all_attempts_known_cost_components": {
+    "input": "28.067304",
+    "output": "32.273528",
+    "cached_input": "90.505600"
+  },
+  "no_cache_repricing_cny": "422.363232",
+  "cache_repricing_difference_cny": "271.516800",
+  "selected_50_cost_distribution": {
+    "n": 50,
+    "sum": 150.189932,
+    "mean": 3.00379864,
+    "median": 1.345114,
+    "p90": 8.758551600000002,
+    "max": 15.00214,
+    "min": 0.178112
+  },
+  "by_result": {
+    "passed": {
+      "n": 40,
+      "cost": {
+        "n": 40,
+        "sum": 90.54862800000001,
+        "mean": 2.2637157,
+        "median": 1.001812,
+        "p90": 5.256788400000002,
+        "max": 15.00214,
+        "min": 0.178112
+      },
+      "requests": {
+        "n": 40,
+        "sum": 1089,
+        "mean": 27.225,
+        "median": 19.5,
+        "p90": 57.2,
+        "max": 91,
+        "min": 5
+      },
+      "agent_minutes": {
+        "n": 40,
+        "sum": 318.5566713452339,
+        "mean": 7.9639167836308475,
+        "median": 3.9175421992937722,
+        "p90": 20.18111153284709,
+        "max": 44.89029176632563,
+        "min": 1.0247088154157002
+      }
+    },
+    "failed": {
+      "n": 10,
+      "cost": {
+        "n": 10,
+        "sum": 59.641304,
+        "mean": 5.9641304,
+        "median": 5.420406,
+        "p90": 11.7227612,
+        "max": 13.695644,
+        "min": 0.591884
+      },
+      "requests": {
+        "n": 10,
+        "sum": 492,
+        "mean": 49.2,
+        "median": 39.5,
+        "p90": 89.1,
+        "max": 90,
+        "min": 13
+      },
+      "agent_minutes": {
+        "n": 10,
+        "sum": 318.72108675638833,
+        "mean": 31.872108675638835,
+        "median": 33.48652156790097,
+        "p90": 58.59758026878039,
+        "max": 60.10986709992091,
+        "min": 2.40308856566747
+      }
+    }
+  },
+  "request_bands": [
+    {
+      "min_requests": 0,
+      "max_requests": 10,
+      "n": 7,
+      "passed": 7,
+      "estimated_cny": "2.386724"
+    },
+    {
+      "min_requests": 11,
+      "max_requests": 20,
+      "n": 16,
+      "passed": 15,
+      "estimated_cny": "11.462032"
+    },
+    {
+      "min_requests": 21,
+      "max_requests": 40,
+      "n": 16,
+      "passed": 11,
+      "estimated_cny": "42.453364"
+    },
+    {
+      "min_requests": 41,
+      "max_requests": 60,
+      "n": 4,
+      "passed": 4,
+      "estimated_cny": "19.735096"
+    },
+    {
+      "min_requests": 61,
+      "max_requests": 10000,
+      "n": 7,
+      "passed": 3,
+      "estimated_cny": "74.152716"
+    }
+  ],
+  "tools": {
+    "search_text": 279,
+    "find_files": 15,
+    "read_file": 392,
+    "run_command": 724,
+    "edit_file": 244,
+    "git_diff": 16,
+    "apply_workspace_edit": 12,
+    "read_observation": 4,
+    "list_dir": 7,
+    "git_status": 1,
+    "update_task_plan": 5,
+    "read_task_plan": 1
+  },
+  "tool_errors": {
+    "command_exit_nonzero": 94,
+    "edit_conflict": 15,
+    "invalid_arguments": 5,
+    "execution_timed_out": 2,
+    "command_failed": 1,
+    "not_found": 2,
+    "execution_cancelled": 1,
+    "task_plan_update_rejected": 1
+  },
+  "edit_attempts": 256,
+  "edit_ok": 238,
+  "model_seconds": 24577.913061618805,
+  "tool_seconds": 11181.479026317596,
+  "agent_event_seconds": 38236.665486097336,
+  "test_command_seconds": 8705.341,
+  "top10_cost_cny": "94.324968",
+  "top10": [
+    {
+      "instance_id": "django__django-15629",
+      "resolved": true,
+      "estimated_cny": "15.002140",
+      "requests": 91
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-9461",
+      "resolved": false,
+      "estimated_cny": "13.695644",
+      "requests": 90
+    },
+    {
+      "instance_id": "pylint-dev__pylint-4551",
+      "resolved": false,
+      "estimated_cny": "11.503552",
+      "requests": 89
+    },
+    {
+      "instance_id": "django__django-15128",
+      "resolved": true,
+      "estimated_cny": "10.460744",
+      "requests": 80
+    },
+    {
+      "instance_id": "django__django-13346",
+      "resolved": true,
+      "estimated_cny": "9.617724",
+      "requests": 79
+    },
+    {
+      "instance_id": "django__django-14725",
+      "resolved": false,
+      "estimated_cny": "8.663088",
+      "requests": 40
+    },
+    {
+      "instance_id": "sympy__sympy-20428",
+      "resolved": false,
+      "estimated_cny": "7.556696",
+      "requests": 64
+    },
+    {
+      "instance_id": "django__django-16901",
+      "resolved": true,
+      "estimated_cny": "6.376824",
+      "requests": 59
+    },
+    {
+      "instance_id": "sympy__sympy-15875",
+      "resolved": false,
+      "estimated_cny": "6.316216",
+      "requests": 69
+    },
+    {
+      "instance_id": "django__django-16950",
+      "resolved": true,
+      "estimated_cny": "5.132340",
+      "requests": 55
+    }
+  ],
+  "selected_50_patch_counts": {
+    "nonempty": 49,
+    "at_least_2_files": 43,
+    "at_least_3_files": 16
+  },
+  "schema_version": 1,
+  "run_date": "2026-11-09/10",
+  "runtime_version": "0.6.0",
+  "snapshot_commit": "762c0a545dab3e0ac7123e8ed8c0c9e24511d4db",
+  "selection_id": "hal-swebench-verified-mini-50-7b231a9",
+  "scope": "50 fixed tasks; single-agent; one infrastructure retry; no answer regeneration in review",
+  "statistics": {
+    "by_difficulty": {
+      "easy": {
+        "total": 20,
+        "passed": 17,
+        "failed": 3
+      },
+      "medium": {
+        "total": 24,
+        "passed": 20,
+        "failed": 4
+      },
+      "hard": {
+        "total": 6,
+        "passed": 3,
+        "failed": 3
+      }
+    },
+    "by_repo": {
+      "django/django": {
+        "total": 22,
+        "passed": 20,
+        "failed": 2
+      },
+      "sphinx-doc/sphinx": {
+        "total": 3,
+        "passed": 2,
+        "failed": 1
+      },
+      "sympy/sympy": {
+        "total": 13,
+        "passed": 9,
+        "failed": 4
+      },
+      "astropy/astropy": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "scikit-learn/scikit-learn": {
+        "total": 4,
+        "passed": 3,
+        "failed": 1
+      },
+      "psf/requests": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "pallets/flask": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "matplotlib/matplotlib": {
+        "total": 2,
+        "passed": 1,
+        "failed": 1
+      },
+      "pydata/xarray": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "pytest-dev/pytest": {
+        "total": 1,
+        "passed": 1,
+        "failed": 0
+      },
+      "pylint-dev/pylint": {
+        "total": 1,
+        "passed": 0,
+        "failed": 1
+      }
+    }
+  },
+  "tasks_with_new_test_definitions": 32,
+  "new_test_definitions": 67,
+  "tasks_with_documentation_changes": 7,
+  "same_path_edit_conflicts_recovered": 15,
+  "zero_exit_with_test_failure_summary_commands": 61,
+  "zero_exit_with_test_failure_summary_tasks": 30,
+  "source_metrics": "review/report-metrics.json",
+  "source_diagnostics": "review/report-diagnostics.json",
+  "notes": [
+    "每个SDK response只计一次；工具按唯一operation_key配对，不累加嵌套跨度",
+    "事件跨度近似Agent阶段，不含容器准备、正式评分、两阶段间人工等待",
+    "测试时间按显式测试运行器命令正则识别，不包含所有临时复现脚本",
+    "最后受控编辑指标不追踪任意shell写入，不推定其后的验证请求可以省去",
+    "原事故请求用量不明；已知费用不是完整账单；争议题剔除是事后子集分析"
+  ],
+  "tasks": [
+    {
+      "instance_id": "django__django-12419",
+      "ordinal": 1,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 39,
+      "estimated_cny": "2.945544",
+      "event_span_seconds": 643.9851379394531,
+      "model_seconds": 497.2301983833313,
+      "tool_seconds": 86.10781788825989,
+      "test_command_seconds": 17.874,
+      "changed_files": [
+        "django/conf/global_settings.py",
+        "django/core/checks/security/base.py",
+        "docs/ref/checks.txt",
+        "docs/ref/middleware.txt",
+        "docs/ref/settings.txt",
+        "docs/releases/3.1.txt",
+        "tests/check_framework/test_security.py",
+        "tests/middleware/test_security.py"
+      ],
+      "edit_attempts": 12,
+      "edit_ok": 10
+    },
+    {
+      "instance_id": "django__django-15569",
+      "ordinal": 2,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 15,
+      "estimated_cny": "0.573908",
+      "event_span_seconds": 179.99770307540894,
+      "model_seconds": 133.98004508018494,
+      "tool_seconds": 25.79286479949951,
+      "test_command_seconds": 7.574,
+      "changed_files": [
+        "django/db/models/query_utils.py",
+        "tests/schema/tests.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-9367",
+      "ordinal": 3,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 9,
+      "estimated_cny": "0.419400",
+      "event_span_seconds": 100.78478193283081,
+      "model_seconds": 55.06626653671265,
+      "tool_seconds": 23.967626333236694,
+      "test_command_seconds": 8.002,
+      "changed_files": [
+        "sphinx/pycode/ast.py",
+        "tests/test_pycode_ast.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "sympy__sympy-15017",
+      "ordinal": 4,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 57,
+      "estimated_cny": "4.064452",
+      "event_span_seconds": 695.933317899704,
+      "model_seconds": 419.4872815608978,
+      "tool_seconds": 194.40000081062317,
+      "test_command_seconds": 123.91499999999999,
+      "changed_files": [
+        "sympy/tensor/array/dense_ndim_array.py",
+        "sympy/tensor/array/ndim_array.py",
+        "sympy/tensor/array/sparse_ndim_array.py",
+        "sympy/tensor/array/tests/test_immutable_ndim_array.py",
+        "sympy/tensor/tensor.py"
+      ],
+      "edit_attempts": 7,
+      "edit_ok": 5
+    },
+    {
+      "instance_id": "sympy__sympy-18763",
+      "ordinal": 5,
+      "difficulty": "easy",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 13,
+      "estimated_cny": "0.591884",
+      "event_span_seconds": 144.18531394004822,
+      "model_seconds": 104.66073894500732,
+      "tool_seconds": 23.42788338661194,
+      "test_command_seconds": 7.0969999999999995,
+      "changed_files": [
+        "sympy/printing/latex.py",
+        "sympy/printing/tests/test_latex.py"
+      ],
+      "edit_attempts": 2,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "django__django-14855",
+      "ordinal": 6,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 36,
+      "estimated_cny": "1.577424",
+      "event_span_seconds": 295.80978298187256,
+      "model_seconds": 149.43737721443176,
+      "tool_seconds": 105.44924664497375,
+      "test_command_seconds": 55.089,
+      "changed_files": [
+        "django/contrib/admin/helpers.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "django__django-11099",
+      "ordinal": 7,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 10,
+      "estimated_cny": "0.373808",
+      "event_span_seconds": 61.48252892494202,
+      "model_seconds": 28.81386089324951,
+      "tool_seconds": 21.52654194831848,
+      "test_command_seconds": 6.08,
+      "changed_files": [
+        "django/contrib/auth/validators.py",
+        "tests/auth_tests/test_validators.py"
+      ],
+      "edit_attempts": 2,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "astropy__astropy-7336",
+      "ordinal": 8,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 11,
+      "estimated_cny": "0.535640",
+      "event_span_seconds": 103.87182784080505,
+      "model_seconds": 74.87060761451721,
+      "tool_seconds": 17.211472988128662,
+      "test_command_seconds": 5.892,
+      "changed_files": [
+        "astropy/units/decorators.py",
+        "astropy/units/tests/py3_test_quantity_annotations.py"
+      ],
+      "edit_attempts": 2,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "django__django-12304",
+      "ordinal": 9,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 18,
+      "estimated_cny": "0.852916",
+      "event_span_seconds": 174.0938959121704,
+      "model_seconds": 121.16680264472961,
+      "tool_seconds": 33.21163630485535,
+      "test_command_seconds": 3.19,
+      "changed_files": [
+        "django/db/models/enums.py",
+        "tests/model_enums/tests.py"
+      ],
+      "edit_attempts": 6,
+      "edit_ok": 6
+    },
+    {
+      "instance_id": "django__django-15930",
+      "ordinal": 10,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 40,
+      "estimated_cny": "3.295252",
+      "event_span_seconds": 354.58015179634094,
+      "model_seconds": 260.6731812953949,
+      "tool_seconds": 42.18075108528137,
+      "test_command_seconds": 9.185,
+      "changed_files": [
+        "django/db/models/expressions.py",
+        "tests/expressions_case/tests.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-11310",
+      "ordinal": 11,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 33,
+      "estimated_cny": "1.564584",
+      "event_span_seconds": 248.669184923172,
+      "model_seconds": 151.16250824928284,
+      "tool_seconds": 54.159956216812134,
+      "test_command_seconds": 15.331,
+      "changed_files": [
+        "doc/whats_new/v0.20.rst",
+        "sklearn/model_selection/_search.py",
+        "sklearn/model_selection/tests/test_search.py"
+      ],
+      "edit_attempts": 9,
+      "edit_ok": 8
+    },
+    {
+      "instance_id": "psf__requests-1766",
+      "ordinal": 12,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 11,
+      "estimated_cny": "0.296020",
+      "event_span_seconds": 80.18499803543091,
+      "model_seconds": 39.897130727767944,
+      "tool_seconds": 28.43672251701355,
+      "test_command_seconds": 17.708000000000002,
+      "changed_files": [
+        "requests/auth.py"
+      ],
+      "edit_attempts": 1,
+      "edit_ok": 1
+    },
+    {
+      "instance_id": "pallets__flask-5014",
+      "ordinal": 13,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 15,
+      "estimated_cny": "0.457856",
+      "event_span_seconds": 97.79012489318848,
+      "model_seconds": 62.519514083862305,
+      "tool_seconds": 19.962308645248413,
+      "test_command_seconds": 4.883,
+      "changed_files": [
+        "CHANGES.rst",
+        "src/flask/blueprints.py",
+        "tests/test_blueprints.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-23476",
+      "ordinal": 14,
+      "difficulty": "easy",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 36,
+      "estimated_cny": "4.524596",
+      "event_span_seconds": 1115.5378909111023,
+      "model_seconds": 940.6730306148529,
+      "tool_seconds": 121.47839879989624,
+      "test_command_seconds": 60.716,
+      "changed_files": [
+        "lib/matplotlib/backend_bases.py",
+        "lib/matplotlib/tests/test_figure.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "sympy__sympy-13480",
+      "ordinal": 15,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 5,
+      "estimated_cny": "0.178112",
+      "event_span_seconds": 64.99143195152283,
+      "model_seconds": 39.66809129714966,
+      "tool_seconds": 20.011246919631958,
+      "test_command_seconds": 11.258,
+      "changed_files": [
+        "sympy/functions/elementary/hyperbolic.py"
+      ],
+      "edit_attempts": 1,
+      "edit_ok": 1
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-9281",
+      "ordinal": 16,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 15,
+      "estimated_cny": "0.535528",
+      "event_span_seconds": 123.59097695350647,
+      "model_seconds": 66.80597233772278,
+      "tool_seconds": 37.085453510284424,
+      "test_command_seconds": 11.329,
+      "changed_files": [
+        "sphinx/util/inspect.py",
+        "tests/test_util_inspect.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "sympy__sympy-12481",
+      "ordinal": 17,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 24,
+      "estimated_cny": "1.394912",
+      "event_span_seconds": 472.30091381073,
+      "model_seconds": 180.06204771995544,
+      "tool_seconds": 258.56328201293945,
+      "test_command_seconds": 212.843,
+      "changed_files": [
+        "sympy/combinatorics/permutations.py",
+        "sympy/combinatorics/tests/test_permutations.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "sympy__sympy-15875",
+      "ordinal": 18,
+      "difficulty": "easy",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 69,
+      "estimated_cny": "6.316216",
+      "event_span_seconds": 2813.696310043335,
+      "model_seconds": 1062.312644481659,
+      "tool_seconds": 1657.137479543686,
+      "test_command_seconds": 1427.303,
+      "changed_files": [
+        "sympy/core/add.py",
+        "sympy/core/tests/test_assumptions.py"
+      ],
+      "edit_attempts": 9,
+      "edit_ok": 9
+    },
+    {
+      "instance_id": "sympy__sympy-16450",
+      "ordinal": 19,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 13,
+      "estimated_cny": "0.483184",
+      "event_span_seconds": 257.22357177734375,
+      "model_seconds": 92.58442282676697,
+      "tool_seconds": 150.81317806243896,
+      "test_command_seconds": 125.74000000000001,
+      "changed_files": [
+        "sympy/simplify/simplify.py",
+        "sympy/simplify/tests/test_simplify.py"
+      ],
+      "edit_attempts": 2,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-25973",
+      "ordinal": 20,
+      "difficulty": "easy",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 17,
+      "estimated_cny": "0.965380",
+      "event_span_seconds": 190.9176368713379,
+      "model_seconds": 135.36048936843872,
+      "tool_seconds": 36.84665012359619,
+      "test_command_seconds": 14.025,
+      "changed_files": [
+        "sklearn/feature_selection/_sequential.py",
+        "sklearn/feature_selection/tests/test_sequential.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "django__django-11206",
+      "ordinal": 21,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 26,
+      "estimated_cny": "1.759236",
+      "event_span_seconds": 434.05960512161255,
+      "model_seconds": 369.3497452735901,
+      "tool_seconds": 36.43391561508179,
+      "test_command_seconds": 10.409,
+      "changed_files": [
+        "django/utils/numberformat.py",
+        "tests/utils_tests/test_numberformat.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "django__django-12262",
+      "ordinal": 22,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 23,
+      "estimated_cny": "1.134192",
+      "event_span_seconds": 219.44847702980042,
+      "model_seconds": 146.45257544517517,
+      "tool_seconds": 47.312875270843506,
+      "test_command_seconds": 16.222,
+      "changed_files": [
+        "django/template/library.py",
+        "tests/template_tests/templatetags/inclusion.py",
+        "tests/template_tests/test_custom.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "django__django-13346",
+      "ordinal": 23,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 79,
+      "estimated_cny": "9.617724",
+      "event_span_seconds": 1611.511999130249,
+      "model_seconds": 1294.400307893753,
+      "tool_seconds": 189.546724319458,
+      "test_command_seconds": 29.45,
+      "changed_files": [
+        "django/db/models/fields/json.py",
+        "docs/releases/3.2.txt",
+        "docs/topics/db/queries.txt",
+        "tests/model_fields/test_jsonfield.py"
+      ],
+      "edit_attempts": 17,
+      "edit_ok": 17
+    },
+    {
+      "instance_id": "django__django-13809",
+      "ordinal": 24,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 36,
+      "estimated_cny": "2.171508",
+      "event_span_seconds": 443.98423290252686,
+      "model_seconds": 319.93322348594666,
+      "tool_seconds": 80.75209879875183,
+      "test_command_seconds": 49.416,
+      "changed_files": [
+        "django/core/management/commands/runserver.py",
+        "docs/ref/django-admin.txt",
+        "docs/releases/3.2.txt",
+        "tests/admin_scripts/tests.py"
+      ],
+      "edit_attempts": 5,
+      "edit_ok": 5
+    },
+    {
+      "instance_id": "django__django-14725",
+      "ordinal": 25,
+      "difficulty": "medium",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 40,
+      "estimated_cny": "8.663088",
+      "event_span_seconds": 2706.460015773773,
+      "model_seconds": 2452.1177332401276,
+      "tool_seconds": 139.1124393939972,
+      "test_command_seconds": 47.888,
+      "changed_files": [
+        "django/forms/models.py",
+        "docs/ref/forms/models.txt",
+        "docs/releases/4.1.txt",
+        "docs/topics/forms/modelforms.txt",
+        "tests/model_formsets/tests.py"
+      ],
+      "edit_attempts": 9,
+      "edit_ok": 5
+    },
+    {
+      "instance_id": "django__django-16493",
+      "ordinal": 26,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 19,
+      "estimated_cny": "0.911684",
+      "event_span_seconds": 168.98146891593933,
+      "model_seconds": 94.36531114578247,
+      "tool_seconds": 40.20008873939514,
+      "test_command_seconds": 7.968999999999999,
+      "changed_files": [
+        "django/db/models/fields/files.py",
+        "tests/file_storage/models.py",
+        "tests/file_storage/tests.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "django__django-7530",
+      "ordinal": 27,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 20,
+      "estimated_cny": "1.038244",
+      "event_span_seconds": 195.93863201141357,
+      "model_seconds": 137.013352394104,
+      "tool_seconds": 28.54889702796936,
+      "test_command_seconds": 8.415,
+      "changed_files": [
+        "django/core/management/commands/makemigrations.py",
+        "tests/migrations/test_commands.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "pydata__xarray-3151",
+      "ordinal": 28,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 12,
+      "estimated_cny": "0.682492",
+      "event_span_seconds": 221.4358789920807,
+      "model_seconds": 133.30230021476746,
+      "tool_seconds": 66.07995533943176,
+      "test_command_seconds": 41.857,
+      "changed_files": [
+        "xarray/core/combine.py",
+        "xarray/tests/test_combine.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "pytest-dev__pytest-5631",
+      "ordinal": 29,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 16,
+      "estimated_cny": "0.659420",
+      "event_span_seconds": 175.60476112365723,
+      "model_seconds": 71.55212926864624,
+      "tool_seconds": 76.38140630722046,
+      "test_command_seconds": 8.26,
+      "changed_files": [
+        "src/_pytest/compat.py",
+        "testing/python/integration.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "sympy__sympy-15599",
+      "ordinal": 30,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 27,
+      "estimated_cny": "3.739164",
+      "event_span_seconds": 1307.6066660881042,
+      "model_seconds": 1125.7285170555115,
+      "tool_seconds": 132.07986187934875,
+      "test_command_seconds": 81.526,
+      "changed_files": [
+        "sympy/core/mod.py",
+        "sympy/core/tests/test_arit.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "sympy__sympy-17318",
+      "ordinal": 31,
+      "difficulty": "medium",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 30,
+      "estimated_cny": "2.068848",
+      "event_span_seconds": 3505.77290391922,
+      "model_seconds": 260.4514534473419,
+      "tool_seconds": 3193.9054067134857,
+      "test_command_seconds": 3144.188,
+      "changed_files": [
+        "sympy/simplify/radsimp.py",
+        "sympy/simplify/tests/test_sqrtdenest.py"
+      ],
+      "edit_attempts": 6,
+      "edit_ok": 6
+    },
+    {
+      "instance_id": "sympy__sympy-22914",
+      "ordinal": 32,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 8,
+      "estimated_cny": "0.322580",
+      "event_span_seconds": 78.86594104766846,
+      "model_seconds": 52.8423593044281,
+      "tool_seconds": 13.854175090789795,
+      "test_command_seconds": 2.392,
+      "changed_files": [
+        "sympy/printing/pycode.py",
+        "sympy/printing/tests/test_pycode.py"
+      ],
+      "edit_attempts": 2,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "sympy__sympy-23824",
+      "ordinal": 33,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 10,
+      "estimated_cny": "0.455320",
+      "event_span_seconds": 110.36701989173889,
+      "model_seconds": 64.57344675064087,
+      "tool_seconds": 30.0831298828125,
+      "test_command_seconds": 15.433,
+      "changed_files": [
+        "sympy/physics/hep/gamma_matrices.py",
+        "sympy/physics/hep/tests/test_gamma_matrices.py"
+      ],
+      "edit_attempts": 2,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "django__django-11333",
+      "ordinal": 34,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 24,
+      "estimated_cny": "1.674276",
+      "event_span_seconds": 269.2585530281067,
+      "model_seconds": 172.78071761131287,
+      "tool_seconds": 57.73401236534119,
+      "test_command_seconds": 27.693,
+      "changed_files": [
+        "django/urls/base.py",
+        "django/urls/resolvers.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "django__django-14053",
+      "ordinal": 35,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 50,
+      "estimated_cny": "4.161480",
+      "event_span_seconds": 618.9396889209747,
+      "model_seconds": 476.6623113155365,
+      "tool_seconds": 76.85601782798767,
+      "test_command_seconds": 11.638,
+      "changed_files": [
+        "django/contrib/staticfiles/storage.py",
+        "tests/staticfiles_tests/test_storage.py"
+      ],
+      "edit_attempts": 9,
+      "edit_ok": 9
+    },
+    {
+      "instance_id": "django__django-13658",
+      "ordinal": 36,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 8,
+      "estimated_cny": "0.289284",
+      "event_span_seconds": 87.56924700737,
+      "model_seconds": 62.47505259513855,
+      "tool_seconds": 15.668659925460815,
+      "test_command_seconds": 8.326,
+      "changed_files": [
+        "django/core/management/__init__.py"
+      ],
+      "edit_attempts": 1,
+      "edit_ok": 1
+    },
+    {
+      "instance_id": "django__django-16901",
+      "ordinal": 37,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 59,
+      "estimated_cny": "6.376824",
+      "event_span_seconds": 967.2045331001282,
+      "model_seconds": 815.8595943450928,
+      "tool_seconds": 62.24633526802063,
+      "test_command_seconds": 19.704,
+      "changed_files": [
+        "django/db/models/sql/where.py",
+        "docs/ref/models/querysets.txt",
+        "tests/xor_lookups/tests.py"
+      ],
+      "edit_attempts": 5,
+      "edit_ok": 5
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-24970",
+      "ordinal": 38,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 23,
+      "estimated_cny": "1.219960",
+      "event_span_seconds": 313.7885699272156,
+      "model_seconds": 195.42318987846375,
+      "tool_seconds": 85.01108932495117,
+      "test_command_seconds": 51.381,
+      "changed_files": [
+        "lib/matplotlib/colors.py",
+        "lib/matplotlib/tests/test_colors.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "sympy__sympy-13551",
+      "ordinal": 39,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 12,
+      "estimated_cny": "0.807364",
+      "event_span_seconds": 1200.1178059577942,
+      "model_seconds": 180.00125908851624,
+      "tool_seconds": 999.7016739845276,
+      "test_command_seconds": 982.649,
+      "changed_files": [
+        "sympy/concrete/products.py",
+        "sympy/concrete/tests/test_products.py"
+      ],
+      "edit_attempts": 2,
+      "edit_ok": 2
+    },
+    {
+      "instance_id": "django__django-16950",
+      "ordinal": 40,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 55,
+      "estimated_cny": "5.132340",
+      "event_span_seconds": 1185.0892820358276,
+      "model_seconds": 946.8246054649353,
+      "tool_seconds": 150.7639696598053,
+      "test_command_seconds": 63.921,
+      "changed_files": [
+        "django/forms/models.py",
+        "tests/model_formsets/test_uuid.py"
+      ],
+      "edit_attempts": 4,
+      "edit_ok": 4
+    },
+    {
+      "instance_id": "sympy__sympy-15349",
+      "ordinal": 41,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 14,
+      "estimated_cny": "0.734116",
+      "event_span_seconds": 208.8914041519165,
+      "model_seconds": 154.54527711868286,
+      "tool_seconds": 35.41528248786926,
+      "test_command_seconds": 9.648,
+      "changed_files": [
+        "sympy/algebras/quaternion.py",
+        "sympy/algebras/tests/test_quaternion.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-10908",
+      "ordinal": 42,
+      "difficulty": "medium",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 9,
+      "estimated_cny": "0.348220",
+      "event_span_seconds": 72.32148694992065,
+      "model_seconds": 47.82191801071167,
+      "tool_seconds": 12.989689111709595,
+      "test_command_seconds": 5.165,
+      "changed_files": [
+        "sklearn/feature_extraction/text.py"
+      ],
+      "edit_attempts": 1,
+      "edit_ok": 1
+    },
+    {
+      "instance_id": "sympy__sympy-20428",
+      "ordinal": 43,
+      "difficulty": "medium",
+      "resolved": false,
+      "agent_status": "experiment_deadline",
+      "requests": 64,
+      "estimated_cny": "7.556696",
+      "event_span_seconds": 3606.5920259952545,
+      "model_seconds": 1578.8199973106384,
+      "tool_seconds": 1909.4980812072754,
+      "test_command_seconds": 1736.904,
+      "changed_files": [
+        "sympy/polys/densearith.py",
+        "sympy/polys/tests/test_densearith.py",
+        "sympy/polys/tests/test_polytools.py"
+      ],
+      "edit_attempts": 11,
+      "edit_ok": 10
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-25747",
+      "ordinal": 44,
+      "difficulty": "medium",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 39,
+      "estimated_cny": "3.366948",
+      "event_span_seconds": 871.300274848938,
+      "model_seconds": 702.9748997688293,
+      "tool_seconds": 95.8991014957428,
+      "test_command_seconds": 30.331,
+      "changed_files": [
+        "sklearn/tests/test_pipeline.py",
+        "sklearn/utils/_set_output.py",
+        "sklearn/utils/tests/test_set_output.py"
+      ],
+      "edit_attempts": 6,
+      "edit_ok": 6
+    },
+    {
+      "instance_id": "django__django-13128",
+      "ordinal": 45,
+      "difficulty": "hard",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 20,
+      "estimated_cny": "1.336396",
+      "event_span_seconds": 327.98465299606323,
+      "model_seconds": 254.77865147590637,
+      "tool_seconds": 42.4416766166687,
+      "test_command_seconds": 20.033,
+      "changed_files": [
+        "django/db/models/expressions.py"
+      ],
+      "edit_attempts": 3,
+      "edit_ok": 3
+    },
+    {
+      "instance_id": "pylint-dev__pylint-4551",
+      "ordinal": 46,
+      "difficulty": "hard",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 89,
+      "estimated_cny": "11.503552",
+      "event_span_seconds": 1515.2952291965485,
+      "model_seconds": 1204.517760515213,
+      "tool_seconds": 150.7730097770691,
+      "test_command_seconds": 15.652,
+      "changed_files": [
+        "pylint/pyreverse/inspector.py",
+        "tests/unittest_pyreverse_diadefs.py",
+        "tests/unittest_pyreverse_inspector.py",
+        "tests/regrtest_data/annotation_pyreverse/__init__.py"
+      ],
+      "edit_attempts": 12,
+      "edit_ok": 12
+    },
+    {
+      "instance_id": "django__django-15128",
+      "ordinal": 47,
+      "difficulty": "hard",
+      "resolved": true,
+      "agent_status": "completed",
+      "requests": 80,
+      "estimated_cny": "10.460744",
+      "event_span_seconds": 2054.8049008846283,
+      "model_seconds": 1768.9079279899597,
+      "tool_seconds": 124.1274402141571,
+      "test_command_seconds": 19.068,
+      "changed_files": [
+        "django/db/models/sql/query.py",
+        "docs/ref/models/querysets.txt",
+        "tests/queries/models.py",
+        "tests/queries/tests.py"
+      ],
+      "edit_attempts": 14,
+      "edit_ok": 10
+    },
+    {
+      "instance_id": "django__django-14011",
+      "ordinal": 48,
+      "difficulty": "hard",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 22,
+      "estimated_cny": "1.353832",
+      "event_span_seconds": 341.3378818035126,
+      "model_seconds": 294.5876226425171,
+      "tool_seconds": 13.55895471572876,
+      "test_command_seconds": 0.694,
+      "changed_files": [],
+      "edit_attempts": 2,
+      "edit_ok": 0
+    },
+    {
+      "instance_id": "django__django-15629",
+      "ordinal": 49,
+      "difficulty": "hard",
+      "resolved": true,
+      "agent_status": "experiment_fee_limit",
+      "requests": 91,
+      "estimated_cny": "15.002140",
+      "event_span_seconds": 2693.417505979538,
+      "model_seconds": 2417.6215550899506,
+      "tool_seconds": 123.37231612205505,
+      "test_command_seconds": 35.931,
+      "changed_files": [
+        "django/db/backends/base/schema.py",
+        "django/db/backends/mysql/schema.py",
+        "django/db/backends/oracle/schema.py",
+        "django/db/backends/sqlite3/schema.py",
+        "django/db/models/fields/related.py",
+        "tests/schema/tests.py"
+      ],
+      "edit_attempts": 10,
+      "edit_ok": 10
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-9461",
+      "ordinal": 50,
+      "difficulty": "hard",
+      "resolved": false,
+      "agent_status": "completed",
+      "requests": 90,
+      "estimated_cny": "13.695644",
+      "event_span_seconds": 2503.0873589515686,
+      "model_seconds": 2164.7960546016693,
+      "tool_seconds": 193.36022329330444,
+      "test_command_seconds": 58.144,
+      "changed_files": [
+        "CHANGES",
+        "sphinx/ext/autodoc/__init__.py",
+        "sphinx/ext/autodoc/importer.py",
+        "tests/roots/test-ext-autodoc/target/properties.py",
+        "tests/test_ext_autodoc_autoclass.py",
+        "tests/test_ext_autodoc_autoproperty.py"
+      ],
+      "edit_attempts": 18,
+      "edit_ok": 17
+    }
+  ],
+  "request_cost_pearson_r": 0.9437786351863248,
+  "two_sympy_test_time_share": 0.5607008387149912,
+  "edit_conflict_recovery_response_median": 2,
+  "edit_conflict_recovery_response_max": 3,
+  "review_evidence": {
+    "django__django-14725": {
+      "mapping": "edit_only=True -> can_create=False",
+      "mapped_calls": 3,
+      "functional_assertions_unchanged": true,
+      "target_pass": 1,
+      "target_fail": 2,
+      "regression_pass": 64,
+      "resolved": false
+    },
+    "public_contract_probes": [
+      {
+        "instance_id": "sympy__sympy-15875",
+        "proof": {
+          "actual_is_zero": true,
+          "public_requirement_not_false_on_zero": true,
+          "simplified_is_zero": true
+        },
+        "official_resolved": false
+      },
+      {
+        "instance_id": "sympy__sympy-17318",
+        "proof": {
+          "non_denestable_case_unchanged": true,
+          "original_case_returns_I": true,
+          "private_helper_actual": "[4 + I, 0, 1]",
+          "sqrt_complex_unchanged": true
+        },
+        "official_resolved": false
+      },
+      {
+        "instance_id": "pylint-dev__pylint-4551",
+        "proof": {
+          "original_example_inferred_types": [
+            "str"
+          ],
+          "uses_str_annotation": true
+        },
+        "official_resolved": false
+      }
+    ]
+  },
+  "trace_examples": {
+    "django__django-16950": {
+      "source_events_sha256": "047caf2448fa228a2f48d01e6b5af671a7219aebd4a2dc27180a435970fd7917",
+      "commands": [
+        {
+          "seq": 632,
+          "ts": "2026-11-10T07:50:50.222927+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "----------------------------------------------------------------------\nRan 157 tests in 4.015s\n\nOK (skipped=12)\nDestroying test database for alias 'default'..."
+        },
+        {
+          "seq": 644,
+          "ts": "2026-11-10T07:51:41.835743+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "Ran 1587 tests in 42.385s\n\nOK (skipped=39)\nDestroying test database for alias 'default'...\nDestroying test database for alias 'other'..."
+        }
+      ]
+    },
+    "django__django-15128": {
+      "source_events_sha256": "2c2084dafc06251fe502af5d9bc5b9daa81502d746e4cf500a325f32ccaea22b",
+      "commands": [
+        {
+          "seq": 655,
+          "ts": "2026-11-10T10:35:42.231350+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "System check identified no issues (1 silenced).\ntest_combine_join_alias (queries.tests.Queries4Tests) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.009s\n\nOK\nDestroying test database for alias 'default' ('file:memorydb_default?mode=memory&cache=shared')..."
+        },
+        {
+          "seq": 667,
+          "ts": "2026-11-10T10:35:54.171879+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "    assert set(change_map).isdisjoint(change_map.values())\nAssertionError\n\n----------------------------------------------------------------------\nRan 1 test in 0.015s\n\nFAILED (failures=1)\nDestroying test database for alias 'default' ('file:memorydb_default?mode=memory&cache=shared')...\nRESTORED\nRan 1 test in 0.011s\n\nOK"
+        },
+        {
+          "seq": 899,
+          "ts": "2026-11-10T10:38:52.939158+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "----------------------------------------------------------------------\nRan 425 tests in 1.534s\n\nOK (skipped=9, expected failures=2)\nexpected: [1, 2, 3, 4]\nALL GOOD: both directions match expected results"
+        }
+      ]
+    },
+    "scikit-learn__scikit-learn-25973": {
+      "source_events_sha256": "ce9a526a780581b32326231497ae0f61054e1225d7c27675830b38f2c5dcedb9",
+      "commands": [
+        {
+          "seq": 137,
+          "ts": "2026-11-09T19:36:56.167491+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "n/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[1j]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[99.9]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[nan]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[3]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_forward_neg_tol_error\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_backward_neg_tol\u001b[0m\n\u001b[31mFAILED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_cv_iterable_supports_generator\u001b[0m - NameError: name 'KNeighborsClassifier' is not defined\n\u001b[31m========================= \u001b[31m\u001b[1m1 failed\u001b[0m, \u001b[32m72 passed\u001b[0m\u001b[31m in 5.04s\u001b[0m\u001b[31m =========================\u001b[0m"
+        },
+        {
+          "seq": 160,
+          "ts": "2026-11-09T19:37:21.639301+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[1j]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[99.9]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[nan]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_no_y_validation_model_fit[3]\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_cv_iterable_supports_generator\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_forward_neg_tol_error\u001b[0m\n\u001b[32mPASSED\u001b[0m sklearn/feature_selection/tests/test_sequential.py::\u001b[1mtest_backward_neg_tol\u001b[0m\n\u001b[32m============================== \u001b[32m\u001b[1m73 passed\u001b[0m\u001b[32m in 8.67s\u001b[0m\u001b[32m ==============================\u001b[0m"
+        }
+      ]
+    },
+    "matplotlib__matplotlib-24970": {
+      "source_events_sha256": "626ef78b798e79027ba75e5ec645bc7cfef1cab32a23d22be4b29ff93b0d6d3d",
+      "commands": [
+        {
+          "seq": 159,
+          "ts": "2026-11-10T07:06:38.670848+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "matplotlib/tests/test_colors.py::test_colormap_reversing[winter]\nFAILED lib/matplotlib/tests/test_colors.py::test_colormap_reversing[winter_r]\nFAILED lib/matplotlib/tests/test_colors.py::test_ndarray_subclass_norm - Type...\nFAILED lib/matplotlib/tests/test_colors.py::test_repr_png - TypeError: Cannot...\nFAILED lib/matplotlib/tests/test_colors.py::test_repr_html - TypeError: Canno...\nFAILED lib/matplotlib/tests/test_colors.py::test_get_under_over_bad - TypeErr...\nFAILED lib/matplotlib/tests/test_colors.py::test_colormap_alpha_array - TypeE...\nFAILED lib/matplotlib/tests/test_colors.py::test_colormap_bad_data_with_alpha\nFAILED lib/matplotlib/tests/test_colors.py::test_norm_update_figs[png] - Type...\nFAILED lib/matplotlib/tests/test_colors.py::test_norm_update_figs[pdf] - Type...\nFAILED lib/matplotlib/tests/test_colors.py::test_norm_update_figs[svg] - Type...\n186 failed, 67 passed in 24.33s"
+        },
+        {
+          "seq": 216,
+          "ts": "2026-11-10T07:07:34.213823+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "PASSED lib/matplotlib/tests/test_colors.py::test_norm_update_figs[png]\nPASSED lib/matplotlib/tests/test_colors.py::test_norm_update_figs[pdf]\nPASSED lib/matplotlib/tests/test_colors.py::test_make_norm_from_scale_name\nPASSED lib/matplotlib/tests/test_colors.py::test_color_sequences\nPASSED lib/matplotlib/tests/test_colors.py::test_cm_set_cmap_error\nSKIPPED [1] lib/matplotlib/testing/compare.py:285: Don't know how to convert .svg files to png\nFAILED lib/matplotlib/tests/test_colors.py::test_double_register_builtin_cmap\n1 failed, 251 passed, 1 skipped in 7.03s"
+        },
+        {
+          "seq": 250,
+          "ts": "2026-11-10T07:08:06.653995+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "=========================== short test summary info ============================\nFAILED lib/matplotlib/tests/test_colors.py::test_double_register_builtin_cmap\n1 failed in 0.43s\n--- restored fixed version ---\n....                                                                     [100%]\n4 passed in 0.38s"
+        },
+        {
+          "seq": 262,
+          "ts": "2026-11-10T07:08:22.300740+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "original repro: no warnings, ok\n................................s...                                     [100%]\n251 passed, 1 skipped, 1 deselected in 6.03s"
+        }
+      ]
+    },
+    "django__django-13346": {
+      "source_events_sha256": "dbe3b65ddfe632d35f0a9e68a13e6ec13061f9737f446dcf5ce5b97e44380cb3",
+      "commands": [
+        {
+          "seq": 864,
+          "ts": "2026-11-09T20:16:37.926119+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "l_fields_nullablejsonmodel\".\"value\", $.\"k\") IN (JSON_EXTRACT(0, '$'), JSON_EXTRACT(2, '$'))\n['a', 'b'] exact: 1 in: 1\n'x' exact: 1 in: 1\nTrue exact: 1 in: 1\n0 exact: 1 in: 1\n1.5 exact: 1 in: 1\nSELECT \"model_fields_nullablejsonmodel\".\"id\", \"model_fields_nullablejsonmodel\".\"value\", \"model_fields_nullablejsonmodel\".\"value_custom\" FROM \"model_fields_nullablejsonmodel\" WHERE JSON_EXTRACT(\"model_fields_nullablejsonmodel\".\"value\", $.\"k\") IN (JSON_EXTRACT([\"a\", \"b\"], '$'))\nnested: 1\nnone: 0\nmixed: 2\nsubquery: 1\nSELECT \"model_fields_nullablejsonmodel\".\"id\", \"model_fields_nullablejsonmodel\".\"value\", \"model_fields_nullablejsonmodel\".\"value_custom\" FROM \"model_fields_nullablejsonmodel\" WHERE JSON_EXTRACT(\"model_fields_nullablejsonmodel\".\"value\", $.\"k\") IN (SELECT JSON_EXTRACT(U0.\"value\", $.\"k\") FROM \"model_fields_nullablejsonmodel\" U0 WHERE JSON_EXTRACT(U0.\"value\", $.\"k\".\"n\") = JSON_EXTRACT(1, '$'))"
+        },
+        {
+          "seq": 961,
+          "ts": "2026-11-09T20:17:52.661570+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "repros OK\nRan 1180 tests in 3.070s\nOK (skipped=106, expected failures=2)"
+        }
+      ]
+    },
+    "django__django-15629": {
+      "source_events_sha256": "f3e695b41fbda2242c635b3469fe117212e45c1b79490c861ebb775f2981975b",
+      "commands": [
+        {
+          "seq": 966,
+          "ts": "2026-11-10T11:30:37.935689+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "  File \"/testbed/tests/schema/tests.py\", line 4705, in test_alter_primary_key_db_collation_propagates_to_foreign_keys\n    self.assertEqual(\nAssertionError: None != 'nocase'\n\n----------------------------------------------------------------------\nRan 1 test in 0.018s\n\nFAILED (failures=2)\nexit=0"
+        },
+        {
+          "seq": 1002,
+          "ts": "2026-11-10T11:31:15.662554+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "----------------------------------------------------------------------\nRan 837 tests in 13.135s\n\nOK (skipped=29)\nDestroying test database for alias 'default'...\nDestroying test database for alias 'other'..."
+        }
+      ]
+    },
+    "sympy__sympy-20428": {
+      "source_events_sha256": "17aa5e72ae0074871133d7af61b35a7e6d7ccb2126f3cd13c09adb087de61aa0",
+      "commands": [
+        {
+          "seq": 720,
+          "ts": "2026-11-10T08:30:26.935744+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "test_ANP_arithmetics ok\ntest_ANP_unify ok\ntest___hash__ ok                                                            [OK]\n\n\n================= tests finished: 104 passed, in 0.36 seconds =================="
+        },
+        {
+          "seq": 732,
+          "ts": "2026-11-10T08:30:53.000638+00:00",
+          "status": "completed",
+          "exit_code": 0,
+          "output_excerpt": "test_issue_19360 ok\ntest_poly_copy_equals_original ok\ntest_deserialized_poly_equals_original ok                                   [OK]\n\n\n================= tests finished: 156 passed, in 18.52 seconds ================="
+        },
+        {
+          "seq": 744,
+          "ts": "2026-11-10T08:59:24.445676+00:00",
+          "status": "execution_cancelled",
+          "exit_code": 143,
+          "output_excerpt": "status: execution_cancelled\nexit_code: 143"
+        }
+      ]
+    }
+  },
+  "network_summary": {
+    "scope": "选定50题generation容器代理访问日志；不包含独立grader和宿主模型API",
+    "tasks_with_network_records": [
+      {
+        "instance_id": "psf__requests-1766",
+        "requests": 24,
+        "hosts": {
+          "httpbin.org": 24
+        },
+        "verdicts": {
+          "allowed": 24
+        }
+      },
+      {
+        "instance_id": "django__django-13346",
+        "requests": 1,
+        "hosts": {
+          "pypi.org": 1
+        },
+        "verdicts": {
+          "allowed": 1
+        }
+      },
+      {
+        "instance_id": "pytest-dev__pytest-5631",
+        "requests": 3,
+        "hosts": {
+          "pypi.org": 2,
+          "files.pythonhosted.org": 1
+        },
+        "verdicts": {
+          "allowed": 3
+        }
+      }
+    ],
+    "hosts": {
+      "httpbin.org": 24,
+      "pypi.org": 3,
+      "files.pythonhosted.org": 1
+    },
+    "verdicts": {
+      "allowed": 28
+    }
+  },
+  "version_evolution": {
+    "purpose": "记录持续开发场景下的版本设计取舍、固定50题整体结果及接口行为重放",
+    "old": {
+      "runtime_version": "0.5.0",
+      "evaluation_commit": "932b52ffff4209a748c6646a056d2ab43111637e",
+      "score": 35,
+      "total": 50,
+      "estimated_cny": "150.040204"
+    },
+    "new": {
+      "runtime_version": "0.6.0",
+      "evaluation_commit": "762c0a545dab3e0ac7123e8ed8c0c9e24511d4db",
+      "score": 40,
+      "total": 50,
+      "all_attempts_known_estimated_cny": "150.846432"
+    },
+    "paired_outcomes": {
+      "retained_passes": 35,
+      "gained": [
+        "astropy__astropy-7336",
+        "django__django-13346",
+        "django__django-13809",
+        "django__django-15629",
+        "django__django-16950"
+      ],
+      "lost": []
+    },
+    "amortized_cny_per_pass": {
+      "old": "4.286862971428571428571428571",
+      "new": "3.7711608",
+      "reduction_percent": "12.02982635240885169684253428"
+    },
+    "interface_measurement": {
+      "event_type": "tool_result",
+      "unit": "一次工具调用，每条事件计一次",
+      "attempt_selection": "每题各版本的最终登记attempt",
+      "all_50": {
+        "old": {
+          "tasks": 50,
+          "counts": {
+            "truncated_tool_results": 25,
+            "read_calls": 307,
+            "read_ok": 303,
+            "read_with_digest": 303,
+            "returned_lines": 30763,
+            "overlapping_unchanged_lines": 1527,
+            "read_followed_by_hash_edit_3tools": 108,
+            "edit_calls": 189,
+            "edit_ok": 155,
+            "command_calls": 538,
+            "test_command_calls": 187,
+            "shell_read_command_calls": 231,
+            "tool_calls": 1307,
+            "edit_operations": 265,
+            "edit_operations_with_hash": 258,
+            "edit_errors_recovered": 33,
+            "repeat_command": 8,
+            "repeat_test_command": 6,
+            "short_read_followed_by_hash_edit_3tools": 2,
+            "repeat_other_command": 2
+          },
+          "errors": [
+            {
+              "tool": "apply_workspace_edit",
+              "code": "edit_conflict",
+              "count": 8
+            },
+            {
+              "tool": "apply_workspace_edit",
+              "code": "invalid_arguments",
+              "count": 23
+            },
+            {
+              "tool": "apply_workspace_edit",
+              "code": "no_changes",
+              "count": 3
+            },
+            {
+              "tool": "read_file",
+              "code": "not_found",
+              "count": 4
+            },
+            {
+              "tool": "run_command",
+              "code": "approval_denied",
+              "count": 1
+            },
+            {
+              "tool": "run_command",
+              "code": "command_exit_nonzero",
+              "count": 185
+            },
+            {
+              "tool": "run_command",
+              "code": "execution_timed_out",
+              "count": 1
+            },
+            {
+              "tool": "run_command",
+              "code": "invalid_arguments",
+              "count": 1
+            },
+            {
+              "tool": "search_text",
+              "code": "command_failed",
+              "count": 2
+            },
+            {
+              "tool": "search_text",
+              "code": "invalid_arguments",
+              "count": 32
+            },
+            {
+              "tool": "search_text",
+              "code": "not_found",
+              "count": 3
+            }
+          ],
+          "exact_read_repeat_rate": 0.0,
+          "edit_success_rate": 0.8201058201058201,
+          "command_repeat_rate": 0.01486988847583643,
+          "unchanged_line_overlap_rate": 0.04963755160419985,
+          "tasks_with_exact_read_repeats": 0,
+          "median_exact_read_repeats_per_task": 0.0,
+          "median_edit_latency_seconds": 0.008105,
+          "median_edit_recovery_model_responses": 1
+        },
+        "new": {
+          "tasks": 50,
+          "counts": {
+            "truncated_tool_results": 38,
+            "read_calls": 392,
+            "read_ok": 389,
+            "read_with_digest": 389,
+            "returned_lines": 39315,
+            "overlapping_unchanged_lines": 792,
+            "command_calls": 724,
+            "test_command_calls": 243,
+            "shell_read_command_calls": 312,
+            "edit_calls": 256,
+            "edit_ok": 238,
+            "tool_calls": 1700,
+            "edit_operations": 346,
+            "edit_operations_with_hash": 51,
+            "edit_errors_recovered": 15,
+            "read_observation_calls": 4,
+            "read_followed_by_hash_edit_3tools": 6,
+            "repeat_command": 11,
+            "repeat_other_command": 7,
+            "repeat_test_command": 4
+          },
+          "errors": [
+            {
+              "tool": "apply_workspace_edit",
+              "code": "edit_conflict",
+              "count": 2
+            },
+            {
+              "tool": "apply_workspace_edit",
+              "code": "invalid_arguments",
+              "count": 2
+            },
+            {
+              "tool": "edit_file",
+              "code": "edit_conflict",
+              "count": 13
+            },
+            {
+              "tool": "edit_file",
+              "code": "invalid_arguments",
+              "count": 1
+            },
+            {
+              "tool": "read_file",
+              "code": "invalid_arguments",
+              "count": 2
+            },
+            {
+              "tool": "read_file",
+              "code": "not_found",
+              "count": 1
+            },
+            {
+              "tool": "run_command",
+              "code": "command_exit_nonzero",
+              "count": 94
+            },
+            {
+              "tool": "run_command",
+              "code": "execution_cancelled",
+              "count": 1
+            },
+            {
+              "tool": "run_command",
+              "code": "execution_timed_out",
+              "count": 2
+            },
+            {
+              "tool": "search_text",
+              "code": "command_failed",
+              "count": 1
+            },
+            {
+              "tool": "search_text",
+              "code": "not_found",
+              "count": 1
+            },
+            {
+              "tool": "update_task_plan",
+              "code": "task_plan_update_rejected",
+              "count": 1
+            }
+          ],
+          "exact_read_repeat_rate": 0.0,
+          "edit_success_rate": 0.9296875,
+          "command_repeat_rate": 0.015193370165745856,
+          "unchanged_line_overlap_rate": 0.02014498283098054,
+          "tasks_with_exact_read_repeats": 0,
+          "median_exact_read_repeats_per_task": 0.0,
+          "median_edit_latency_seconds": 3.8769915,
+          "median_edit_recovery_model_responses": 2
+        },
+        "paired_read_repeat_changes": {
+          "equal": 50
+        }
+      },
+      "both_pass_35": {
+        "old": {
+          "tasks": 35,
+          "counts": {
+            "truncated_tool_results": 14,
+            "read_calls": 145,
+            "read_ok": 142,
+            "read_with_digest": 142,
+            "returned_lines": 14009,
+            "overlapping_unchanged_lines": 139,
+            "read_followed_by_hash_edit_3tools": 76,
+            "edit_calls": 116,
+            "edit_ok": 96,
+            "command_calls": 306,
+            "test_command_calls": 125,
+            "shell_read_command_calls": 126,
+            "tool_calls": 716,
+            "edit_operations": 166,
+            "edit_operations_with_hash": 163,
+            "edit_errors_recovered": 20,
+            "repeat_command": 5,
+            "repeat_test_command": 3,
+            "repeat_other_command": 2
+          },
+          "errors": [
+            {
+              "tool": "apply_workspace_edit",
+              "code": "edit_conflict",
+              "count": 3
+            },
+            {
+              "tool": "apply_workspace_edit",
+              "code": "invalid_arguments",
+              "count": 16
+            },
+            {
+              "tool": "apply_workspace_edit",
+              "code": "no_changes",
+              "count": 1
+            },
+            {
+              "tool": "read_file",
+              "code": "not_found",
+              "count": 3
+            },
+            {
+              "tool": "run_command",
+              "code": "command_exit_nonzero",
+              "count": 113
+            },
+            {
+              "tool": "run_command",
+              "code": "invalid_arguments",
+              "count": 1
+            },
+            {
+              "tool": "search_text",
+              "code": "command_failed",
+              "count": 1
+            },
+            {
+              "tool": "search_text",
+              "code": "invalid_arguments",
+              "count": 22
+            },
+            {
+              "tool": "search_text",
+              "code": "not_found",
+              "count": 2
+            }
+          ],
+          "exact_read_repeat_rate": 0.0,
+          "edit_success_rate": 0.8275862068965517,
+          "command_repeat_rate": 0.016339869281045753,
+          "unchanged_line_overlap_rate": 0.00992219287600828,
+          "tasks_with_exact_read_repeats": 0,
+          "median_exact_read_repeats_per_task": 0,
+          "median_edit_latency_seconds": 0.0079825,
+          "median_edit_recovery_model_responses": 2.0
+        },
+        "new": {
+          "tasks": 35,
+          "counts": {
+            "truncated_tool_results": 19,
+            "read_calls": 202,
+            "read_ok": 202,
+            "read_with_digest": 202,
+            "returned_lines": 19824,
+            "overlapping_unchanged_lines": 439,
+            "command_calls": 331,
+            "test_command_calls": 151,
+            "shell_read_command_calls": 116,
+            "edit_calls": 139,
+            "edit_ok": 129,
+            "tool_calls": 860,
+            "edit_operations": 177,
+            "edit_operations_with_hash": 22,
+            "edit_errors_recovered": 10,
+            "read_observation_calls": 3,
+            "read_followed_by_hash_edit_3tools": 4,
+            "repeat_command": 2,
+            "repeat_test_command": 2
+          },
+          "errors": [
+            {
+              "tool": "apply_workspace_edit",
+              "code": "edit_conflict",
+              "count": 1
+            },
+            {
+              "tool": "edit_file",
+              "code": "edit_conflict",
+              "count": 9
+            },
+            {
+              "tool": "run_command",
+              "code": "command_exit_nonzero",
+              "count": 45
+            },
+            {
+              "tool": "run_command",
+              "code": "execution_timed_out",
+              "count": 1
+            },
+            {
+              "tool": "search_text",
+              "code": "command_failed",
+              "count": 1
+            }
+          ],
+          "exact_read_repeat_rate": 0.0,
+          "edit_success_rate": 0.9280575539568345,
+          "command_repeat_rate": 0.006042296072507553,
+          "unchanged_line_overlap_rate": 0.022144874899112186,
+          "tasks_with_exact_read_repeats": 0,
+          "median_exact_read_repeats_per_task": 0,
+          "median_edit_latency_seconds": 3.849808,
+          "median_edit_recovery_model_responses": 2.0
+        },
+        "paired_read_repeat_changes": {
+          "equal": 35
+        }
+      }
+    },
+    "fixed_input_replay": {
+      "method": "原始历史参数不改，经冻结v0.6.0 ToolRegistry/ToolSpec输入校验；搜索调用真实限幅handler、底层检索为捕获替身；编辑只验证结构，不写文件",
+      "frozen_sources_sha256": {
+        "codeagent/tools/base.py": "f0b4bf8746f998e961ab937a71eea7a3508b93f8829f13e6bd062fe2c04376e8",
+        "codeagent/tools/inputs.py": "7e0ae37d9cae905edd75fe2ff9c953189068f4c99d0e2543a3b2ff0a5d8ee9de",
+        "codeagent/tools/registry.py": "dbbfbf8ba798cd249359e741dc5bed6e37c98615155feaa0b2d889eaecfd10cc",
+        "codeagent/tools/fs_read.py": "0d6ff7fe99124e76bf5df99c5872e5c29594ef748def8e3d7ea218a051829d4a",
+        "codeagent/runtime/atomic_edit.py": "bfcb5cf05fbb2ceaa29fd2eeb33f61b6a25f2a4685e3f037b6fa34a6a48ac050"
+      },
+      "old_fs_read_sha256": "e21ac653e25068197cf47bc1521b415f30548b6cecdf0039ffd77895b9bbfaf4",
+      "search_original_invalid": 32,
+      "search_new_normalization_accepted": 32,
+      "search_requested_context_counts": {
+        "5": 15,
+        "10": 3,
+        "15": 2,
+        "60": 1,
+        "4": 5,
+        "6": 5,
+        "20": 1
+      },
+      "edit_original_invalid": 23,
+      "edit_new_structure_accepted": 14,
+      "edit_still_rejected": 9,
+      "search_records": [
+        {
+          "instance_id": "sympy__sympy-15017",
+          "seq": 8,
+          "original_arguments_sha256": "d23c6e629627e889a5b19b771bd83bf14ea30505fc26b63d946b7f4325018044",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-14855",
+          "seq": 8,
+          "original_arguments_sha256": "510cab6b017723cc09be717827efe29d4128c7320a226679cd44ec0c9e9063cc",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 10,
+          "applied_context_lines": 10,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-14855",
+          "seq": 40,
+          "original_arguments_sha256": "e05aaa45657502f4de5ecf132fdb413e5e4898b175a43934aa301003cda2598c",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-15930",
+          "seq": 8,
+          "original_arguments_sha256": "c470892d289c125eed997c013d524fcc53c65a643a76ee71d512051c8bdba2a0",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-15930",
+          "seq": 38,
+          "original_arguments_sha256": "826d059406cee448978c5f20f5f4bcb5d598cf9c2d3399b73aaa272943f5e4d6",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 15,
+          "applied_context_lines": 10,
+          "new_error": null
+        },
+        {
+          "instance_id": "pallets__flask-5014",
+          "seq": 20,
+          "original_arguments_sha256": "9a535dc74a26f9c171fc58fe5bb0ff201cc9eac8413282c32cec8a1fb05d82bc",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "scikit-learn__scikit-learn-25973",
+          "seq": 18,
+          "original_arguments_sha256": "a74888bd2b7aaab2dd284b94342c784ba17a4ba201ce019fa06ac13049900c8a",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 60,
+          "applied_context_lines": 10,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-12262",
+          "seq": 8,
+          "original_arguments_sha256": "e2210fdfb3685b158e0aa1dfc0d98268dddc4eb41ec5b440e7d0d5f1dec59bee",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 15,
+          "applied_context_lines": 10,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-13809",
+          "seq": 56,
+          "original_arguments_sha256": "65e178933ecc66f6a6d58b8fc42872e92612a333258dfcc08434c39c4b53cda5",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 4,
+          "applied_context_lines": 4,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-13809",
+          "seq": 58,
+          "original_arguments_sha256": "2e30aa34eab7dc6404e240f6aa3ee0d6685c733f477bf48217c0ef5802250be8",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 4,
+          "applied_context_lines": 4,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-14725",
+          "seq": 50,
+          "original_arguments_sha256": "bd257e97ec4ea163724ef6fef7fe41498fed5f72a86673ad1290cef8721579b8",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 4,
+          "applied_context_lines": 4,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-14725",
+          "seq": 52,
+          "original_arguments_sha256": "760e2a3a8fe558d53b70751af591dbe064a6dac16feaaf54d348d7b0d6a7fc3b",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 6,
+          "applied_context_lines": 6,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-16493",
+          "seq": 18,
+          "original_arguments_sha256": "d06eee46c1ce79059f5eb13cf1a27f47521eabc61f4f99f76d4b40e565f594b4",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 4,
+          "applied_context_lines": 4,
+          "new_error": null
+        },
+        {
+          "instance_id": "sympy__sympy-15599",
+          "seq": 45,
+          "original_arguments_sha256": "20dd6d3df60194101aaa7387dafab4351b6c90a0f6173ab8924700a1fb8c204a",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 6,
+          "applied_context_lines": 6,
+          "new_error": null
+        },
+        {
+          "instance_id": "sympy__sympy-17318",
+          "seq": 26,
+          "original_arguments_sha256": "83ba4c1bd2ac65ee278a635041c50d7da1549f431286a05b9204f05d4f7b6ded",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-11333",
+          "seq": 8,
+          "original_arguments_sha256": "a193581b4ae543efd72e9ffc37c0f580e8111a4694171acec6c66dfe6e5843aa",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-11333",
+          "seq": 10,
+          "original_arguments_sha256": "2e09628b396bf11e1a421c75eb81a9b7eaba4dd1c66b6faf5e02e1fd4d3a4d50",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-14053",
+          "seq": 12,
+          "original_arguments_sha256": "2f8d3c69167154b735d2a6ca908b5ee861c03885eeb61e27554b2f98606bfe40",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-14053",
+          "seq": 33,
+          "original_arguments_sha256": "d9a42bd35464ca4e2e953da50c3e590981b2d494f28dc3ed39ea3f4d0667c1a6",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 6,
+          "applied_context_lines": 6,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-16901",
+          "seq": 8,
+          "original_arguments_sha256": "6f1f5b105ed1fa47c23af8c652fa57f6d809d3573af350390a3a3e68096c7185",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-16901",
+          "seq": 10,
+          "original_arguments_sha256": "25441576d6503d315fe49c22ed023ea184b63d8d5147b4f96ed997ee244830d9",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 10,
+          "applied_context_lines": 10,
+          "new_error": null
+        },
+        {
+          "instance_id": "sympy__sympy-13551",
+          "seq": 8,
+          "original_arguments_sha256": "3c50a36d0b38168083b35fd6eb46e1ae9a62745dd8084a83c889843982b9a651",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "sympy__sympy-13551",
+          "seq": 16,
+          "original_arguments_sha256": "3c50a36d0b38168083b35fd6eb46e1ae9a62745dd8084a83c889843982b9a651",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-16950",
+          "seq": 8,
+          "original_arguments_sha256": "a668563b10cf888ea3875492b7d76f0cd42b79f208aa4269cd816a7f836758a1",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 6,
+          "applied_context_lines": 6,
+          "new_error": null
+        },
+        {
+          "instance_id": "scikit-learn__scikit-learn-10908",
+          "seq": 8,
+          "original_arguments_sha256": "a753b0fbe03fbce0938c748c3f79b690ead4dae15aca03bddc38f5e11451af63",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 10,
+          "applied_context_lines": 10,
+          "new_error": null
+        },
+        {
+          "instance_id": "scikit-learn__scikit-learn-10908",
+          "seq": 10,
+          "original_arguments_sha256": "703cce735a6ae0e95e1e94221f4d6b371e2af93e92b0571b6b3c3b43f918ae59",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 20,
+          "applied_context_lines": 10,
+          "new_error": null
+        },
+        {
+          "instance_id": "scikit-learn__scikit-learn-25747",
+          "seq": 14,
+          "original_arguments_sha256": "eb3bf4e24023e721f5f03de2f1163eac8fb0ede99dfebb3170c95e5e391cf6df",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-13128",
+          "seq": 22,
+          "original_arguments_sha256": "db6487009fd6427fac768b55a3f7abe9176166a4ac1453cb81a61ce5e1a89301",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 4,
+          "applied_context_lines": 4,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-15128",
+          "seq": 99,
+          "original_arguments_sha256": "68c1defe2042c156d8292ad4f361014de4a097349d843822568fec5e880c35a0",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-14011",
+          "seq": 46,
+          "original_arguments_sha256": "94966fdf7c65b18d09c917446a52c72b5947a2cc31d6d7ea4b810229cd4a1273",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "django__django-15629",
+          "seq": 311,
+          "original_arguments_sha256": "ddc70213465801cb127dfd8480ea130140473ec6fce894f13bad13d2facae336",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 5,
+          "applied_context_lines": 5,
+          "new_error": null
+        },
+        {
+          "instance_id": "sphinx-doc__sphinx-9461",
+          "seq": 327,
+          "original_arguments_sha256": "a1b3d2cfd2b52f1496841c7e5b22ff2c381f67423e92d481f992367525f4c1fa",
+          "original_error": "context_lines 必须在 0..3 范围内",
+          "new_normalization_ok": true,
+          "requested_context_lines": 6,
+          "applied_context_lines": 6,
+          "new_error": null
+        }
+      ],
+      "edit_records": [
+        {
+          "instance_id": "sympy__sympy-15017",
+          "seq": 39,
+          "original_arguments_sha256": "6b100dbc1fec838fbb908e6319b2a3153f141b6ac77c268e8a29064dae95149f",
+          "original_error": "workspace edit 被拒绝: expected_sha256 必须是 64 位小写十六进制",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing",
+            "string_pattern_mismatch"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-15017",
+          "seq": 43,
+          "original_arguments_sha256": "6b100dbc1fec838fbb908e6319b2a3153f141b6ac77c268e8a29064dae95149f",
+          "original_error": "workspace edit 被拒绝: expected_sha256 必须是 64 位小写十六进制",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing",
+            "string_pattern_mismatch"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-15017",
+          "seq": 51,
+          "original_arguments_sha256": "6b100dbc1fec838fbb908e6319b2a3153f141b6ac77c268e8a29064dae95149f",
+          "original_error": "workspace edit 被拒绝: expected_sha256 必须是 64 位小写十六进制",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing",
+            "string_pattern_mismatch"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-18763",
+          "seq": 32,
+          "original_arguments_sha256": "844c856d6c56e54b10831b49beec4af17fa706ff46d0c5b2342f211a54b21db7",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 2,
+          "missing_op_count": 2,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "django__django-15930",
+          "seq": 120,
+          "original_arguments_sha256": "6a69e98729b492d40fc6c9557bb4cc162a0def97f4b0efd8b3e51a49dee1f6ef",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "scikit-learn__scikit-learn-11310",
+          "seq": 38,
+          "original_arguments_sha256": "34e0fabbe06b0eb0463b6b760e1bf75fb2e5125ca2c4e3686f2dd4a2f31afc18",
+          "original_error": "workspace edit 被拒绝: 'replace_text' operation 字段不完整或包含未知字段",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing"
+          ],
+          "original_operation_count": 5,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sphinx-doc__sphinx-9281",
+          "seq": 24,
+          "original_arguments_sha256": "fa15b69507ae268d9685d63435b1719102ffbd132f8fdb6512ba0bc7a1fc1cc7",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 2,
+          "missing_op_count": 2,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-12481",
+          "seq": 56,
+          "original_arguments_sha256": "c376146b60eaa7c287ffc5262e0613825d4be6349800082ef69cba617cd42e05",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 2,
+          "missing_op_count": 2,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-15875",
+          "seq": 91,
+          "original_arguments_sha256": "98d239f330ced64b479b2618d58c3735cf4f16e27a63a0f789953c3c5d2983e4",
+          "original_error": "workspace edit 被拒绝: 'replace_text' operation 字段不完整或包含未知字段",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-16450",
+          "seq": 51,
+          "original_arguments_sha256": "8d11f2e95d18cdfe71fbbc472879e1cbaf65dc8bba3489f06ef79eda4c50edf3",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "scikit-learn__scikit-learn-25973",
+          "seq": 39,
+          "original_arguments_sha256": "e606877315c060f8fc8b1dc07cfc390172130ca6ad190e14b9491e4261bd1bf7",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "django__django-11206",
+          "seq": 19,
+          "original_arguments_sha256": "33bac3482476c933edb1e61c127eefcd57bdb375e33ddd3d1a919f8bf74baa45",
+          "original_error": "workspace edit 被拒绝: expected_sha256 必须是 64 位小写十六进制",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing",
+            "string_pattern_mismatch"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "django__django-13346",
+          "seq": 124,
+          "original_arguments_sha256": "076586ce00150a6362764fd8e4e4aa42a883f4e1c852986bf8743e57d21e8d9f",
+          "original_error": "workspace edit 被拒绝: 'replace_text' operation 字段不完整或包含未知字段",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 1
+        },
+        {
+          "instance_id": "pytest-dev__pytest-5631",
+          "seq": 51,
+          "original_arguments_sha256": "9037523beb4fbea9ebf106be962ae7e4837ffae4bf2de89fc379a259cc596b3d",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 2,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-15599",
+          "seq": 19,
+          "original_arguments_sha256": "6cb196ceb5fb21528fd59410f4128ba16b1e0ec6be4169e53df5fda045d5db24",
+          "original_error": "workspace edit 被拒绝: 'replace_text' operation 字段不完整或包含未知字段",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 1
+        },
+        {
+          "instance_id": "sympy__sympy-17318",
+          "seq": 38,
+          "original_arguments_sha256": "c073717630e204d2112a68e8e28574f085ed389d1b7dc0919476fb18ecef1eab",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "missing"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sympy__sympy-23824",
+          "seq": 24,
+          "original_arguments_sha256": "18ccce86ebefc52c2a14cbbd1c47ead2867f4957baffa619a82072f87bcecf18",
+          "original_error": "workspace edit 被拒绝: expected_sha256 必须是 64 位小写十六进制",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing",
+            "string_pattern_mismatch"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "matplotlib__matplotlib-24970",
+          "seq": 150,
+          "original_arguments_sha256": "c0015fe5e8d2fdc5d919b5afca7ca44752dfbc4d8f12425bbd2b115cff0f14b9",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "scikit-learn__scikit-learn-10908",
+          "seq": 39,
+          "original_arguments_sha256": "02581486d7c2143b7b258857a894fb4c8975987ea6440f66ebc6b4aa48c86e36",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "django__django-15128",
+          "seq": 116,
+          "original_arguments_sha256": "a5b704cdfa60b9867515071cf058612368c3f9077fe3cf09b5b2f35e919d1869",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 4,
+          "missing_op_count": 4,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "django__django-15629",
+          "seq": 142,
+          "original_arguments_sha256": "96fae1650c6129b9f811baebc68b9de945aed7b901fdc77f7872b935d3fc834a",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 1
+        },
+        {
+          "instance_id": "sphinx-doc__sphinx-9461",
+          "seq": 178,
+          "original_arguments_sha256": "3b4f150618e6a98ae9229a4d6f2e1d29fb897717e462d41fb076187551bd3536",
+          "original_error": "workspace edit 被拒绝: 每个 operation 必须是包含 op 的 object",
+          "new_input_validation_ok": true,
+          "new_error_types": [],
+          "original_operation_count": 1,
+          "missing_op_count": 1,
+          "missing_hash_count": 0
+        },
+        {
+          "instance_id": "sphinx-doc__sphinx-9461",
+          "seq": 278,
+          "original_arguments_sha256": "e1137654c5668c4c1d04f44d7d29cc8dc882458fd7e6bea4bd0200b610083de2",
+          "original_error": "workspace edit 被拒绝: 'create_file' operation 字段不完整或包含未知字段",
+          "new_input_validation_ok": false,
+          "new_error_types": [
+            "extra_forbidden",
+            "literal_error",
+            "missing"
+          ],
+          "original_operation_count": 1,
+          "missing_op_count": 0,
+          "missing_hash_count": 0
+        }
+      ]
+    },
+    "controlled_edit_semantics": [
+      {
+        "case": "unique_fragment_without_hash",
+        "tool": "edit_file",
+        "ok": true,
+        "error_code": null,
+        "target_changed": true
+      },
+      {
+        "case": "explicit_hash_rejects_unrelated_external_change",
+        "tool": "edit_file",
+        "ok": false,
+        "error_code": "edit_conflict",
+        "target_changed": false
+      },
+      {
+        "case": "optional_hash_accepts_still_unique_fragment",
+        "tool": "edit_file",
+        "ok": true,
+        "error_code": null,
+        "target_changed": true
+      },
+      {
+        "case": "duplicate_fragment_rejected",
+        "tool": "edit_file",
+        "ok": false,
+        "error_code": "edit_conflict",
+        "target_changed": false
+      },
+      {
+        "case": "missing_fragment_rejected",
+        "tool": "edit_file",
+        "ok": false,
+        "error_code": "edit_conflict",
+        "target_changed": false
+      },
+      {
+        "case": "unknown_field_rejected",
+        "tool": "edit_file",
+        "ok": false,
+        "error_code": "invalid_arguments",
+        "target_changed": false
+      },
+      {
+        "case": "unambiguous_operation_without_op_or_hash",
+        "tool": "apply_workspace_edit",
+        "ok": true,
+        "error_code": null,
+        "target_changed": true
+      }
+    ],
+    "host_path_references": {
+      "old_commands": 8,
+      "old_tasks": 6,
+      "new_commands": 0
+    },
+    "source_artifacts": [
+      {
+        "name": "interface-comparison.json",
+        "sha256": "10e5cd287962c4e05e06476858e0b87bb9f76deef6d594083bc9ac9f5ecc30f3"
+      },
+      {
+        "name": "interface-contract-replay.json",
+        "sha256": "06f1ee09cea737691564b479d03bce371f950da933f3973857f0e9e6b30d1672"
+      },
+      {
+        "name": "interface-additional-findings.json",
+        "sha256": "d88ecf2fcec9bf47a57613fd6441bf6b9cdaf5eb65e58b18890d6adadf405c98"
+      },
+      {
+        "name": "interface-analysis-validation.json",
+        "sha256": "df775dbb1e2546dced077aa3d28e424b99f7a841b9dae5009a53bee774957270"
+      },
+      {
+        "name": "report-version-comparison.json",
+        "sha256": "a5682a807c097333e7a4891eab77325dbfdf1530c288f90d19ef2f7bf95d3a1f"
+      }
+    ]
+  }
+}

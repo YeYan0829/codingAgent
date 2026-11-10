@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from codeagent.application.session_runtime import build_agent_runner
 from codeagent.config import ModelConfig, RuntimeConfig
 from codeagent.model_gateway.base import LLMToolCall
 from codeagent.runtime.command import CommandRequest
-from codeagent.runtime.turn_budget import increase_turn_budget, store_turn_budget
+from codeagent.runtime.turn_state import store_turn_state
 from codeagent.runtime.sandbox_policy import PermissionEvaluation
 from codeagent.tools.base import ToolSpec
 from codeagent.session.store import SessionStore
-from codeagent.workspace.workspace import SessionWorkspaceState
 
 
 class ExecutionConflictError(RuntimeError):
@@ -27,6 +26,12 @@ class ExecutionRecord:
     stop_requested: bool = False
     stop_requested_at: str | None = None
     pending_approval_id: str | None = None
+    store: Any = None
+    thread: Any = None
+    ready: threading.Event = field(default_factory=threading.Event)
+    startup_error: Exception | None = None
+    result_status: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -37,6 +42,7 @@ class PendingApproval:
     kind: str
     summary: dict[str, Any]
     decision: bool | None = None
+    owner: dict[str, Any] = field(default_factory=dict)
 
 
 class ProductApprovalGate:
@@ -52,12 +58,6 @@ class ProductApprovalGate:
         return self.supervisor.await_approval(self.store, self.record, "tool", {
             "tool": tool.name, "permissionLevel": tool.permission_level.value,
             "arguments": _bounded_arguments(call.arguments if call else {}),
-        })
-
-    def request_workspace_upgrade(self, tool_name: str, arguments: dict) -> bool:
-        return self.supervisor.await_approval(self.store, self.record, "workspace_upgrade", {
-            "tool": tool_name, "arguments": _bounded_arguments(arguments),
-            "message": "Create an isolated Agent worktree for protected operations",
         })
 
     def request_permissions(
@@ -84,6 +84,7 @@ class ExecutionSupervisor:
         self._condition = threading.Condition(self._lock)
         self._records: dict[str, ExecutionRecord] = {}
         self._approvals: dict[str, PendingApproval] = {}
+        self._closing = False
 
     def state(self, session_id: str) -> str:
         with self._lock:
@@ -99,34 +100,26 @@ class ExecutionSupervisor:
             return {
                 "approvalId": pending.approval_id, "jobId": pending.job_id,
                 "kind": pending.kind, "summary": pending.summary,
+                "owner": pending.owner,
             }
 
-    def start(self, store: SessionStore, *, message: str | None = None, continuation: bool = False,
-              budget_increase: dict[str, Any] | None = None) -> dict[str, Any]:
+    def start(self, store: SessionStore, *, message: str | None = None, continuation: bool = False) -> dict[str, Any]:
         with self._lock:
             existing = self._records.get(store.session_id)
             if existing is not None:
                 raise ExecutionConflictError("session already has an active execution")
-            budget = store_turn_budget(store)
-            if budget_increase is not None:
-                if not continuation:
-                    raise ExecutionConflictError("budget increase requires continuation")
-                try:
-                    increase_turn_budget(store, **budget_increase)
-                except ValueError as exc:
-                    raise ExecutionConflictError(str(exc)) from exc
-            elif continuation and (budget.closed or budget.waiting):
-                raise ExecutionConflictError("UserTurn cannot continue without an explicit budget increase")
-            elif message is not None and not budget.closed:
-                raise ExecutionConflictError("Stop the unfinished UserTurn before sending a new request")
-            record = ExecutionRecord(uuid.uuid4().hex, "running")
+            if self._closing:
+                raise ExecutionConflictError("Runtime is shutting down")
+            record = ExecutionRecord(uuid.uuid4().hex, "running", store=store)
             self._records[store.session_id] = record
-        thread = threading.Thread(
-            target=self._run, args=(store, record), kwargs={"message": message, "continuation": continuation},
+        record.thread = threading.Thread(
+            target=self._launch, args=(store, record, message, continuation),
             name=f"codeagent-{store.session_id}", daemon=True,
         )
-        self._notify_state(store.session_id, record)
-        thread.start()
+        record.thread.start()
+        record.ready.wait()
+        if record.startup_error:
+            raise ExecutionConflictError(str(record.startup_error)) from record.startup_error
         return {"jobId": record.job_id, "executionState": "running", "approvalMode": "interactive"}
 
     def stop(self, store: SessionStore) -> dict[str, Any]:
@@ -135,9 +128,9 @@ class ExecutionSupervisor:
         with self._condition:
             record = self._records.get(store.session_id)
             if record is None:
-                if store_turn_budget(store).closed:
+                if store_turn_state(store).closed:
                     return {"accepted": False, "executionState": "idle"}
-                # 预算等待没有活跃 worker，Stop 仍可结束本轮，之后允许发送修正指令。
+                # 没有活跃 worker 时，Stop 仍可结束未完成轮次。
                 job_id = uuid.uuid4().hex
                 request = store.append_event("execution_stop_requested", {"job_id": job_id})
                 idle_seq = (request.seq or 1) - 1
@@ -182,6 +175,17 @@ class ExecutionSupervisor:
         self, store: SessionStore, record: ExecutionRecord, kind: str, summary: dict[str, Any],
     ) -> bool:
         approval = PendingApproval(uuid.uuid4().hex, store.session_id, record.job_id, kind, summary)
+        events = store.read_events()
+        completed = {e.payload.get("operation_key") for e in events if e.type == "tool_execution_result"}
+        intent = next((e for e in reversed(events) if e.type == "tool_execution_intent"
+                       and e.payload.get("operation_key") not in completed), None)
+        if intent is not None:
+            key = str(intent.payload.get("operation_key", ""))
+            child = next((e.payload["run"] for e in reversed(events) if e.type == "agent_command_intent"
+                          and key.startswith(e.payload["run"]["run_id"] + ":")), None)
+            approval.owner = {"callId": intent.payload.get("call", {}).get("call_id"),
+                              "runId": child["run_id"] if child else None,
+                              "agentId": child["agent_id"] if child else "main"}
         with self._condition:
             current = self._records.get(store.session_id)
             if current is not record or record.stop_requested:
@@ -212,12 +216,59 @@ class ExecutionSupervisor:
         self._notify_state(store.session_id, record)
         return allowed
 
+    def shutdown(self) -> None:
+        """关闭连接时撤销待批准操作，并等父子执行全部离开资源范围。"""
+        with self._lock:
+            self._closing = True
+            records = list(self._records.values())
+        for record in records:
+            record.ready.wait()
+            self.stop(record.store)
+        for record in records:
+            record.thread.join()
+
+    def _launch(self, store, record, message, continuation):
+        from codeagent.orchestration.lease import session_lease
+        try:
+            # 产品操作、CLI 和 Runtime 共用同一执行权。
+            from codeagent.safety.repository_access import session_access_lease
+            with session_access_lease(store), session_lease(store):
+                budget = store_turn_state(store)
+                if continuation and budget.closed:
+                    raise ExecutionConflictError("UserTurn is already closed")
+                store.append_event("execution_job_started", {"job_id": record.job_id})
+                self._notify_state(store.session_id, record)
+                record.ready.set()
+                self._run(store, record, message=message, continuation=continuation)
+        except Exception as exc:
+            record.startup_error = exc
+        finally:
+            with self._lock:
+                if self._records.get(store.session_id) is record:
+                    self._records.pop(store.session_id)
+            record.ready.set()
+            self.notify("session/executionStateChanged", {
+                "sessionId": store.session_id, "jobId": record.job_id, "executionState": "idle",
+                "resultStatus": record.result_status, "error": record.error,
+            })
+
     def _run(self, store: SessionStore, record: ExecutionRecord, *, message: str | None, continuation: bool) -> None:
         last_seq = max((event.seq or 0 for event in store.read_events()), default=0)
 
-        def publish_progress(_: dict[str, Any]) -> None:
+        publish_lock = threading.Lock()
+        publisher_stop = threading.Event()
+
+        def publish_progress(_: dict[str, Any] | None = None) -> None:
             nonlocal last_seq
-            last_seq = self._publish_events(store, last_seq)
+            with publish_lock:
+                last_seq = self._publish_events(store, last_seq)
+
+        def publish_background():
+            # 子任务与等待期间也发布失效通知；UI 始终重新读取权威投影。
+            while not publisher_stop.wait(.1):
+                publish_progress()
+
+        publisher = threading.Thread(target=publish_background, name="codeagent-product-events", daemon=True)
 
         meta = store.read_meta()
         model_options = meta.get("model_options") if isinstance(meta.get("model_options"), dict) else {}
@@ -225,17 +276,16 @@ class ExecutionSupervisor:
         config = ModelConfig(
             provider=str(meta.get("provider", "fake")), model=meta.get("model"),
             temperature=model_options.get("temperature"), max_tokens=model_options.get("max_tokens"),
+            summary_max_tokens=model_options.get("summary_max_tokens"),
             reasoning_enabled=model_options.get("reasoning_enabled") is True,
             reasoning_effort=model_options.get("reasoning_effort"),
         )
-        runtime_config = RuntimeConfig(
-            max_steps_per_turn=int(runtime_options.get("max_steps_per_turn", 12)),
-            max_model_steps_per_user_turn=int(runtime_options.get("max_model_steps_per_user_turn", 48)),
-        )
-        execution_allowed = store.workspace_state() == SessionWorkspaceState.CHANGES_ACTIVE
+        runtime_config = RuntimeConfig.from_options(runtime_options)
+        execution_allowed = True
         status = "failed"
         error = None
         try:
+            publisher.start()
             runner = self.runner_factory(
                 store,
                 model_config=config,
@@ -246,12 +296,9 @@ class ExecutionSupervisor:
                 cancellation_callback=lambda: record.stop_requested,
             )
             output = runner.continue_turn() if continuation else runner.run_turn(message or "")
-            while output.status == "slice_exhausted":
-                # 同一 job 自动跨切片；Runner 在下一调用前检查 Stop，预算由本轮事件累计。
-                output = runner.continue_turn()
             status = output.status
         except Exception as exc:
-            error = str(exc)
+            error = type(exc).__name__
             events = store.read_events()
             turn_id = next((event.turn_id for event in reversed(events) if event.type == "user_message"), None)
             closed = any(event.turn_id == turn_id and event.type in {"assistant_message", "turn_terminated"}
@@ -267,27 +314,25 @@ class ExecutionSupervisor:
             with self._lock:
                 if record.stop_requested:
                     from datetime import datetime, timezone
-                    if not store_turn_budget(store).closed:
+                    if not store_turn_state(store).closed:
                         store.append_event("turn_terminated", {
                             "reason": "user_stop", "message": "用户已请求停止；本轮结束。",
                         })
-                    status = "stopped"
+                    # 已持久化最终回答时，迟到 Stop 只确认资源已退出，不覆写完成事实。
+                    if status not in {"completed", "completed_with_warnings"}:
+                        status = "stopped"
                     store.append_event("execution_stop_acknowledged", {
                         "job_id": record.job_id, "requested_at": record.stop_requested_at,
                         "acknowledged_at": datetime.now(timezone.utc).isoformat(),
                         "boundary": "between_model_or_tool_steps",
                     })
-                current = self._records.get(store.session_id)
-                if current is not None and current.job_id == record.job_id:
-                    self._records.pop(store.session_id, None)
-            last_seq = self._publish_events(store, last_seq)
-            self.notify("session/executionStateChanged", {
-                "sessionId": store.session_id,
-                "jobId": record.job_id,
-                "executionState": "idle",
-                "resultStatus": status,
-                "error": error,
-            })
+                store.append_event("execution_job_finished", {
+                    "job_id": record.job_id, "status": status, "error_type": error,
+                })
+            publisher_stop.set()
+            publisher.join()
+            publish_progress()
+            record.result_status, record.error = status, error
 
     def _publish_events(self, store: SessionStore, after_seq: int) -> int:
         events = [event for event in store.read_events() if (event.seq or 0) > after_seq]

@@ -14,11 +14,6 @@ INHERITED_ENV_NAMES = frozenset({"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TE
 DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
-def command_shell_options(purpose: str) -> tuple[str, ...]:
-    """返回内层命令 shell 选项；仅 validation 启用 pipefail。"""
-    return ("-o", "pipefail") if purpose == "validation" else ()
-
-
 @dataclass(frozen=True)
 class EffectiveCommandEnvironment:
     """命令启动配置及其 provenance 的单一事实来源；不解释命令语义。"""
@@ -52,10 +47,15 @@ class EffectiveCommandEnvironment:
             "home_kind": "private_runtime_home",
             "tilde_is_host_home": False,
             "tmp_kind": "private_tmp",
+            "file_lifetime_guidance": (
+                "本地Bubblewrap的/tmp在每条命令启动时重新创建，上一条命令写入其中的文件不会保留。"
+                "HOME和当前项目内的文件可跨命令保留；需要复用的脚本或数据放在这些目录，交付前清理项目内的调试文件。"
+                "每条命令使用新shell，export/source/cd不跨调用保留。"
+            ),
             "network_mode": self.policy.network_mode.value,
             "commands_are_fresh_processes": self.fresh_shell,
             "shell_state_persists": False,
-            "source_workspace_access": "read_only",
+            "source_workspace_access": "read_write" if self.policy.source_root == self.policy.workspace_root else "read_only",
             "active_workspace_access": "read_write",
         }
 

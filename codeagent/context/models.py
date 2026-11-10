@@ -2,29 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Literal
+from codeagent.config import DEFAULT_MODEL_LIMITS
+
+
+TOKEN_COUNT_MARGIN = 2_000
 
 
 @dataclass(frozen=True)
 class ModelCapabilities:
-    context_limit: int = 32_000
-    generation_reserve: int = 4_000
-    continuation_reserve: int = 4_000
-    safety_margin: int = 2_000
-    max_events: int = 80
-    target_events: int = 40
-    soft_token_ratio: float = 0.80
-    target_token_ratio: float = 0.50
-    summary_max_tokens: int = 2_048
-    condenser_safety_margin: int = 2_000
-    minimum_progress: float = 0.10
+    """本次请求的模型容量；不携带历史策略或第二套摘要预算。"""
+    context_limit: int = DEFAULT_MODEL_LIMITS.context_tokens
+    max_output_tokens: int = DEFAULT_MODEL_LIMITS.default_output_tokens
 
     @property
     def usable_input_budget(self) -> int:
-        return self.context_limit - self.generation_reserve - self.continuation_reserve - self.safety_margin
-
-    @property
-    def condenser_usable_input_budget(self) -> int:
-        return self.context_limit - self.summary_max_tokens - self.condenser_safety_margin
+        return self.context_limit - self.max_output_tokens - TOKEN_COUNT_MARGIN
 
 
 @dataclass
@@ -124,18 +116,10 @@ class RollingSummary:
 
 
 @dataclass(frozen=True)
-class RuntimeSnapshot:
-    workspace_state: str
-    workspace_revision: int
-    candidate_revision: int
-    workspace_kind: str
+class ContextState:
     active_workspace: str
-    baseline_workspace: str
-    base_commit: str | None
-    subject_tree: str | None
-    changed_paths: tuple[dict[str, str], ...]
-    validation_state: str
     environment: dict[str, Any]
+    task_plan: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -151,8 +135,6 @@ class BudgetReport:
     fixed_request_tokens: int = 0
     available_history_budget: int = 0
     history_tokens: int = 0
-    soft_history_limit: int = 0
-    target_history_tokens: int = 0
     uncovered_context_event_count: int = 0
     chain_tip_event_id: str | None = None
     anchor_source_event_id: str | None = None
@@ -188,7 +170,6 @@ class CondensationPlan:
     source_atoms: tuple[ManipulationAtom, ...]
     source_messages: tuple[dict[str, Any], ...]
     candidate_source_event_ids_sha256: str
-    expected_event_seq: int
     turn_id: str | None
     trigger: tuple[str, ...]
     hard: bool

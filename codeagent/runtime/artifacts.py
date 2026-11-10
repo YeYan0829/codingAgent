@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 from codeagent.runtime.command import CommandArtifactPaths, CommandRequest
@@ -9,7 +8,7 @@ from codeagent.session.store import SessionStore
 
 
 class CommandArtifactStore:
-    """命令运行期临时材料；仅失败诊断长期保留。"""
+    """保留已采集的命令输出和结果；运行期 HOME/TMP 独立清理。"""
 
     def __init__(self, session_store: SessionStore) -> None:
         self.root = session_store.diagnostics_dir / "commands"
@@ -41,3 +40,12 @@ class CommandArtifactStore:
         paths.workspace_change_path.touch()
         paths.request_path.write_text(json.dumps(spec.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         return paths
+
+
+def output_preview(path: Path, head: int = 1024, tail: int = 3072) -> tuple[str, bool]:
+    """从已保存输出生成诊断预览；是否省略与采集是否到限分别记录。"""
+    data = path.read_bytes()
+    truncated = len(data) > head + tail
+    if truncated:
+        data = data[:head] + b"\n...[middle omitted; read_observation can retrieve saved output]...\n" + data[-tail:]
+    return data.decode("utf-8", errors="replace"), truncated

@@ -52,10 +52,12 @@ class OpenAICompatibleClient(BaseModelClient):
         if request.max_tokens is not None:
             kwargs["max_tokens"] = request.max_tokens
 
+        # 原子 reservation 对应恰好一次物理请求；不允许 SDK 重试或 extra_body 隐式回退。
+        transport = self.client.with_options(max_retries=0) if request.journaled else self.client
         try:
-            response = self.client.chat.completions.create(**kwargs)
+            response = transport.chat.completions.create(**kwargs)
         except TypeError:
-            if "extra_body" not in kwargs or not self.allow_extra_body_fallback:
+            if request.journaled or "extra_body" not in kwargs or not self.allow_extra_body_fallback:
                 raise
             kwargs.pop("extra_body")
             response = self.client.chat.completions.create(**kwargs)
@@ -106,7 +108,7 @@ class OpenAICompatibleClient(BaseModelClient):
             except json.JSONDecodeError as exc:
                 raise MalformedToolArgumentsError(name, exc.msg, exc.lineno, exc.colno, raw_arguments) from exc
             if not isinstance(arguments, dict):
-                return LLMResponse(text=f"{self.provider_name} returned non-object tool arguments for {name}")
+                raise MalformedToolArgumentsError(name, "arguments must be a JSON object", 1, 1, raw_arguments)
             parsed.append(LLMToolCall(call_id=call_id, name=name, arguments=arguments))
         return parsed
 

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codeagent-runtime"
-version = "0.5.0"
-description = "Auditable local coding agent runtime with reviewed workspace changes."
+version = "0.6.0"
+description = "Local coding agent runtime with controlled tools, shared context and persistent undo."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
@@ -33,9 +33,10 @@ Documentation = "https://github.com/YeYan0829/codingAgent/tree/main/docs"
 
 [tool.setuptools.packages.find]
 include = ["codeagent*"]
+namespaces = false
 
 [tool.setuptools.package-data]
-codeagent = ["prompts/*.md"]
+codeagent = ["prompts/*.md", "prompts/variants/*.md", "skills/*/SKILL.md", "prompts/licenses/*", "tools/upstream/LICENSE.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

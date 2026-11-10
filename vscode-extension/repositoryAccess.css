@@ -1,0 +1,4 @@
+.repository-access{max-width:640px;width:100%;margin:0 auto;padding:24px 20px 8px;box-sizing:border-box}
+.repository-access h2{font-size:16px;margin:0 0 12px}.repository-access .settings{padding:12px 0 16px}
+.repository-access textarea{width:100%;min-height:100px;box-sizing:border-box;resize:vertical;padding:8px 10px;border:1px solid var(--vscode-input-border,var(--ui-border));border-radius:4px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);line-height:1.6}
+.repository-access label{margin-bottom:8px}.repository-access button{margin-top:8px;min-height:32px}

@@ -22,6 +22,7 @@ class Workspace:
 
 
 class SessionWorkspaceState(StrEnum):
+    CURRENT_PROJECT = "current_project"
     SOURCE_ONLY = "source_only"
     PREPARING_WORKSPACE = "preparing_workspace"
     CHANGES_ACTIVE = "changes_active"
@@ -33,43 +34,33 @@ class SessionWorkspaceState(StrEnum):
 
 @dataclass(frozen=True)
 class WorkspaceContext:
-    """一次任务实际使用的工作区身份与路径。"""
+    """实际文件路径与访问限制；不携带代码版本、测试或交付身份。"""
 
     source_root: Path
     active_root: Path
-    workspace_kind: str = "source"
-    base_commit: str | None = None
-    workspace_revision: int = 0
+    denied_paths: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "source_root", Path(self.source_root).expanduser().resolve())
         object.__setattr__(self, "active_root", Path(self.active_root).expanduser().resolve())
-        if self.workspace_kind not in {"source", "git_worktree"}:
-            raise ValueError(f"unsupported workspace kind: {self.workspace_kind}")
 
     @classmethod
     def source(cls, root: str | Path) -> "WorkspaceContext":
         resolved = Path(root).expanduser().resolve()
         return cls(source_root=resolved, active_root=resolved)
 
-    def to_metadata(self) -> dict[str, str | None]:
-        return {
-            "source_workspace": str(self.source_root),
-            "active_workspace": str(self.active_root),
-            "workspace_kind": self.workspace_kind,
-            "base_commit": self.base_commit,
-            "workspace_revision": self.workspace_revision,
-        }
+    def path_guard(self) -> PathGuard:
+        return PathGuard(self.active_root, denied_paths=self.denied_paths)
+
+    def to_metadata(self) -> dict:
+        return {"source_workspace": str(self.source_root), "active_workspace": str(self.active_root),
+                "workspace_kind": "source", "denied_paths": list(self.denied_paths)}
 
     @classmethod
     def from_metadata(cls, meta: dict) -> "WorkspaceContext":
         source = meta.get("source_workspace") or meta.get("workspace")
         if not source:
             raise ValueError("session metadata missing source workspace")
-        return cls(
-            source_root=source,
-            active_root=meta.get("active_workspace") or source,
-            workspace_kind=meta.get("workspace_kind", "source"),
-            base_commit=meta.get("base_commit"),
-            workspace_revision=int(meta.get("workspace_revision", 0)),
-        )
+        # 旧active目录和版本只留在原metadata里供历史读取，不参与当前文件操作。
+        return cls(source_root=source, active_root=source,
+                   denied_paths=tuple(meta.get("denied_paths", ())))

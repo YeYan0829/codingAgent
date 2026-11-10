@@ -16,7 +16,15 @@ TOKEN_FIELDS = (
 
 def aggregate_usage(items: Iterable[dict | None]) -> dict[str, object]:
     values = list(items)
-    known = [item for item in values if isinstance(item, dict)]
+    known = [dict(item) for item in values if isinstance(item, dict)]
+    derived = False
+    # 先逐请求补齐已知 cache-miss，再汇总；另一笔 UNKNOWN 不应抹掉已知费用。
+    for item in known:
+        input_tokens, cached = item.get("input_tokens"), item.get("cached_input_tokens")
+        if (item.get("cache_miss_input_tokens") is None and
+                type(input_tokens) is int and type(cached) is int and 0 <= cached <= input_tokens):
+            item["cache_miss_input_tokens"] = input_tokens - cached
+            derived = True
     result: dict[str, object] = {
         "requests": len(values), "requests_with_usage": len(known),
         "coverage": "unavailable" if not values or not known else
@@ -27,13 +35,7 @@ def aggregate_usage(items: Iterable[dict | None]) -> dict[str, object]:
         present = [item[field] for item in known if isinstance(item.get(field), int)]
         result[field] = sum(present) if present else None
         result[field + "_complete"] = bool(known) and len(present) == len(values)
-    if (result["cache_miss_input_tokens"] is None and result["input_tokens_complete"] and
-            result["cached_input_tokens_complete"]):
-        result["cache_miss_input_tokens"] = int(result["input_tokens"]) - int(result["cached_input_tokens"])
-        result["cache_miss_input_tokens_complete"] = True
-        result["cache_miss_input_tokens_derived"] = True
-    else:
-        result["cache_miss_input_tokens_derived"] = False
+    result["cache_miss_input_tokens_derived"] = derived
     return result
 
 
@@ -88,6 +90,7 @@ def calculate_cost(usage: dict[str, object], snapshot: PriceSnapshot) -> dict[st
         # 无独立 cache-miss 计量时，仅在 cached token 不存在时允许使用完整 input。
         if token_name == "cache_miss_input_tokens" and tokens is None and usage.get("cached_input_tokens") is None:
             tokens = usage.get("input_tokens")
+            token_name = "input_tokens"
         if rate is None:
             if isinstance(tokens, int) and tokens:
                 missing.append(rate_name)
@@ -95,6 +98,8 @@ def calculate_cost(usage: dict[str, object], snapshot: PriceSnapshot) -> dict[st
         if tokens is None:
             missing.append(token_name)
             continue
+        if usage.get(token_name + "_complete") is False:
+            missing.append(token_name)
         amount = Decimal(tokens) * Decimal(rate) / Decimal(snapshot.unit_tokens)
         components[rate_name] = str(amount)
         total += amount
